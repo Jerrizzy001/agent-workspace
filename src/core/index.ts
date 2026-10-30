@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { isUtf8 } from "node:buffer";
-import { gitStatus, gitDiff, gitIndex } from "./git.js";
+import { gitStatus, gitDiff, gitIndex, gitPath } from "./git.js";
 import {
   claudeActivitySettings,
   initialPrompt,
@@ -20,6 +20,21 @@ import {
   type AttachmentRecord,
 } from "./attachments.js";
 import { run, executable, probe } from "./process.js";
+import {
+  ASSIST_DIFF_LIMIT,
+  ASSIST_PROVIDERS,
+  cleanCommitMessage,
+  cleanSessionName,
+  commitPrompt,
+  hashText,
+  namePrompt,
+  probeAdapter,
+  runSuggestion,
+  stagedHash,
+  stagedSnapshot,
+  type AssistProvider,
+  type AssistRun,
+} from "./assist.js";
 import { DICTATION_MODEL_IDS, isDictationModelId } from "../shared/dictation.js";
 import { MAX_LANES, laneNameText, laneOf, lanesFor } from "../shared/board.js";
 import * as pty from "node-pty";
@@ -1363,6 +1378,13 @@ export async function createCore({
             throw new Error("Invalid setting value");
           if (key === "dictationModel" && !isDictationModelId(p.value))
             throw new Error("Unknown dictation model");
+          if (
+            key === "assistProvider" &&
+            !["", ...ASSIST_PROVIDERS].includes(p.value)
+          )
+            throw new Error("Unknown AI suggestions provider");
+          if (key === "assistModel" && p.value !== "")
+            providerModel("claude", p.value);
           put("ownerSettings", { id: key, value: p.value, updatedAt: now() });
           return { key, value: p.value };
         }
@@ -1389,6 +1411,16 @@ export async function createCore({
           changed();
           return n;
         }
+        case "assist.status":
+          assistFields(p, []);
+          return assistStatus();
+        case "assist.preview":
+        case "assist.suggest":
+          return assist(command, p);
+        case "assist.cancel":
+          assistFields(p, []);
+          assistRun?.cancel("Cancelled. Nothing was changed.");
+          return { ok: true };
         default:
           throw new Error("Unsupported command");
       }
@@ -1397,7 +1429,195 @@ export async function createCore({
     const ownerDefaults: OwnerSettings = {
       keepAwake: false,
       dictationModel: DICTATION_MODEL_IDS[0],
+      assistProvider: "",
+      assistModel: "",
     };
+    function ownerSetting<K extends keyof OwnerSettings>(key: K): OwnerSettings[K] {
+      const row = db
+        .prepare("SELECT value FROM records WHERE kind='ownerSettings' AND id=?")
+        .get(key) as { value: string } | undefined;
+      return row ? JSON.parse(row.value).value : ownerDefaults[key];
+    }
+    // AI suggestions: owner-only, never automatic, one provider request per click.
+    let assistRun: AssistRun | undefined;
+    let assistBusy = false;
+    function assistFields(p: any, keys: string[]) {
+      if (Object.keys(p).some((k) => !keys.includes(k)))
+        throw new Error("Unexpected AI suggestions field");
+    }
+    async function assistStatus() {
+      const provider = ownerSetting("assistProvider");
+      return {
+        provider: ASSIST_PROVIDERS.includes(provider as AssistProvider)
+          ? provider
+          : "",
+        model: ownerSetting("assistModel"),
+        adapters: await Promise.all(
+          ASSIST_PROVIDERS.map((name) => probeAdapter(name, executable(name))),
+        ),
+        running: assistBusy,
+      };
+    }
+    async function assistAdapter() {
+      const provider = ownerSetting("assistProvider") as AssistProvider | "";
+      if (!provider || !ASSIST_PROVIDERS.includes(provider))
+        throw new Error(
+          "AI suggestions are off. Turn them on in AI suggestions settings first.",
+        );
+      const status = await probeAdapter(provider, executable(provider));
+      if (status.state === "unavailable") throw new Error(status.detail);
+      return { status, model: ownerSetting("assistModel") };
+    }
+    function excludeList(v: unknown) {
+      if (v === undefined) return [];
+      if (!Array.isArray(v) || v.length > 1000)
+        throw new Error("Invalid excluded paths");
+      return v.map(gitPath);
+    }
+    async function commitPreview(p: any, provider: string, model: string) {
+      const r = await repository(p);
+      const snap = await stagedSnapshot(r, excludeList(p.exclude));
+      if (!snap.files.length)
+        throw new Error("Nothing is staged. Stage the changes to describe first.");
+      if (!snap.diff)
+        throw new Error(
+          "Every staged file is excluded or omitted, so there is nothing to send.",
+        );
+      const input = commitPrompt(snap.diff, snap.omitted);
+      return {
+        kind: "commit" as const,
+        provider,
+        model,
+        stagedHash: snap.stagedHash,
+        files: snap.files,
+        omitted: snap.omitted,
+        input,
+        inputHash: hashText(input),
+        bytes: snap.bytes,
+        limit: ASSIST_DIFF_LIMIT,
+      };
+    }
+    /** Owner-selectable naming context. Terminal output is never read. */
+    function nameSources(s: Session) {
+      const bounded = (value: string) =>
+        value.length > 2000 ? value.slice(0, 2000) + "…" : value;
+      const sources: { id: "task" | "firstMessage" | "folder"; label: string; text: string }[] = [];
+      if (s.attemptId) {
+        try {
+          const task = get("tasks", get("attempts", s.attemptId).taskId);
+          sources.push({
+            id: "task",
+            label: "Task title and description",
+            text: bounded([task.title, task.description].filter(Boolean).join("\n\n")),
+          });
+        } catch {}
+      }
+      const launch = db
+        .prepare(
+          "SELECT r.request AS request FROM launch_intents i JOIN launch_requests r ON r.key=i.key WHERE i.sessionId=?",
+        )
+        .get(s.id) as { request: string } | undefined;
+      if (launch && s.provider !== "shell") {
+        try {
+          const args: unknown = JSON.parse(launch.request).arguments;
+          const at = Array.isArray(args) ? args.lastIndexOf("--") : -1;
+          const first = at >= 0 ? (args as unknown[])[at + 1] : undefined;
+          if (typeof first === "string" && first.trim())
+            sources.push({ id: "firstMessage", label: "First message", text: bounded(first) });
+        } catch {}
+      }
+      sources.push({ id: "folder", label: "Folder name", text: path.basename(s.cwd) });
+      return sources;
+    }
+    function namePreview(p: any, provider: string, model: string) {
+      const s = get("sessions", p.sessionId) as Session;
+      if (
+        !Array.isArray(p.include) ||
+        !p.include.length ||
+        p.include.length > 3 ||
+        p.include.some((v: unknown) => !["task", "firstMessage", "folder"].includes(v as string))
+      )
+        throw new Error("Choose at least one kind of context to share");
+      const sources = nameSources(s);
+      const chosen = sources.filter((source) => p.include.includes(source.id));
+      if (!chosen.length) throw new Error("The chosen context is not available for this session");
+      const input = namePrompt(
+        chosen
+          .map((c) =>
+            (c.id === "task" ? "Task" : c.id === "firstMessage" ? "First message" : "Folder") +
+            ":\n" + c.text,
+          )
+          .join("\n\n"),
+      );
+      return {
+        kind: "name" as const,
+        provider,
+        model,
+        sessionId: s.id,
+        generation: s.generation,
+        titleRevision: s.titleRevision ?? 0,
+        sources,
+        input,
+        inputHash: hashText(input),
+      };
+    }
+    async function assist(command: "assist.preview" | "assist.suggest", p: any) {
+      const kind = p.kind;
+      const preview = command === "assist.preview";
+      if (kind === "commit")
+        assistFields(p, preview
+          ? ["kind", "projectId", "worktreePath", "exclude", "hashOnly"]
+          : ["kind", "projectId", "worktreePath", "exclude", "inputHash", "stagedHash"]);
+      else if (kind === "name")
+        assistFields(p, preview ? ["kind", "sessionId", "include"] : ["kind", "sessionId", "include", "inputHash"]);
+      else throw new Error("Unknown AI suggestion kind");
+      if (preview && p.hashOnly !== undefined) {
+        if (p.hashOnly !== true || p.exclude !== undefined)
+          throw new Error("Invalid staged fingerprint request");
+        return { stagedHash: await stagedHash(await repository(p)) };
+      }
+      const { status, model } = await assistAdapter();
+      const shown =
+        kind === "commit"
+          ? await commitPreview(p, status.provider, model)
+          : namePreview(p, status.provider, model);
+      if (preview) return shown;
+      if (typeof p.inputHash !== "string" || p.inputHash !== shown.inputHash)
+        throw new Error("What would be sent changed since the preview. Review the preview again.");
+      if (kind === "commit" && p.stagedHash !== (shown as { stagedHash: string }).stagedHash)
+        throw new Error("Staged changes changed since the preview. Review the preview again.");
+      if (assistBusy) throw new Error("A suggestion is already being generated.");
+      assistBusy = true;
+      try {
+        const text = await runSuggestion({
+          status,
+          model: model || undefined,
+          input: shown.input,
+          register: (handle) => {
+            assistRun = handle;
+          },
+        });
+        if (kind === "commit")
+          return {
+            kind,
+            message: cleanCommitMessage(text).message,
+            stagedHash: (shown as { stagedHash: string }).stagedHash,
+            inputHash: shown.inputHash,
+          };
+        const named = shown as ReturnType<typeof namePreview>;
+        return {
+          kind,
+          name: cleanSessionName(text),
+          sessionId: named.sessionId,
+          generation: named.generation,
+          titleRevision: named.titleRevision,
+          inputHash: shown.inputHash,
+        };
+      } finally {
+        assistBusy = false;
+        assistRun = undefined;
+      }
+    }
     function settingKey(v: unknown): keyof OwnerSettings {
       if (typeof v !== "string" || !Object.hasOwn(ownerDefaults, v))
         throw new Error("Unknown setting");
@@ -1571,6 +1791,9 @@ export async function createCore({
         if (closed) throw new Error("Core is closed");
         if (!payload || typeof payload !== "object" || Array.isArray(payload))
           throw new Error("Invalid payload");
+        // Suggestions only read Git and settings; a slow provider must not
+        // hold up mutations, and cancel must not wait behind the run.
+        if (command.startsWith("assist.")) return execute(command, payload);
         const key =
           command === "attempt.start" || command === "terminal.open"
             ? "launch"
@@ -1599,6 +1822,7 @@ export async function createCore({
       close() {
         if (closing) return closing;
         closed = true;
+        assistRun?.cancel("The workspace is closing.");
         clearInterval(reconciliationTimer);
         clearInterval(cleanupTimer);
         closing = (async () => {

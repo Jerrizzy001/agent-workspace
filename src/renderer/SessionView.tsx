@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { History, ImagePlus, Pencil, Play, Square, Zap } from "lucide-react";
+import { History, ImagePlus, Pencil, Play, Sparkles, Square, Zap } from "lucide-react";
+import {
+  AssistNameDialog,
+  assistAvailable,
+  loadAssistProvider,
+  openAssistSettings,
+} from "./assist";
 import type { Project, Session } from "../shared/contracts";
 import { TerminalView } from "./TerminalView";
 import { providerName, sessionLocation, sessionState } from "./sessions";
@@ -65,6 +71,16 @@ export function SessionView({
       setSaving(false);
     }
   };
+  const [naming, setNaming] = useState(false);
+  const suggestName = async () => {
+    setRenaming(false);
+    const provider = await loadAssistProvider().catch(() => "");
+    if (provider) setNaming(true);
+    else
+      openAssistSettings(
+        "AI suggestions are off. Choose a provider to suggest session names; nothing is sent until you preview and click Generate.",
+      );
+  };
   const state = sessionState(session);
   const identity = {
     sessionId: session.id,
@@ -87,6 +103,7 @@ export function SessionView({
           <ProviderGlyph provider={session.provider} size={16} />
           <div>
             {renaming ? (
+              <span className="session-rename-row">
               <input
                 className="session-rename"
                 aria-label="Session name"
@@ -108,6 +125,19 @@ export function SessionView({
                   }
                 }}
               />
+              {assistAvailable() ? (
+                <button
+                  className="button ghost small"
+                  title="Suggest a name with AI from context you choose"
+                  // Keep focus in the field until the click opens the dialog.
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => void suggestName()}
+                >
+                  <Sparkles size={12} />
+                  Suggest name
+                </button>
+              ) : null}
+              </span>
             ) : (
               <strong>
                 <span
@@ -237,6 +267,13 @@ export function SessionView({
             ? "Its last screen is below — check it for an error message (for example a sign-in or model problem)."
             : "No final screen was saved for it."}
         </div>
+      ) : null}
+      {naming ? (
+        <AssistNameDialog
+          session={session}
+          onClose={() => setNaming(false)}
+          report={report}
+        />
       ) : null}
       <div className="session-terminal">
         <TerminalView

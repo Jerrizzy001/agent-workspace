@@ -11,6 +11,7 @@ import {
   LayoutGrid,
   Menu,
   Mic,
+  Sparkles,
   Network,
   PanelRight,
   PanelRightClose,
@@ -39,6 +40,7 @@ import { AttemptModal, Board, TaskModal, statusLabel } from "./Board";
 import { SessionBoard } from "./SessionBoard";
 import { isRemoteBrowser } from "./remote";
 import { DictationNotices, DictationSettings } from "./DictationControl";
+import { AssistSettings, assistAvailable, openAssistSettings } from "./assist";
 import { dictationAvailable, openDictationSettings } from "./dictation";
 import { registerLeaveGuard } from "./leaveWorkspace";
 import { mergeSnapshot } from "./snapshot";
@@ -852,6 +854,16 @@ export default function App() {
               Voice dictation
             </button>
           ) : null}
+          {assistAvailable() && !isRemoteBrowser ? (
+            <button
+              className="foot-button"
+              aria-label="AI suggestions settings"
+              onClick={() => openAssistSettings()}
+            >
+              <Sparkles size={14} />
+              AI suggestions
+            </button>
+          ) : null}
           {window.workspace.remote ? (
             <button
               className="foot-button"
@@ -1326,6 +1338,7 @@ export default function App() {
           <DictationNotices />
         </>
       ) : null}
+      {assistAvailable() && !isRemoteBrowser ? <AssistSettings /> : null}
       {remotePanel ? (
         <RemoteAccessPanel onClose={() => setRemotePanel(false)} />
       ) : null}
