@@ -1,0 +1,71 @@
+{
+  "name": "agent-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An original local desktop workspace for coding agents",
+  "main": "dist/desktop/main.cjs",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "vite build && node scripts/build-desktop.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "postinstall": "electron-rebuild -f -w node-pty",
+    "package": "npm run build && electron-builder --mac dir zip --publish never",
+    "smoke": "node scripts/smoke-electron.mjs",
+    "smoke:ui": "node scripts/smoke-ui.mjs"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "4.7.0",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "@xyflow/react": "12.12.0",
+    "lucide-react": "0.577.0",
+    "monaco-editor": "0.57.0",
+    "node-pty": "1.1.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "zustand": "5.0.12"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "4.2.1",
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.1.2",
+    "electron": "45.1.0",
+    "electron-builder": "26.18.0",
+    "esbuild": "0.28.2",
+    "playwright": "1.64.1",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.5"
+  },
+  "build": {
+    "appId": "local.agentworkspace.desktop",
+    "productName": "Agent Workspace",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/node-pty/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "identity": null,
+      "target": [
+        "dir",
+        "zip"
+      ]
+    },
+    "npmRebuild": true
+  },
+  "overrides": {
+    "dompurify": "3.4.17",
+    "esbuild": "$esbuild"
+  },
+  "type": "module"
+}

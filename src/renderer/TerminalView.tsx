@@ -1,0 +1,188 @@
+import { useEffect, useRef, useState } from "react";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import type { Session } from "../shared/contracts";
+import "@xterm/xterm/css/xterm.css";
+
+export function TerminalView({
+  session,
+  onViewer,
+}: {
+  session: Session;
+  onViewer?: (id: string | null) => void;
+}) {
+  const host = useRef<HTMLDivElement>(null);
+  const viewerCallback = useRef(onViewer);
+  viewerCallback.current = onViewer;
+  const [error, setError] = useState("");
+  const [epoch, setEpoch] = useState(0);
+  const [ready, setReady] = useState(false);
+  useEffect(
+    () =>
+      window.workspace.subscribe((event) => {
+        if (event.type === "core.status" && event.status === "ready")
+          setEpoch((value) => value + 1);
+      }),
+    [],
+  );
+  useEffect(() => {
+    if (!host.current) return;
+    setReady(false);
+    setError("");
+    let queuedInput = "";
+    let disposed = false;
+    let attached = false;
+    let resyncing = false;
+    const pending: { data: string; sequence: number }[] = [];
+    const viewerId = crypto.randomUUID();
+    const identity = {
+      sessionId: session.id,
+      generation: session.generation,
+      viewerId,
+    };
+    const terminal = new Terminal({
+      cursorBlink: true,
+      fontSize: 13,
+      fontFamily: '"SFMono-Regular", Menlo, monospace',
+      lineHeight: 1.45,
+      scrollback: 5000,
+      theme: {
+        background: "#151719",
+        foreground: "#d6d9dc",
+        cursor: "#eeb66a",
+        selectionBackground: "#5c4b35",
+        black: "#282c30",
+        red: "#e68b82",
+        green: "#a6c592",
+        yellow: "#eeb66a",
+        blue: "#8cb4dc",
+        magenta: "#bd9aca",
+        cyan: "#8bc7bf",
+        white: "#e4e4e4",
+      },
+    });
+    const fit = new FitAddon();
+    terminal.loadAddon(fit);
+    terminal.open(host.current);
+    const fail = (e: unknown) => {
+      if (!disposed) setError(String(e));
+    };
+    const write = (data: string, sequence: number) =>
+      terminal.write(data, () => {
+        if (!disposed)
+          void window.workspace
+            .invoke("session.ack", { ...identity, sequence })
+            .catch(fail);
+      });
+    const resize = () => {
+      if (!attached || !host.current?.clientWidth || !host.current.clientHeight)
+        return;
+      fit.fit();
+      void window.workspace
+        .invoke("session.resize", {
+          ...identity,
+          cols: terminal.cols,
+          rows: terminal.rows,
+        })
+        .catch(fail);
+    };
+    const attach = async () => {
+      const result = await window.workspace.invoke<{ data: string }>(
+        "session.attach",
+        identity,
+      );
+      if (disposed) {
+        await window.workspace.invoke("session.detach", identity);
+        return;
+      }
+      terminal.reset();
+      terminal.write(result.data || "", () => {
+        if (disposed) return;
+        attached = true;
+        setReady(true);
+        terminal.options.disableStdin = false;
+        if (queuedInput) {
+          const data = queuedInput;
+          queuedInput = "";
+          void window.workspace
+            .invoke("session.input", { ...identity, data })
+            .catch(fail);
+        }
+        viewerCallback.current?.(viewerId);
+        pending.splice(0).forEach((event) => write(event.data, event.sequence));
+        resize();
+      });
+    };
+    const unsubscribe = window.workspace.subscribe((event) => {
+      if (event.type === "core.status" && event.status !== "ready") {
+        attached = false;
+        queuedInput = "";
+        setReady(false);
+        terminal.options.disableStdin = true;
+        viewerCallback.current?.(null);
+      }
+      if (
+        (event.type === "terminal.data" || event.type === "terminal.resync") &&
+        event.sessionId === session.id &&
+        event.viewerId === viewerId
+      ) {
+        if (event.type === "terminal.data") {
+          if (attached) write(event.data, event.sequence);
+          else pending.push(event);
+        } else if (!resyncing) {
+          resyncing = true;
+          attached = false;
+          setReady(false);
+          pending.length = 0;
+          viewerCallback.current?.(null);
+          void window.workspace
+            .invoke("session.detach", identity)
+            .then(attach)
+            .catch(fail)
+            .finally(() => {
+              resyncing = false;
+            });
+        }
+      }
+    });
+    const observer = new ResizeObserver(resize);
+    observer.observe(host.current);
+    const input = terminal.onData((data) => {
+      if (attached)
+        void window.workspace
+          .invoke("session.input", { ...identity, data })
+          .catch(fail);
+      else if (queuedInput.length + data.length <= 4096) queuedInput += data;
+      else
+        fail(
+          "Terminal input is unavailable while reconnecting. Wait for attachment, then retry.",
+        );
+    });
+    void attach().catch(fail);
+    return () => {
+      disposed = true;
+      attached = false;
+      viewerCallback.current?.(null);
+      observer.disconnect();
+      input.dispose();
+      unsubscribe();
+      terminal.dispose();
+      void window.workspace.invoke("session.detach", identity).catch(() => {});
+    };
+  }, [session.id, session.generation, epoch]);
+  return (
+    <div className="terminal-wrap">
+      {!ready ? (
+        <div className="terminal-connection" role="status">
+          Connecting terminal…
+        </div>
+      ) : null}
+      {error ? (
+        <div className="inline-error" role="alert">
+          {error}
+        </div>
+      ) : null}
+      <div className="terminal-host" ref={host} />
+    </div>
+  );
+}
