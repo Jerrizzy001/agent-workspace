@@ -640,6 +640,33 @@ kbd {
 .foot-button:hover {
   color: var(--text);
 }
+.keep-awake {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.keep-awake input {
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+.keep-awake input:disabled {
+  cursor: progress;
+}
+.keep-awake-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.keep-awake-status {
+  color: var(--text-3);
+  font-size: 11px;
+}
+.keep-awake-status[data-active="true"] {
+  color: var(--working);
+}
 
 /* Main column */
 .main {

@@ -81,10 +81,11 @@ const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
 /**
  * Claude hook settings that record the agent's turn state as a tmux pane option.
  * The hook runs inside the session's own pane, so `$TMUX` already names the private socket.
+ * Each report also stamps `@aw_activity_at` (epoch seconds) so a working state can expire.
  */
 export function claudeActivitySettings(tmux: string): string {
   const set = (state: "running" | "needs" | "done") =>
-    `${quote(tmux)} set-option -p @aw_activity ${state} >/dev/null 2>&1 || true`;
+    `${quote(tmux)} set-option -p @aw_activity ${state} \\; set-option -p @aw_activity_at "$(date +%s)" >/dev/null 2>&1 || true`;
   const hook = (state: "running" | "needs" | "done", matcher?: string) => [
     {
       ...(matcher ? { matcher } : {}),

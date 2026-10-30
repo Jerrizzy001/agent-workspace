@@ -5,7 +5,9 @@ import { readFile } from "node:fs/promises";
 import { createSecureContext } from "node:tls";
 import { startGateway, type Gateway } from "../server/gateway";
 import { listDirectory, loginShellPath } from "./folders";
-import { COMMANDS, type Command, type CoreEvent, type RemoteConfig, type RemoteStatus } from "../shared/contracts";
+import { createPowerController } from "./power";
+import type { PowerPolicy } from "./power-policy";
+import { COMMANDS, type Command, type CoreEvent, type PowerStatus, type RemoteConfig, type RemoteStatus, type Snapshot } from "../shared/contracts";
 let window: BrowserWindow | null = null;
 let core: Electron.UtilityProcess | null = null;
 if (process.env.WORKSPACE_TEST_DATA_DIR)
@@ -22,6 +24,28 @@ let certificatePath = "";
 let keyPath = "";
 let coreStatus: RemoteStatus["coreStatus"] = "starting";
 const eventListeners = new Set<(event: CoreEvent) => void>();
+// Keep-awake demand is derived here from core snapshots only, never from renderer state.
+let power: PowerPolicy | null = null;
+let snapshotsSeen = 0;
+let powerWrites = 0;
+function powerStatus(status: PowerStatus) {
+  if (window && !window.isDestroyed()) window.webContents.send("workspace:power", status);
+}
+/** After (re)connecting to the core, load the owner preference and current sessions. */
+async function syncPower() {
+  const seen = snapshotsSeen, writes = powerWrites;
+  try {
+    const [setting, snapshot] = await Promise.all([
+      invokeCore("settings.read", { key: "keepAwake" }) as Promise<{ value: unknown }>,
+      invokeCore("snapshot") as Promise<Snapshot>,
+    ]);
+    if (!power || !core || !ready) return;
+    if (writes === powerWrites) power.setEnabled(setting.value === true);
+    if (seen === snapshotsSeen) power.setSessions(snapshot.sessions);
+  } catch {
+    /* A later snapshot event or reconnect will resynchronize. */
+  }
+}
 function remoteStatus(): RemoteStatus {
   const live = gateway?.status();
   const host = remoteConfig.host;
@@ -99,6 +123,10 @@ const pending = new Map<
 >();
 function event(value: CoreEvent) {
   if (value.type === "core.status") coreStatus = value.status;
+  if (value.type === "snapshot") {
+    snapshotsSeen++;
+    power?.setSessions(value.snapshot.sessions);
+  }
   for (const listener of eventListeners) {
     try { listener(value); } catch { /* A detached browser must not disrupt the core. */ }
   }
@@ -146,6 +174,7 @@ function startCore() {
       ready = true;
       for (const waiter of readyWaiters) waiter.resolve();
       event({ type: "core.status", status: "ready" });
+      void syncPower();
     }
     if (message.type === "result") {
       const p = pending.get(message.id);
@@ -160,6 +189,8 @@ function startCore() {
   core.on("exit", () => {
     core = null;
     ready = false;
+    // Without the core nothing proves an agent is working.
+    power?.setSessions(null);
     if (!quitting) event({ type: "core.status", status: restarts < 3 ? "restarting" : "failed" });
     for (const p of pending.values())
       p.reject(
@@ -238,6 +269,10 @@ else {
         if (ev.sender !== window?.webContents || ev.senderFrame !== window?.webContents.mainFrame)
           throw new Error("Unsupported workspace command");
         validatePayload(command, payload);
+        // The keep-awake preference changes only through workspace:power so the
+        // main process's blocker policy always matches what is stored.
+        if (command === "settings.write" && (payload as Record<string, unknown>).key === "keepAwake")
+          throw new Error("Change keep-awake through the power settings");
         return invokeCore(command, payload as Record<string, unknown>);
       },
     );
@@ -257,6 +292,18 @@ else {
       // remote gateway has no route to it.
       assertOwner(ev);
       return listDirectory(target);
+    });
+    power = createPowerController(powerStatus);
+    ipcMain.handle("workspace:power", async (ev, action: unknown, value: unknown) => {
+      assertOwner(ev);
+      if (!power) throw new Error("Power management is unavailable");
+      if (action === "status") return power.status();
+      if (action !== "setEnabled") throw new Error("Unsupported power action");
+      if (typeof value !== "boolean") throw new Error("Invalid power setting");
+      powerWrites++;
+      await invokeCore("settings.write", { key: "keepAwake", value });
+      power.setEnabled(value);
+      return power.status();
     });
     ipcMain.handle("workspace:remote", async (ev, action: unknown, value: unknown) => {
       assertOwner(ev);
@@ -347,6 +394,8 @@ else {
     quitting = true;
   });
   app.on("will-quit", (ev) => {
+    // Quitting releases the blocker even though tmux sessions keep running.
+    power?.dispose();
     if ((core || gateway) && !shutdownComplete) {
       ev.preventDefault();
       if (!shutdownStarted) {
