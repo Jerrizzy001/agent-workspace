@@ -1,15 +1,15 @@
 {
   "name": "agent-workspace",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
-  "description": "An original local desktop workspace for coding agents",
+  "description": "A desktop and secure remote browser workspace for coding agents",
   "main": "dist/desktop/main.cjs",
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "vite build && node scripts/build-desktop.mjs",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "postinstall": "electron-rebuild -f -w node-pty",
+    "postinstall": "electron-rebuild -f -w node-pty && node scripts/prepare-native.mjs",
     "package": "npm run build && electron-builder --mac dir zip --publish never",
     "smoke": "node scripts/smoke-electron.mjs",
     "smoke:ui": "node scripts/smoke-ui.mjs",
@@ -17,7 +17,18 @@
     "verify:workflows": "node scripts/verify-workflows.mjs",
     "verify:lifecycle": "node scripts/verify-lifecycle-ui.mjs",
     "verify:terminal": "node scripts/verify-terminal-modes.mjs",
-    "verify:providers": "node scripts/verify-providers.mjs"
+    "verify:providers": "node scripts/verify-providers.mjs",
+    "build:server": "vite build && node scripts/build-desktop.mjs",
+    "start:server": "node dist/server/headless.mjs",
+    "rebuild:desktop": "electron-rebuild -f -w node-pty && node scripts/prepare-native.mjs",
+    "rebuild:server": "npm rebuild node-pty && node scripts/prepare-native.mjs",
+    "verify:remote-desktop": "node scripts/verify-remote-desktop.mjs",
+    "package:server": "npm run build:server && node scripts/build-server-release.mjs",
+    "verify:server-release": "node scripts/verify-server-release.mjs",
+    "verify:linux-server": "node scripts/verify-linux-server.mjs",
+    "verify:mobile": "node scripts/verify-mobile.mjs",
+    "verify:remote-provider": "node scripts/verify-remote-provider.mjs",
+    "verify:mobile-webkit": "node scripts/verify-mobile-webkit.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "4.7.0",
@@ -29,6 +40,7 @@
     "node-pty": "1.1.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
+    "ws": "8.22.0",
     "zustand": "5.0.12"
   },
   "devDependencies": {
@@ -36,6 +48,7 @@
     "@types/node": "24.10.1",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
+    "@types/ws": "8.18.2",
     "@vitejs/plugin-react": "6.1.2",
     "electron": "45.1.0",
     "electron-builder": "26.18.0",

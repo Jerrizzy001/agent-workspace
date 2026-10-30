@@ -1,3 +1,4 @@
+import { createId } from "./id";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Plus,
@@ -14,6 +15,8 @@ import {
   FileText,
   Square,
   Activity,
+  Menu,
+  Smartphone,
 } from "lucide-react";
 import type {
   Attempt,
@@ -27,6 +30,19 @@ import type {
 import { TerminalView } from "./TerminalView";
 import { ReviewPanel } from "./ReviewPanel";
 import { CanvasView } from "./CanvasView";
+import { RemoteAccessPanel } from "./RemoteAccessPanel";
+import { isRemoteBrowser } from "./remote";
+import { registerLeaveGuard } from "./leaveWorkspace";
+import { mergeSnapshot } from "./snapshot";
+
+function savedSelection(key: string) {
+  if (!isRemoteBrowser) return "";
+  try {
+    return localStorage.getItem("workspace.selection." + key) || "";
+  } catch {
+    return "";
+  }
+}
 const initial: Snapshot = {
   projects: [],
   tasks: [],
@@ -47,17 +63,24 @@ const label = (status: TaskStatus) =>
   columns.find((c) => c.id === status)?.label;
 
 export default function App() {
+  const [drawer, setDrawer] = useState(false);
+  const [remotePanel, setRemotePanel] = useState(false);
+  const [reviewRefresh, setReviewRefresh] = useState(0);
+  const [mobilePane, setMobilePane] = useState<"terminal" | "files">(
+    "terminal",
+  );
   const [editorDirty, setEditorDirty] = useState(false);
   const canNavigate = useCallback(
     () => !editorDirty || confirm("Discard unsaved editor changes?"),
     [editorDirty],
   );
+  useEffect(() => registerLeaveGuard(canNavigate), [canNavigate]);
   const [viewerId, setViewerId] = useState<string | null>(null);
   const [attention, setAttention] = useState(false);
   const [snapshot, setSnapshot] = useState(initial);
-  const [projectId, setProjectId] = useState("");
-  const [taskId, setTaskId] = useState("");
-  const [attemptId, setAttemptId] = useState("");
+  const [projectId, setProjectId] = useState(() => savedSelection("project"));
+  const [taskId, setTaskId] = useState(() => savedSelection("task"));
+  const [attemptId, setAttemptId] = useState(() => savedSelection("attempt"));
   const [view, setView] = useState<"focus" | "board" | "canvas">("focus");
   const [modal, setModal] = useState<
     "task" | "edit-task" | "attempt" | "palette" | null
@@ -75,7 +98,7 @@ export default function App() {
       window.workspace
         .invoke<Snapshot>("snapshot")
         .then((value) => {
-          setSnapshot(value);
+          setSnapshot((current) => mergeSnapshot(current, value));
           setCore("ready");
         })
         .catch(report),
@@ -84,18 +107,37 @@ export default function App() {
   useEffect(() => {
     void reload();
     return window.workspace.subscribe((event) => {
-      if (event.type === "snapshot") setSnapshot(event.snapshot);
+      if (event.type === "snapshot")
+        setSnapshot((current) => mergeSnapshot(current, event.snapshot));
       if (event.type === "core.status") {
         setCore(event.status);
         if (event.message) setError(event.message);
-        if (event.status === "ready") void reload();
+        if (event.status === "ready") {
+          setError((current) =>
+            current.startsWith("Connection lost.") ? "" : current,
+          );
+          void reload();
+        }
       }
     });
   }, [reload]);
   useEffect(() => {
-    if (!projectId && snapshot.projects.length)
+    if (
+      snapshot.projects.length &&
+      !snapshot.projects.some((project) => project.id === projectId)
+    )
       setProjectId(snapshot.projects[0]!.id);
   }, [snapshot.projects, projectId]);
+  useEffect(() => {
+    if (!isRemoteBrowser) return;
+    try {
+      localStorage.setItem("workspace.selection.project", projectId);
+      localStorage.setItem("workspace.selection.task", taskId);
+      localStorage.setItem("workspace.selection.attempt", attemptId);
+    } catch {
+      /* Selection persistence is optional; credentials are never stored here. */
+    }
+  }, [projectId, taskId, attemptId]);
   const project = snapshot.projects.find((p) => p.id === projectId);
   const tasks = snapshot.tasks.filter((t) => t.projectId === projectId);
   const task = tasks.find((t) => t.id === taskId);
@@ -107,18 +149,25 @@ export default function App() {
   const running = attempts.filter((a) => a.status === "running").length;
   const chooseProject = (id: string) => {
     if (!canNavigate()) return;
+    setDrawer(false);
     setProjectId(id);
     setTaskId("");
     setAttemptId("");
   };
   const chooseTask = (id: string) => {
     if (!canNavigate()) return;
+    setDrawer(false);
+    setMobilePane("terminal");
     setTaskId(id);
     setAttemptId("");
     setView("focus");
   };
   const openProject = useCallback(async () => {
     if (!canNavigate()) return;
+    if (isRemoteBrowser) {
+      setDrawer(true);
+      return;
+    }
     try {
       const path = await window.workspace.chooseDirectory();
       if (path) {
@@ -186,14 +235,37 @@ export default function App() {
       window.removeEventListener("beforeunload", preventUnsavedClose);
   }, [editorDirty]);
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div
+      className={
+        "app-shell " +
+        (drawer ? "drawer-open " : "") +
+        (mobilePane === "files" ? "mobile-files" : "mobile-terminal")
+      }
+    >
+      {drawer ? (
+        <button
+          className="drawer-scrim"
+          aria-label="Close project navigation"
+          onClick={() => setDrawer(false)}
+        />
+      ) : null}
+      <aside className="sidebar" aria-label="Projects and tasks">
+        <button
+          className="drawer-close icon-button"
+          aria-label="Close project navigation"
+          onClick={() => setDrawer(false)}
+        >
+          <X size={20} />
+        </button>
         <div className="brand">
           <div className="brand-mark">
             a<span>·</span>
           </div>
           <div>
-            Agent Workspace<small>LOCAL WORKSPACE</small>
+            Agent Workspace
+            <small>
+              {isRemoteBrowser ? "CONNECTED WORKSPACE" : "LOCAL WORKSPACE"}
+            </small>
           </div>
         </div>
         <button
@@ -209,13 +281,17 @@ export default function App() {
         </button>
         <div className="section-heading">
           PROJECTS
-          <button
-            className="icon-button"
-            aria-label="Open repository"
-            onClick={() => void openProject()}
-          >
-            <Plus size={15} />
-          </button>
+          {!isRemoteBrowser ? (
+            <button
+              className="icon-button"
+              aria-label={
+                isRemoteBrowser ? "Choose server project" : "Open repository"
+              }
+              onClick={() => void openProject()}
+            >
+              <Plus size={15} />
+            </button>
+          ) : null}
         </div>
         <nav className="projects">
           {snapshot.projects.map((p) => (
@@ -230,10 +306,17 @@ export default function App() {
             </button>
           ))}
           {!snapshot.projects.length ? (
-            <button onClick={() => void openProject()}>
-              <Plus size={15} />
-              Open a repository
-            </button>
+            isRemoteBrowser ? (
+              <p className="sidebar-empty">
+                The workspace owner can share a registered repository from the
+                desktop app or server configuration.
+              </p>
+            ) : (
+              <button onClick={() => void openProject()}>
+                <Plus size={15} />
+                Open a repository
+              </button>
+            )
           ) : null}
         </nav>
         <div className="section-heading">
@@ -277,7 +360,7 @@ export default function App() {
         <div className="sidebar-bottom">
           <div className="connection">
             <span className={"tiny-dot " + (core === "failed" ? "red" : "")} />
-            Local core
+            {isRemoteBrowser ? "Workspace server" : "Local core"}
             <span>
               {core === "starting" && snapshot.projects.length
                 ? "Connected"
@@ -294,12 +377,29 @@ export default function App() {
       </aside>
       <main>
         <header className="topbar">
+          <button
+            className="mobile-menu icon-button"
+            aria-label="Open projects and tasks"
+            aria-expanded={drawer}
+            onClick={() => setDrawer(true)}
+          >
+            <Menu size={20} />
+          </button>
           <div className="breadcrumb">
             <span>Workspace</span>
             <span>/</span>
             <strong>{project?.name || "Welcome"}</strong>
           </div>
           <div className="top-actions">
+            {window.workspace.remote ? (
+              <button
+                className="icon-button"
+                aria-label="Remote access settings"
+                onClick={() => setRemotePanel(true)}
+              >
+                <Smartphone size={17} />
+              </button>
+            ) : null}
             <button
               className="live-count"
               onClick={() => setAttention((a) => !a)}
@@ -311,7 +411,12 @@ export default function App() {
               className="icon-button"
               aria-label="Toggle review panel"
               onClick={() => {
-                if (canNavigate()) setReview((r) => !r);
+                if (canNavigate()) {
+                  setReview((r) => !r);
+                  setMobilePane((pane) =>
+                    pane === "files" ? "terminal" : "files",
+                  );
+                }
               }}
             >
               <PanelLeftClose size={17} />
@@ -389,11 +494,18 @@ export default function App() {
               <br />
               Keep every attempt close to the work it belongs to.
             </p>
-            <button className="primary" onClick={() => void openProject()}>
-              <FolderOpen size={17} />
-              Open a repository
-              <ArrowUpRight size={16} />
-            </button>
+            {isRemoteBrowser ? (
+              <p className="server-project-hint">
+                No server projects are available yet. The owner can register a
+                repository in the desktop app or headless server configuration.
+              </p>
+            ) : (
+              <button className="primary" onClick={() => void openProject()}>
+                <FolderOpen size={17} />
+                Open a repository
+                <ArrowUpRight size={16} />
+              </button>
+            )}
             <div className="welcome-features">
               <span>
                 <Terminal size={16} />
@@ -701,13 +813,14 @@ export default function App() {
                     </div>
                   )}
                 </section>
-                {review ? (
+                {review || mobilePane === "files" ? (
                   <ReviewPanel
                     key={projectId + attempt?.worktreePath}
                     project={project}
                     worktreePath={attempt?.worktreePath}
                     report={report}
                     onDirtyChange={setEditorDirty}
+                    refreshRevision={reviewRefresh}
                   />
                 ) : null}
               </div>
@@ -715,7 +828,7 @@ export default function App() {
             <footer className="statusbar">
               <span>
                 <span className="tiny-dot" />
-                Local execution
+                {isRemoteBrowser ? "Execution on server" : "Local execution"}
               </span>
               <span>
                 {snapshot.capabilities
@@ -728,6 +841,51 @@ export default function App() {
           </>
         )}
       </main>
+      <nav className="mobile-navigation" aria-label="Workspace navigation">
+        <button onClick={() => setDrawer(true)}>
+          <Menu size={18} />
+          <span>Tasks</span>
+        </button>
+        <button
+          className={
+            view === "focus" && mobilePane === "terminal" ? "active" : ""
+          }
+          onClick={() => {
+            if (canNavigate()) {
+              setView("focus");
+              setMobilePane("terminal");
+            }
+          }}
+        >
+          <Terminal size={18} />
+          <span>Terminal</span>
+        </button>
+        <button
+          className={view === "board" ? "active" : ""}
+          onClick={() => {
+            if (canNavigate()) setView("board");
+          }}
+        >
+          <LayoutGrid size={18} />
+          <span>Board</span>
+        </button>
+        <button
+          className={view === "focus" && mobilePane === "files" ? "active" : ""}
+          onClick={() => {
+            if (canNavigate()) {
+              setView("focus");
+              setMobilePane("files");
+              setReviewRefresh((value) => value + 1);
+            }
+          }}
+        >
+          <FolderOpen size={18} />
+          <span>Files</span>
+        </button>
+      </nav>
+      {remotePanel ? (
+        <RemoteAccessPanel onClose={() => setRemotePanel(false)} />
+      ) : null}
       {modal === "task" || modal === "edit-task" ? (
         <TaskModal
           existing={modal === "edit-task" ? task : undefined}
@@ -779,7 +937,9 @@ export default function App() {
                   }}
                 >
                   <FolderOpen size={16} />
-                  Open repository
+                  {isRemoteBrowser
+                    ? "Choose server project"
+                    : "Open repository"}
                 </button>
               ) : null}
               {project &&
@@ -974,7 +1134,7 @@ function AttemptModal({
             }
             if (!launch.current)
               launch.current = {
-                key: crypto.randomUUID(),
+                key: createId(),
                 payload: {
                   taskId: task.id,
                   provider,

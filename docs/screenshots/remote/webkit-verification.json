@@ -1,0 +1,10 @@
+{
+  "platform": "Playwright WebKit 27.2 on macOS with synthetic touch viewports; disposable self-signed HTTPS certificate accepted by test context; physical iOS device and trusted deployment certificate not verified",
+  "browserVersion": "27.2",
+  "passed": [
+    "WebKit phone viewport pairs over HTTPS with Secure HttpOnly SameSite cookie and same-origin WSS under CSP",
+    "WebKit touch controls create a task and one shell; keyboard text and Enter create a real host file without body overflow",
+    "WebKit reload restores the existing session and generation; landscape remains responsive",
+    "WebKit sign out revokes access and clears private UI"
+  ]
+}

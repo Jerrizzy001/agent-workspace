@@ -134,8 +134,9 @@ try {
     });
   });
   await type(
-    `python3 -c 'import sys,time; [(sys.stdout.write("line %05d " % i + "x"*200 + "\\n"),sys.stdout.flush(),time.sleep(0.0005)) for i in range(10000)]; print("RESYNC_"+"COMPLETE_765")'`,
+    `printf '%s%s\\n' 'SLOW_FIXTURE_' 'STARTED'; python3 -c 'import sys,time; [(sys.stdout.write("line %05d " % i + "x"*200 + "\\n"),sys.stdout.flush(),time.sleep(0.0005)) for i in range(10000)]; print("RESYNC_"+"COMPLETE_765")'`,
   );
+  await screenIncludes("SLOW_FIXTURE_STARTED");
   await page.evaluate(() => {
     const until = Date.now() + 8500;
     while (Date.now() < until) {}

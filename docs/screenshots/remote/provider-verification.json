@@ -1,0 +1,18 @@
+{
+  "passed": true,
+  "verifiedAt": "2026-10-30T17:42:10.038Z",
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "cliVersion": "codex-cli 0.166.0",
+  "attemptId": "7d05e658-2f7e-4050-8932-7c21632e03fe",
+  "sessionId": "7a83c11b-bc1f-4aee-bea1-df2e1db94bae",
+  "generation": 1,
+  "panePid": "39194",
+  "executionCount": 1,
+  "proofSha256": "8d6d176e3b53377986fd8504bdd3faa4a972b2df8c791cefeb723ee70251cd1b",
+  "checks": [
+    "attempt launched once through authenticated phone-sized browser gateway into disposable managed worktree",
+    "exact requested file and one append-only execution line verified through remote file API",
+    "browser disconnect/reconnect retains exact attempt, session, generation and tmux pane PID with no prompt redelivery"
+  ]
+}

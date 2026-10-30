@@ -1,7 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, utilityProcess } from "electron";
 import path from "node:path";
 import os from "node:os";
-import { COMMANDS, type CoreEvent } from "../shared/contracts";
+import { readFile } from "node:fs/promises";
+import { createSecureContext } from "node:tls";
+import { startGateway, type Gateway } from "../server/gateway";
+import { COMMANDS, type Command, type CoreEvent, type RemoteConfig, type RemoteStatus } from "../shared/contracts";
 let window: BrowserWindow | null = null;
 let core: Electron.UtilityProcess | null = null;
 if (process.env.WORKSPACE_TEST_DATA_DIR)
@@ -10,6 +13,53 @@ let quitting = false;
 let ready = false;
 let shutdownComplete = false;
 let shutdownStarted = false;
+let gateway: Gateway | null = null;
+let gatewayMutation = false;
+let sharedProjects: RemoteStatus["sharedProjects"] = [];
+let remoteConfig: RemoteConfig = { host: "127.0.0.1", port: 4318, tls: false };
+let certificatePath = "";
+let keyPath = "";
+let coreStatus: RemoteStatus["coreStatus"] = "starting";
+const eventListeners = new Set<(event: CoreEvent) => void>();
+function remoteStatus(): RemoteStatus {
+  const live = gateway?.status();
+  const host = remoteConfig.host;
+  return {
+    enabled: !!gateway, host, port: live?.port ?? remoteConfig.port,
+    url: live?.url || "", publicOrigin: remoteConfig.publicOrigin,
+    tls: remoteConfig.tls, coreStatus, sharedProjects,
+    certificateName: certificatePath ? path.basename(certificatePath) : undefined,
+    keyName: keyPath ? path.basename(keyPath) : undefined,
+  };
+}
+function assertOwner(ev: Electron.IpcMainInvokeEvent) {
+  if (ev.sender !== window?.webContents || ev.senderFrame !== window?.webContents.mainFrame)
+    throw new Error("Invalid sender");
+}
+function validatePayload(command: unknown, payload: unknown): asserts command is Command {
+  if (!COMMANDS.includes(command as Command)) throw new Error("Unsupported workspace command");
+  if (!payload || typeof payload !== "object" || Array.isArray(payload) || JSON.stringify(payload).length > 2_000_000)
+    throw new Error("Invalid payload");
+}
+async function invokeCore(command: Command, payload: Record<string, unknown> = {}): Promise<unknown> {
+  validatePayload(command, payload);
+  if (quitting) throw new Error("Workspace is shutting down");
+  if (!ready) await waitForCore();
+  if (!core) throw new Error("Core is reconnecting");
+  const id = ++requestId;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      reject(new Error("Core request timed out; mutation outcome may be unknown. Inspect state before retrying."));
+    }, 60000);
+    pending.set(id, {
+      resolve: value => { clearTimeout(timer); resolve(value); },
+      reject: error => { clearTimeout(timer); reject(error); },
+    });
+    try { core!.postMessage({ type: "invoke", id, command, payload }); }
+    catch (error) { pending.delete(id); clearTimeout(timer); reject(error); }
+  });
+}
 const readyWaiters = new Set<{
   resolve: () => void;
   reject: (error: Error) => void;
@@ -47,6 +97,10 @@ const pending = new Map<
   { resolve: (v: unknown) => void; reject: (e: Error) => void }
 >();
 function event(value: CoreEvent) {
+  if (value.type === "core.status") coreStatus = value.status;
+  for (const listener of eventListeners) {
+    try { listener(value); } catch { /* A detached browser must not disrupt the core. */ }
+  }
   if (window && !window.isDestroyed())
     window.webContents.send("workspace:event", value);
 }
@@ -94,6 +148,7 @@ function startCore() {
   core.on("exit", () => {
     core = null;
     ready = false;
+    if (!quitting) event({ type: "core.status", status: restarts < 3 ? "restarting" : "failed" });
     for (const p of pending.values())
       p.reject(
         new Error(
@@ -167,49 +222,11 @@ else {
     ipcMain.handle(
       "workspace:invoke",
       async (ev, command: unknown, payload: unknown = {}) => {
-        if (
-          ev.sender !== window?.webContents ||
-          ev.senderFrame !== window?.webContents.mainFrame ||
-          !COMMANDS.includes(command as any)
-        )
+        // Only the active local window's main frame may cross this IPC boundary.
+        if (ev.sender !== window?.webContents || ev.senderFrame !== window?.webContents.mainFrame)
           throw new Error("Unsupported workspace command");
-        if (
-          !payload ||
-          typeof payload !== "object" ||
-          Array.isArray(payload) ||
-          JSON.stringify(payload).length > 2_000_000
-        )
-          throw new Error("Invalid payload");
-        if (!ready) await waitForCore();
-        if (!core) throw new Error("Core is reconnecting");
-        const id = ++requestId;
-        return new Promise((resolve, reject) => {
-          const timer = setTimeout(() => {
-            pending.delete(id);
-            reject(
-              new Error(
-                "Core request timed out; mutation outcome may be unknown. Inspect state before retrying.",
-              ),
-            );
-          }, 60000);
-          pending.set(id, {
-            resolve: (value) => {
-              clearTimeout(timer);
-              resolve(value);
-            },
-            reject: (error) => {
-              clearTimeout(timer);
-              reject(error);
-            },
-          });
-          try {
-            core!.postMessage({ type: "invoke", id, command, payload });
-          } catch (error) {
-            pending.delete(id);
-            clearTimeout(timer);
-            reject(error);
-          }
-        });
+        validatePayload(command, payload);
+        return invokeCore(command, payload as Record<string, unknown>);
       },
     );
     ipcMain.handle("workspace:chooseDirectory", async (ev) => {
@@ -222,6 +239,82 @@ else {
         properties: ["openDirectory"],
       });
       return result.canceled ? null : result.filePaths[0];
+    });
+    ipcMain.handle("workspace:remote", async (ev, action: unknown, value: unknown) => {
+      assertOwner(ev);
+      if (action === "status") return remoteStatus();
+      if (action === "pairingSecret") {
+        if (!gateway) throw new Error("Enable remote access first");
+        return gateway.pairingSecret();
+      }
+      if (action === "revokeSessions") {
+        if (!gateway) throw new Error("Remote access is stopped");
+        await gateway.revokeSessions();
+        return;
+      }
+      if (gatewayMutation) throw new Error("Remote access is changing; try again shortly");
+      gatewayMutation = true;
+      try {
+        if (action === "chooseTLSFile") {
+          if (value !== "certificate" && value !== "key") throw new Error("Invalid TLS file kind");
+          const result = await dialog.showOpenDialog(window!, {
+            title: value === "certificate" ? "Choose TLS certificate (PEM)" : "Choose TLS private key (PEM)",
+            properties: ["openFile"], filters: [{ name: "PEM files", extensions: ["pem", "crt", "key", "cert"] }],
+          });
+          if (!result.canceled) {
+            if (value === "certificate") certificatePath = result.filePaths[0];
+            else keyPath = result.filePaths[0];
+          }
+          return remoteStatus();
+        }
+        if (action === "disable") {
+          if (gateway) await gateway.stop();
+          gateway = null;
+          return remoteStatus();
+        }
+        if (action !== "enable") throw new Error("Unsupported remote management action");
+        if (gateway) throw new Error("Stop remote access before changing its settings");
+        if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid remote settings");
+        const v = value as Record<string, unknown>;
+        if (Object.keys(v).some(key => !["host", "port", "publicOrigin", "tls"].includes(key)) ||
+          typeof v.host !== "string" || !v.host || v.host.length > 255 ||
+          !Number.isSafeInteger(v.port) || Number(v.port) < 0 || Number(v.port) > 65535 || typeof v.tls !== "boolean" ||
+          (v.publicOrigin !== undefined && typeof v.publicOrigin !== "string")) throw new Error("Invalid remote settings");
+        const config = { host: v.host, port: Number(v.port), tls: v.tls, publicOrigin: v.publicOrigin || undefined } as RemoteConfig;
+        const loopback = config.host === "127.0.0.1" || config.host === "::1" || config.host === "localhost";
+        if (!loopback && !config.tls) throw new Error("A network listener requires TLS. Choose a certificate and key, or keep loopback for a secure tunnel.");
+        if (!loopback && !config.publicOrigin) throw new Error("Enter the HTTPS browser address matching your certificate for network access");
+        if (config.publicOrigin) {
+          const url = new URL(config.publicOrigin);
+          if ((url.protocol !== "https:" && !(loopback && url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))) || url.username || url.password || url.search || url.hash || url.pathname !== "/")
+            throw new Error("Public address must be an HTTPS origin without a path, query or credentials");
+          config.publicOrigin = url.origin;
+        }
+        let tls;
+        if (config.tls) {
+          if (!certificatePath || !keyPath) throw new Error("Choose a TLS certificate and private key first");
+          const [cert, key] = await Promise.all([readFile(certificatePath), readFile(keyPath)]);
+          if (cert.length > 1024 * 1024 || key.length > 1024 * 1024) throw new Error("TLS file is too large");
+          createSecureContext({ cert, key });
+          tls = { cert, key };
+        }
+        await waitForCore();
+        const sharing = await invokeCore("snapshot") as import("../shared/contracts").Snapshot;
+        if (!sharing.projects.length) throw new Error("Open a project before enabling remote access");
+        const started = await startGateway({
+          dataDir: app.getPath("userData"), invoke: invokeCore,
+          allowedProjectIds: sharing.projects.map(p => p.id),
+          subscribe: listener => { eventListeners.add(listener); return () => { eventListeners.delete(listener); }; },
+          host: config.host, port: config.port, tls,
+          publicOrigin: config.publicOrigin,
+          staticDir: path.join(__dirname, "../renderer"),
+        });
+        if (quitting) { await started.stop(); throw new Error("Workspace is shutting down"); }
+        remoteConfig = config;
+        sharedProjects = sharing.projects.map(p => ({ id: p.id, name: p.name }));
+        gateway = started;
+        return remoteStatus();
+      } finally { gatewayMutation = false; }
     });
     startCore();
     createWindow();
@@ -236,13 +329,16 @@ else {
     quitting = true;
   });
   app.on("will-quit", (ev) => {
-    if (core && !shutdownComplete) {
+    if ((core || gateway) && !shutdownComplete) {
       ev.preventDefault();
       if (!shutdownStarted) {
         shutdownStarted = true;
         // Let accepted editor/note writes finish before closing the database.
         // beforeunload protects changes that have not reached this bridge yet.
         void (async () => {
+          // Close HTTP/WS clients before closing the one shared utility core.
+          if (gateway) { await gateway.stop(); gateway = null; }
+          if (!core) { shutdownComplete = true; app.quit(); return; }
           await new Promise<void>((resolve) => setImmediate(resolve));
           const deadline = Date.now() + 2000;
           while (pending.size && Date.now() < deadline)

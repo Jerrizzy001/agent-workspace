@@ -22,12 +22,14 @@ type Props = {
   worktreePath?: string;
   report: (e: unknown) => void;
   onDirtyChange?: (dirty: boolean) => void;
+  refreshRevision?: number;
 };
 export function ReviewPanel({
   project,
   worktreePath,
   report,
   onDirtyChange,
+  refreshRevision = 0,
 }: Props) {
   const request = useRef(0);
   const refreshTicket = useRef(0);
@@ -97,7 +99,7 @@ export function ReviewPanel({
   }, [project.id, worktreePath]);
   useEffect(() => {
     void refresh();
-  }, [project.id, worktreePath, directory]);
+  }, [project.id, worktreePath, directory, refreshRevision]);
   function canDiscard() {
     return (
       !selected ||
@@ -135,7 +137,7 @@ export function ReviewPanel({
       }
       const value = await window.workspace.invoke<string | { diff: string }>(
         "git.diff",
-        { ...scope, path, paths: [path], staged },
+        { ...scope, path, staged },
       );
       if (ticket !== request.current) return;
       setDiff(

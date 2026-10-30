@@ -1,74 +1,54 @@
-# Agent Workspace 0.1.1 verification evidence
+# Agent Workspace 0.2.0 verification evidence
 
-Date: 2026-10-30. Target: macOS arm64. Distribution: unsigned internal alpha.
+Date: 2026-10-30. Distribution: unsigned internal alpha. Desktop target: macOS arm64. Standalone host targets exercised: macOS arm64 and Linux aarch64.
 
-## Artifact
+## Artifacts
 
-- Application: `release/mac-arm64/Agent Workspace.app`.
-- Archive: `release/Agent Workspace-0.1.1-arm64-mac.zip` (145,502,727 bytes).
-- Archive SHA-256: `9fd673950ba33e3f343f60ab6576279210e449fa9df0a5e9b3c281b7ca9946c8`.
-- Bundled `app.asar` SHA-256: `8344a4fdbaa8214949f65fe82dfadd175b7d9f70e60ec02d78ea65bc5561c401`.
-- The packaged application was copied outside the checkout to `/tmp/agent-workspace-0.1.1-gca3nS/Agent Workspace.app`. Its `app.asar` hash matched the release application. Every packaged check below used this copied executable with `WORKSPACE_DEV_URL` unset.
-- The copied runtime reported application version 0.1.1, `app.isPackaged === true`, Electron 45.1.0, Node.js 24.22.1 and arm64. Electron-builder rebuilt node-pty 1.1.0 for this Electron version. Actual native PTY and SQLite operations passed in the copied application. tmux 3.8 was installed locally; tmux remains an external prerequisite.
-- Signing was explicitly disabled. The build uses the default Electron application icon and has no updater.
+| Artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `release/Agent Workspace-0.2.0-arm64-mac.zip` | 145,579,784 | `850bcbad5e13d3f06b84adfdeb37feee4f7f4ad1551b92b6c925c9fed9de9f05` |
+| `release/agent-workspace-server-0.2.0.tar.gz` | 3,683,484 | `de575598bd0ea1c5d7a42f20b177cbf168225c351f2f2b8bab340b7b8585457e` |
+| Packaged `app.asar` | 163,540,975 | `e5959189a3a6b550f9e1721d34c3e58df60ffe8d9e02902f1047d89ae7d26397` |
 
-## Source and dependency gates
+The application was copied outside the checkout with `ditto` to a disposable temporary directory. Its `app.asar` hash matched the release copy. The copied runtime reported application version 0.2.0, `app.isPackaged === true`, Electron 45.1.0, Node.js 24.22.1 and arm64. Electron-builder rebuilt node-pty 1.1.0 for the packaged Electron runtime. Signing is explicitly disabled; the default Electron application icon remains.
 
-- `npm run typecheck`: passed on final source.
-- `npm test`: 16/16 passed on final source. Coverage includes durable metadata and worktrees; generation/viewer ownership; literal provider arguments and model overrides; bounded terminal streams and legitimate in-flight acknowledgments; exact ordered xterm rows from a real tmux burst; Git literal filenames, rename/index/unborn-branch behavior; symlink/root boundaries, raw-byte save conflicts and UTF-8 validation; legacy socket recovery; startup failure and real process-crash/concurrent ownership recovery.
-- The core reviewer repeated the real SIGKILL/concurrent-process ownership regression ten times successfully before the final full suite.
-- `npm audit`: zero vulnerabilities across production and development dependencies.
-- `git diff --check`: passed.
-- `npm run package`: passed, including the renderer/desktop build and native dependency rebuild. Dependencies are pinned in `package-lock.json`. Vite reports large locally bundled Monaco chunks; no performance budget or size optimization claim is made.
+These final artifacts include the note snapshot/remount fix. The final copied application passed smoke, native lifecycle, remote desktop recovery and live remote Codex checks. The final standalone archive passed a fresh independent `npm ci` and browser/native-PTY smoke. The final browser bundle passed the expanded mobile note regression. Exact final results and hashes are in [release-verification.json](screenshots/remote/release-verification.json). The retained 0.1.1 rollback zip has SHA-256 `9fd673950ba33e3f343f60ab6576279210e449fa9df0a5e9b3c281b7ca9946c8`.
 
-## Packaged acceptance
+## Behavior and architecture
 
-All runners use disposable repositories and isolated application data. The following copied-application checks passed serially:
+The desktop gateway reuses its existing utility core, SQLite database, registered projects and tmux sessions. It does not create a second core. The gateway begins off on every application launch. Management IPC accepts only the active desktop window's main frame. Pairing is revealed only through that local interface; TLS files are chosen through native file pickers. The desktop panel lists the projects shared when access was enabled. Adding a project requires stopping and enabling access again to share it.
 
-| Command | Observed result |
-| --- | --- |
-| `npm run smoke` | Real preload/utility IPC, SQLite-backed project/task records, native shell input and capture, Git diff, managed worktree creation, explicit quit/reopen of the same backend, and termination. |
-| `npm run verify:desktop` | Invalid command/payload rejection, payload size bound, foreign-window bridge rejection, popup denial, three actual killed-core restarts with new core PIDs and unchanged session generation, fourth-crash retry exhaustion with prompt request failure, and reopening the same persistent terminal. |
-| `npm run smoke:ui` | Task/attempt controls, actual xterm typing, killed-core recovery, native window-close and application-Quit cancellation for a dirty editor, successful core recovery after the cancelled Quit, board status, canvas note and local Monaco editing/save. |
-| `npm run verify:workflows` | 15 workflow groups: task editing/revisions/status; board selection and drag; immediate terminal input/resize; canvas notes/drag/undo/redo; optimistic editor save and cancelled project navigation; external-file conflict/reload; staged/unstaged/untracked diff; stage/unstage/commit; worktree creation; immutable failed-launch retry; distinct attempts/worktrees/sessions; multiple projects; and file editing in a non-Git directory. |
-| `npm run verify:lifecycle` | Six groups: injected unknown-state UI reconnects to an actual existing shell without a new attempt; natural/explicit exit remounts without a spinner; independent visible provider model values and blank CLI inheritance; note autosave without blur; and immediate close of a focused note, persistence protection and recovery after application restart. |
-| `npm run verify:terminal` | Seven groups: Unicode and ANSI alternate screen; redraw across board/canvas/focus; normal-buffer restoration; distinct ordered final rows matching actual tmux capture; 10,000-line burst followed by successful typing; forced bounded-stream resynchronization with matching rows and no alert/spinner; and a complete command through the terminal's DOM clipboard-paste handler after resync. No system clipboard contents were read. |
+A paired browser has host-account workspace control through a named-command protocol. The gateway enforces owner cookie authentication, exact Host/Origin checks, a fixed project allowlist, command fields, session generations, per-connection viewer identities, message and queue limits, and bounded terminal output. Browser cookies are HttpOnly, SameSite=Strict and Secure over HTTPS, expire after 12 hours, and are separate for independent gateways on one host name. Revocation closes active connections, invalidates cookies and rotates the pairing code. Pairing codes are kept in an owner-only local file and are absent from HTTP routes, URLs and logs.
 
-The final terminal runner uses key typing and explicitly checks textarea focus. Earlier development checks using CDP `insertText` sometimes failed to deliver complete commands; the final serialized packaged run passed exact row comparisons and subsequent typed/pasted command checks. Screenshots of the copied application's focus/editor, workflow canvas, model modal, reopened focused note and clean resynchronized terminal were independently inspected. A black scrollbar/viewport strip at the terminal bottom remains a cosmetic issue.
+Non-loopback listeners require TLS. Private-network HTTPS and an HTTPS reverse proxy are documented; no tunnel, DNS record, public listener or external service is configured automatically. The browser client disables input during disconnection, clears unsent buffers, never replays uncertain input and reattaches existing sessions after reconnection. Touch controls use xterm's bracketed-paste and application-cursor modes.
 
-Acceptance fixture identifiers: `workspace-smoke-Dm7zu0`, `workspace-desktop-bKBMqg`, `workspace-ui-mjRMFn`, `agent-workflows-YQv3Wo`, `agent-lifecycle-ui-Le19XY`, and `agent-terminal-modes-U8PWFW`. These temporary fixtures are verification records, not application data shipped in the archive. Each runner closes its own application and cleans only its exact fixture's sessions/socket; no global tmux cleanup is used.
+The standalone server archive contains a bundled Node entrypoint, the same browser assets and PWA files, a minimal package manifest and lock, and a native-helper permission repair. Its dependencies are installed for the destination host's Node runtime; it has no Electron dependencies or Electron rebuild hooks.
 
-To repeat an individual packaged check:
+## Verification
 
-```sh
-WORKSPACE_APP_EXECUTABLE="/path/to/Agent Workspace.app/Contents/MacOS/Agent Workspace" npm run smoke
-```
+All fixture checks use disposable repositories, isolated data directories and exact fixture cleanup. Core ownership, terminal and desktop UI checks are serialized when they share the desktop/native runtime.
 
-Substitute any other local verification command from the table. Run UI checks serially.
+- TypeScript typecheck passed. All 29 tests passed, including the original 16 regressions and two final note snapshot tests. Gateway tests exercise real HTTP/HTTPS and WebSocket connections, unauthorized clients, project and viewer isolation, scoped snapshots, origin and static-path rejection, secure cookies, independent gateway cookies, revocation/login races, session expiry during authorization, bounded queued mutations and RPC flooding.
+- The original desktop, smoke, visible UI, workflows, lifecycle and terminal suites passed after the remote changes. The lifecycle fixture now waits for a completed reconnect before typing. It separately verifies no-blur note autosave, then a cancelled native close retaining the exact draft, a user refocus and append without replacing content, and exact persistence after reopening. It does not require the operating system to preserve DOM focus through native close cancellation. The board fixture waits for the async status move before dragging. The forced-resync fixture waits for an emitted marker before blocking the renderer, so its command has actually reached the shell despite input batching.
+- The desktop remote fixture verifies default-off state, insecure network rejection and foreign-window management rejection; a phone-sized Chrome browser pairs using the desktop's bundled assets; the authenticated remote protocol sees the same desktop session ID, generation, shell PID and output; a real utility-process crash emits reconnect/recovery events; revoke closes active sockets, clears private browser UI and rotates pairing; stopping the gateway leaves the desktop shell alive.
+- Canvas notes keep a controlled local draft independent of incoming snapshots, serialize saves and fence older snapshots using acknowledged metadata. App snapshot delivery retains newer versions of notes still present in the incoming project scope, while accepting removals and other incoming fields. The regression delays save acknowledgement by 600ms, continues typing after a cancelled unload, injects stale event and reload snapshots, remounts the canvas, verifies removed notes stay removed, then checks exact UI/core content, immediate sign-out flush and browser restart. The native fixture also verifies continued typing and exact note persistence after actual application quit/reopen.
+- Chrome 156.0.8078.79 passed all 14 browser workflow groups at touch phone viewports and desktop width: pairing, task/shell creation, preserved provider model fields, terminal input, bracketed multiline paste, normal/application cursor modes, note flush, files/board/canvas, portrait/landscape/keyboard-height resizing, actual offline input rejection, full browser restart with unchanged PID, two-client streams and resync, scoped worktree file save/diff, static-only PWA cache and dirty sign-out cancellation. The final 10,000-line stream produced one real resync, zero transport disconnections and 22 distinct final rows (9978–9999) matching tmux. All seven refreshed Chrome screenshots were visually inspected.
+- WebKit 27.2 passed four groups over fixture HTTPS/WSS: Secure/HttpOnly/SameSite pairing cookies under CSP, touch task/shell creation and real file-producing input, reload preserving session/generation with responsive landscape, and sign-out clearing private UI. JSON evidence and inspected screenshots are under `docs/screenshots/remote/`.
+- A fresh standalone archive was extracted outside the source checkout and installed with `npm ci`. Its own native PTY, browser pairing, real shell input/capture and PWA manifest worked without the checkout's dependencies. This caught and fixed the executable permission on node-pty's published macOS spawn helper.
+- The standalone archive also ran inside an isolated, unprivileged Linux aarch64 container using the official image `node:24-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c`, Node.js v24.22.2 and tmux 3.3a. A disposable, self-signed HTTPS listener was published only to the Mac's loopback interface. A phone-sized Chrome context with fixture-only certificate trust paired, launched a real Linux shell and edited a file. Terminating and restarting only the host process preserved the exact tmux session ID, generation and pane PID; the browser re-paired and successfully sent further input. The fixture container and its image tag were removed.
 
-## Live packaged provider execution and recovery
+The browser client is a responsive web app with installable PWA metadata and reconnect/offline status while the app is open. Only static assets are cached; HTML and API responses are not cached. A fresh offline launch is not supported. It is not a native iOS or Android application. WebKit/Chromium checks use desktop browser engines and phone viewport/touch emulation. No physical phone, mobile soft keyboard, public Internet route, external tunnel installation, Intel Mac or Linux x86_64 installation is claimed. Linux provider CLIs were not tested or given host credentials.
 
-`npm run verify:providers` passed once against the final copied application, using existing installed CLI authentication:
+## Live remote provider evidence
 
-| CLI | Explicit per-attempt model | Exact file edit | Execution count after restart | Live process recovery |
-| --- | --- | --- | --- | --- |
-| Claude Code 2.1.314 | `claude-opus-4-6` | Passed | Exactly one appended line | Same session ID, generation and tmux pane PID |
-| Codex CLI 0.166.0 | `gpt-6.1-sol` | Passed | Exactly one appended line | Same session ID, generation and tmux pane PID |
+The final copied packaged application launched exactly one Codex `gpt-6.1-sol` task using the host's existing authentication and codex-cli 0.166.0 at 2026-10-30 17:42 UTC. A paired phone-sized Chrome browser invoked the gateway, which launched the attempt through the desktop's existing core into a disposable managed worktree. The model created the exact requested newline-terminated proof file and appended exactly one execution line; the original repository remained unchanged. Closing and reopening the browser preserved the attempt ID, session ID, generation 1 and tmux pane PID 39194, with the execution count still one after reconnection. The fixture then terminated its session and removed its exact tmux socket. The durable result is [provider-verification.json](screenshots/remote/provider-verification.json).
 
-The application created a separate managed worktree for each provider in disposable fixture `workspace-provider-JCCZ0W`. Each real model created the exact requested `provider-proof.txt` and appended one line to `run-count.txt`. The harness detached both views, explicitly quit/reopened the application, and checked unchanged attempt IDs, terminal session IDs, generations and actual pane process IDs. After reopening, both proof files remained exact and both execution counts remained one. This establishes live provider file editing and recovery of the existing interactive CLI process without observed prompt resubmission. The harness then terminated both fixture sessions and closed the application.
+## Prior provider evidence
 
-The Codex installation update from 0.145.0 to 0.166.0 was explicitly authorized by the user. Claude Code self-updated from 2.1.282 to 2.1.314. No global model/auth settings were manually edited; explicit per-attempt model flags were used. Fixture-only trust prompts were accepted. No permission-bypass flags or billing/extra-usage enablement were used. Provider trust prompts may persist trusted-folder entries through the CLI itself. The application does not install or upgrade provider CLIs.
+The 0.1.1 live Claude and Codex file-edit and process-continuity proof is preserved in [the previous release evidence](release-evidence-0.1.1.md). Those checks used the same core provider-launch path and existing local authentication. They do not establish remote provider execution by themselves. The remote provider check is a separate opt-in command that can consume model usage.
 
-The live runner consumes provider usage and is intentionally separate from the ordinary test gates:
+## Reproduction
 
-```sh
-WORKSPACE_APP_EXECUTABLE="/path/to/Agent Workspace.app/Contents/MacOS/Agent Workspace" \
-WORKSPACE_VERIFY_MODELS='{"claude":"claude-opus-4-6","codex":"gpt-6.1-sol"}' \
-npm run verify:providers
-```
+`npm run package` produces the unsigned macOS app and zip. `npm run package:server` produces the standalone server archive. `npm run verify:remote-desktop`, `npm run verify:mobile`, `npm run verify:server-release` and `npm run verify:linux-server` exercise the new paths. Docker checks honor the current Docker context or `WORKSPACE_DOCKER_HOST`; browser checks use installed Chrome unless a browser channel is supplied. `WORKSPACE_APP_EXECUTABLE` selects a copied packaged app for desktop fixtures. Run desktop UI checks serially.
 
-## Scope and limits
-
-This release implements a local desktop alpha. Remote/mobile access, collaboration, provider conversation resume, structured approval handling, usage accounting, signed/notarized distribution and automatic updates are not implemented. Terminal integration uses the provider's own interactive interface and permissions. The session recovery proven here is continuity of a live tmux-backed process after view remount, core crashes or application quit/reopen; it is not provider conversation reconstruction after process death or reboot.
-
-No reboot test, long-running soak, performance budget, cross-machine install or Intel macOS build was completed. A reboot ends live processes. The checks do not establish every possible terminal program, provider prompt, permission interaction, model, future CLI version or operating-system configuration. Authentication and inference availability still depend on the installed providers and the user's account.
+The package remains an alpha with no signing, notarization, updater, collaboration roles, provider-specific structured approvals, usage accounting, reboot continuity or performance-budget claim. Live processes continue in tmux across view disconnects and host-process restarts; a reboot ends those processes. Vite reports large locally bundled Monaco chunks. Project shell access retains the host account's normal permissions.

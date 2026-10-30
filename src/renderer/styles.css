@@ -1322,3 +1322,688 @@ main {
   margin-left: 12px;
   font-size: 10px;
 }
+
+/* Browser transport and mobile controls share the desktop workspace components. */
+.mobile-menu,
+.mobile-navigation,
+.drawer-close,
+.drawer-scrim,
+.terminal-keys {
+  display: none;
+}
+.browser-workspace {
+  height: var(--visual-height, 100dvh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.browser-workspace > .app-shell {
+  height: auto;
+  flex: 1;
+  min-height: 0;
+}
+.remote-bar {
+  min-height: 31px;
+  padding: 5px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #3e4340;
+  color: #adb8ad;
+  font-size: 10px;
+  background: #202723;
+}
+.remote-bar > span,
+.remote-bar button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.remote-bar.is-disconnected {
+  background: #3b3022;
+  color: #e0c39b;
+}
+.network-toast {
+  position: fixed;
+  z-index: 25;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: min(90vw, 420px);
+  padding: 13px 16px;
+  background: #3b3022;
+  border: 1px solid #8c6d42;
+  border-radius: 7px;
+  color: #e6c99f;
+  font-size: 12px;
+}
+.pairing-screen {
+  min-height: var(--visual-height, 100dvh);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(ellipse at 75% 20%, #302b22, #151718 65%);
+}
+.pairing-card {
+  width: min(100%, 400px);
+}
+.pairing-logo {
+  font:
+    70px Georgia,
+    serif;
+  letter-spacing: -10px;
+  color: var(--amber);
+  margin-bottom: 34px;
+}
+.pairing-card h1 {
+  font-size: 33px;
+  font-weight: 450;
+  letter-spacing: -1.1px;
+  line-height: 1.15;
+  margin: 15px 0;
+}
+.pairing-card p {
+  color: #a1a3a2;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.pairing-card label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 28px 0 11px;
+  color: #d4c3a7;
+}
+.pairing-card input,
+.pairing-card > button {
+  width: 100%;
+  min-height: 48px;
+  font-size: 16px;
+}
+.pairing-card > button {
+  margin-top: 15px;
+}
+.pairing-card .pairing-footnote {
+  font-size: 11px;
+  margin-top: 28px;
+}
+.pairing-card .pairing-error {
+  color: #e5b0a2;
+}
+.terminal-paste {
+  padding: 12px;
+  background: #262a2b;
+  border: 1px solid #535b59;
+}
+.terminal-paste label {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.terminal-paste label span {
+  display: block;
+  font-size: 10px;
+  color: #b9a68d;
+  margin-top: 5px;
+}
+.terminal-paste textarea {
+  width: 100%;
+  height: 80px;
+  font:
+    16px Menlo,
+    monospace;
+}
+.terminal-paste > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 15px;
+  margin-top: 8px;
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    height: 100dvh;
+  }
+  .sidebar {
+    position: fixed;
+    z-index: 42;
+    inset: 0 auto 0 0;
+    width: min(330px, calc(100vw - 46px));
+    padding-top: max(26px, env(safe-area-inset-top));
+    padding-bottom: env(safe-area-inset-bottom);
+    transform: translateX(-100%);
+    transition: transform 180ms ease-out;
+    visibility: hidden;
+  }
+  .drawer-open .sidebar {
+    transform: translateX(0);
+    visibility: visible;
+  }
+  .drawer-scrim {
+    display: block;
+    position: fixed;
+    z-index: 41;
+    inset: 0;
+    background: #0009;
+    backdrop-filter: blur(3px);
+  }
+  .drawer-close {
+    display: flex;
+    position: absolute;
+    right: 9px;
+    top: 9px;
+    width: 40px;
+    height: 40px;
+  }
+  .sidebar .brand {
+    margin-right: 32px;
+  }
+  .sidebar .section-heading {
+    font-size: 10px;
+  }
+  .sidebar .task-link {
+    min-height: 64px;
+  }
+  .task-link > div > span {
+    font-size: 14px;
+  }
+  .task-link small {
+    font-size: 11px;
+  }
+  .sidebar .projects > button {
+    min-height: 46px;
+    font-size: 14px;
+  }
+  .sidebar .icon-button {
+    min-width: 36px;
+    min-height: 36px;
+  }
+  .sidebar-bottom > button {
+    min-height: 36px;
+  }
+  .app-shell > main {
+    padding-bottom: calc(58px + env(safe-area-inset-bottom));
+  }
+  .mobile-menu {
+    display: inline-flex;
+    width: 44px;
+    height: 44px;
+    margin-left: -7px;
+    flex-shrink: 0;
+  }
+  .topbar {
+    height: 57px;
+    padding: 0 13px;
+    gap: 8px;
+  }
+  .breadcrumb {
+    min-width: 0;
+    flex: 1;
+    gap: 7px;
+    font-size: 12px;
+  }
+  .breadcrumb > span {
+    display: none;
+  }
+  .breadcrumb strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .top-actions {
+    gap: 7px;
+  }
+  .top-actions > .icon-button {
+    display: none;
+  }
+  .top-actions .live-count {
+    font-size: 11px;
+    min-height: 44px;
+  }
+  .top-actions .primary.small {
+    min-height: 38px;
+    font-size: 11px;
+    padding: 8px 10px;
+  }
+  .workspace-heading {
+    padding: 14px 16px 12px;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .workspace-heading > div:first-child {
+    min-width: 0;
+  }
+  .workspace-heading .eyebrow {
+    font-size: 8px;
+  }
+  .workspace-heading h1 {
+    font-size: 18px;
+    margin: 6px 0;
+  }
+  .workspace-heading p {
+    max-width: 250px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 9px;
+  }
+  .view-tabs {
+    border: 0;
+    background: none;
+    padding: 0;
+    flex-shrink: 0;
+  }
+  .view-tabs > button {
+    display: none;
+  }
+  .view-tabs > button:last-child {
+    display: flex;
+    min-height: 40px;
+    padding: 8px;
+    font-size: 11px;
+  }
+  .focus-layout {
+    min-width: 0;
+  }
+  .focus-main {
+    min-height: 0;
+  }
+  .review-panel {
+    display: none;
+    width: 100%;
+    border-left: 0;
+    min-width: 0;
+  }
+  .mobile-files .focus-main {
+    display: none;
+  }
+  .mobile-files .review-panel {
+    display: flex;
+  }
+  .panel-tabs {
+    gap: 14px;
+    padding: 6px 15px;
+  }
+  .panel-tabs > button {
+    min-height: 44px;
+    font-size: 13px;
+  }
+  .tree-entry {
+    min-height: 44px;
+    font-size: 13px;
+  }
+  .file-row > button:first-child {
+    min-height: 44px;
+    font-size: 12px;
+  }
+  .file-row .icon-button {
+    min-width: 40px;
+    min-height: 40px;
+  }
+  .task-heading {
+    padding: 12px 16px;
+    gap: 8px;
+    flex-shrink: 0;
+    max-height: 150px;
+    overflow: auto;
+  }
+  .task-heading > div {
+    min-width: 0;
+  }
+  .task-heading h2 {
+    font-size: 18px;
+    margin: 5px 0;
+    overflow-wrap: anywhere;
+  }
+  .task-heading p {
+    font-size: 11px;
+    max-height: 45px;
+    overflow: auto;
+  }
+  .task-heading .eyebrow {
+    font-size: 8px;
+  }
+  .task-heading select {
+    font-size: 11px;
+    min-height: 38px;
+    max-width: 105px;
+  }
+  .edit-task-button {
+    min-height: 30px;
+  }
+  .attempt-tabs {
+    padding: 0 7px;
+    min-height: 44px;
+    flex-shrink: 0;
+  }
+  .attempt-tabs > button {
+    min-height: 44px;
+    font-size: 12px;
+  }
+  .terminal-toolbar {
+    min-height: 37px;
+    height: 37px;
+    padding: 0 12px;
+  }
+  .terminal-toolbar > div {
+    gap: 5px;
+    flex-shrink: 0;
+  }
+  .terminal-toolbar > div > span {
+    display: none;
+  }
+  .terminal-toolbar button {
+    min-height: 34px;
+    font-size: 10px;
+  }
+  .focus-terminal {
+    padding: 7px 5px 0;
+  }
+  .terminal-keys {
+    display: flex;
+    flex-shrink: 0;
+    gap: 4px;
+    overflow-x: auto;
+    padding: 7px 3px;
+    border-top: 1px solid #343637;
+    scrollbar-width: none;
+  }
+  .terminal-keys button {
+    flex-shrink: 0;
+    border: 1px solid #45494b;
+    background: #272b2d;
+    border-radius: 5px;
+    min-width: 39px;
+    min-height: 42px;
+    padding: 0 10px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .terminal-paste {
+    position: absolute;
+    z-index: 20;
+    bottom: calc(110px + env(safe-area-inset-bottom));
+    left: 6px;
+    right: 6px;
+    box-shadow: 0 8px 40px #0008;
+  }
+  .mobile-navigation {
+    display: flex;
+    position: absolute;
+    z-index: 21;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: calc(58px + env(safe-area-inset-bottom));
+    padding: 3px 10px env(safe-area-inset-bottom);
+    background: #202324;
+    border-top: 1px solid #45494a;
+  }
+  .app-shell {
+    position: relative;
+  }
+  .mobile-navigation button {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 10px;
+    color: #959c9e;
+    min-width: 0;
+    border-radius: 6px;
+  }
+  .mobile-navigation button.active {
+    color: #edc082;
+    background: #302d26;
+  }
+  .statusbar {
+    display: none;
+  }
+  .modal-backdrop {
+    padding: 12px;
+    align-items: center;
+  }
+  .modal {
+    max-width: 100%;
+    width: 510px;
+    padding: 20px;
+    max-height: calc(var(--visual-height, 100dvh) - 24px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .modal header {
+    margin-bottom: 19px;
+  }
+  .modal h2 {
+    font-size: 24px;
+  }
+  .modal label {
+    margin-top: 17px;
+    font-size: 13px;
+  }
+  .modal input,
+  .modal textarea,
+  .modal select {
+    font-size: 16px;
+    min-height: 44px;
+  }
+  .modal .icon-button {
+    min-width: 38px;
+    min-height: 38px;
+  }
+  .modal footer {
+    margin-top: 20px;
+    padding-top: 16px;
+  }
+  .modal footer > button {
+    min-height: 44px;
+    font-size: 13px;
+  }
+  .provider-options {
+    gap: 7px;
+  }
+  .provider-options button {
+    padding: 12px 9px;
+    gap: 8px;
+  }
+  .provider-options span {
+    font-size: 9px;
+  }
+  .form-hint {
+    font-size: 11px;
+  }
+  .palette {
+    width: 100%;
+    margin-top: 4vh;
+    max-height: calc(var(--visual-height, 100dvh) - 40px);
+  }
+  .palette-search {
+    padding: 12px;
+    gap: 9px;
+  }
+  .palette-search input {
+    min-width: 0;
+    font-size: 16px;
+  }
+  .palette-search kbd {
+    display: none;
+  }
+  .palette-options button {
+    min-height: 46px;
+    font-size: 13px;
+  }
+  .board {
+    padding: 3px 16px 18px;
+    gap: 12px;
+    overscroll-behavior-x: contain;
+  }
+  .board-column {
+    min-width: 264px;
+    flex: 0 0 264px;
+  }
+  .board-card .card-title {
+    min-height: 36px;
+    font-size: 14px;
+  }
+  .board-card select {
+    min-height: 40px;
+    font-size: 11px;
+  }
+  .board-add {
+    min-height: 44px;
+    font-size: 12px;
+  }
+  .canvas-toolbar {
+    min-height: 49px;
+    padding: 0 13px;
+    gap: 10px;
+  }
+  .canvas-toolbar > span {
+    max-width: 60%;
+    line-height: 1.5;
+  }
+  .canvas-toolbar .secondary {
+    min-height: 38px;
+  }
+  .canvas-history {
+    top: 9px;
+    left: 9px;
+  }
+  .canvas-history button {
+    min-height: 37px;
+  }
+  .canvas-note textarea {
+    font-size: 16px;
+  }
+  .welcome {
+    padding: 30px 24px;
+  }
+  .welcome h1 {
+    font-size: 36px;
+  }
+  .welcome-features {
+    flex-direction: column;
+    gap: 17px;
+    margin-top: 28px;
+  }
+  .work-empty {
+    padding: 20px;
+  }
+  .work-empty h2 {
+    font-size: 21px;
+  }
+  .work-empty .primary {
+    min-height: 44px;
+    font-size: 12px;
+  }
+  .attention-panel {
+    max-width: calc(100vw - 24px);
+    right: 12px;
+    top: 53px;
+  }
+  .editor-overlay {
+    inset: 57px 0 calc(58px + env(safe-area-inset-bottom));
+  }
+  .editor-overlay > header {
+    padding: 8px 12px;
+    gap: 12px;
+  }
+  .editor-overlay > header > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .editor-overlay header > div {
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .editor-overlay header button {
+    min-height: 40px;
+    min-width: 40px;
+  }
+  .remote-bar {
+    min-height: 34px;
+    padding: 3px 13px;
+    font-size: 10px;
+  }
+  .remote-bar button {
+    min-height: 30px;
+  }
+  .network-toast {
+    bottom: calc(70px + env(safe-area-inset-bottom));
+  }
+  .error-banner {
+    padding: 9px 13px;
+    font-size: 11px;
+  }
+}
+@media (max-width: 900px) and (max-height: 520px) {
+  .workspace-heading {
+    display: none;
+  }
+  .task-heading {
+    padding: 7px 13px;
+    max-height: 54px;
+  }
+  .task-heading h2 {
+    font-size: 15px;
+    margin: 0;
+  }
+  .task-heading p,
+  .task-heading .eyebrow {
+    display: none;
+  }
+  .task-heading select {
+    margin: 0;
+    min-height: 32px;
+  }
+  .topbar {
+    height: 44px;
+  }
+  .attempt-tabs {
+    min-height: 36px;
+  }
+  .attempt-tabs > button {
+    min-height: 36px;
+    padding: 7px 10px;
+  }
+  .terminal-toolbar {
+    height: 28px;
+    min-height: 28px;
+  }
+  .terminal-keys {
+    padding: 3px;
+  }
+  .terminal-keys button {
+    min-height: 33px;
+  }
+  .mobile-navigation {
+    height: calc(49px + env(safe-area-inset-bottom));
+  }
+  .app-shell > main {
+    padding-bottom: calc(49px + env(safe-area-inset-bottom));
+  }
+  .pairing-screen {
+    display: block;
+    overflow: auto;
+  }
+  .pairing-card {
+    margin: 0 auto;
+  }
+  .pairing-logo {
+    font-size: 40px;
+    margin-bottom: 12px;
+  }
+  .pairing-card h1 {
+    font-size: 26px;
+  }
+  .pairing-card label {
+    margin-top: 16px;
+  }
+}

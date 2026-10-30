@@ -60,6 +60,8 @@ try {
   await page.getByText("Session state is unknown.", { exact: false }).waitFor();
   assert.equal(await page.locator(".terminal-connection").count(), 0);
   await page.getByRole("button", { name: "Reconnect", exact: true }).click();
+  await page.locator(".terminal-connection").waitFor({ state: "detached" });
+  await page.getByText("Session state is unknown.", { exact: false }).waitFor({ state: "detached" });
   await page.locator(".xterm-helper-textarea").focus();
   await page.keyboard.insertText(`printf '%s%s\\n' 'RECONNECTED_' 'SAME_PROCESS_135'`);
   await page.keyboard.press("Enter");
@@ -173,15 +175,35 @@ try {
   });
   assert.equal(await app.evaluate(() => globalThis.__noteClosePrompts), 1);
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1);
-  assert(await note.evaluate((element) => element === document.activeElement));
+  assert.equal(await note.inputValue(), "Newest focused note survives closing and reopening");
+  // Native close cancellation may reset DOM focus. A user can tap the retained
+  // note and continue typing; verify that path without replacing its content.
+  await note.focus();
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End");
+  await page.keyboard.type("; continued after cancel");
+  await page.waitForFunction(async () => {
+    const state = await window.workspace.invoke("snapshot");
+    return state.notes[0]?.body === "Newest focused note survives closing and reopening; continued after cancel";
+  });
+  assert.equal(await note.inputValue(), "Newest focused note survives closing and reopening; continued after cancel");
   await page.screenshot({ path: path.join(fixture, "focused-note-saved.png") });
-  await app.close();
+  // A core snapshot can precede the renderer's save acknowledgement. Wait until
+  // its actual unload guard settles before asking the app to quit for real.
+  await page.waitForFunction(() => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return !event.defaultPrevented;
+  });
+  await Promise.race([
+    app.close(),
+    new Promise((_, reject) => { setTimeout(() => reject(new Error("Settled note did not permit app quit")), 15000).unref(); }),
+  ]);
   app = await launch();
   page = await app.firstWindow();
   page.setDefaultTimeout(20000);
   await page.waitForFunction(() => !!window.workspace);
   await page.getByRole("button", { name: "Canvas", exact: true }).click();
-  assert.equal(await page.getByLabel("Canvas note").inputValue(), "Newest focused note survives closing and reopening");
+  assert.equal(await page.getByLabel("Canvas note").inputValue(), "Newest focused note survives closing and reopening; continued after cancel");
   await page.screenshot({ path: path.join(fixture, "focused-note-reopened.png") });
   checks.push("immediate focused-note close flushes, protects pending text, and persists through app restart");
   console.log(JSON.stringify({ passed: true, fixture, checks }));

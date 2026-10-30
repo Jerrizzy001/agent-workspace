@@ -69,6 +69,8 @@ try {
   checks.push("create and edit task with revision; focus status");
   await page.getByRole("button", { name: "Board", exact: true }).click();
   await page.getByLabel("Status for Verified workflow").selectOption("ready");
+  // The async status write moves the card between columns; finish it before dragging.
+  await waitFor(() => document.querySelector('select[aria-label="Status for Verified workflow"]')?.closest(".board-column")?.querySelector("header strong")?.textContent === "Ready");
   const card = page.locator(".board-card");
   const target = page.locator(".board-column").filter({
     has: page.locator("header strong").filter({ hasText: "In review" }),
@@ -91,6 +93,7 @@ try {
     .getByRole("button", { name: "Start attempt", exact: true })
     .click();
   await page.locator(".xterm-helper-textarea").waitFor();
+  await page.locator(".terminal-connection").waitFor({ state: "detached" });
   await page.locator(".xterm-helper-textarea").focus();
   await page.keyboard.type("printf '%s%s\\n' 'IMMEDIATE_' 'INPUT'");
   await page.keyboard.press("Enter");

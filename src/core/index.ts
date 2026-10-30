@@ -576,7 +576,8 @@ export async function createCore({
             throw new Error("Unsupported provider");
           const bin =
             provider === "shell"
-              ? process.env.SHELL || "/bin/zsh"
+              ? process.env.SHELL ||
+                (process.platform === "darwin" ? "/bin/zsh" : "/bin/sh")
               : executable(provider);
           if (!bin) throw new Error(`${provider} executable unavailable`);
           const providerArgs = providerArguments(

@@ -130,6 +130,32 @@ export const COMMANDS = [
   "note.update",
 ] as const;
 export type Command = (typeof COMMANDS)[number];
+export interface RemoteConfig {
+  host: string;
+  port: number;
+  publicOrigin?: string;
+  tls: boolean;
+}
+export interface RemoteStatus {
+  enabled: boolean;
+  host: string;
+  port: number;
+  url: string;
+  publicOrigin?: string;
+  tls: boolean;
+  coreStatus: "starting" | "ready" | "restarting" | "failed";
+  certificateName?: string;
+  keyName?: string;
+  sharedProjects: { id: string; name: string }[];
+}
+export interface DesktopRemoteAPI {
+  status(): Promise<RemoteStatus>;
+  enable(config: RemoteConfig): Promise<RemoteStatus>;
+  disable(): Promise<RemoteStatus>;
+  pairingSecret(): Promise<string>;
+  revokeSessions(): Promise<void>;
+  chooseTLSFile(kind: "certificate" | "key"): Promise<RemoteStatus>;
+}
 export interface WorkspaceAPI {
   invoke<T = unknown>(
     command: Command,
@@ -137,6 +163,7 @@ export interface WorkspaceAPI {
   ): Promise<T>;
   subscribe(listener: (event: CoreEvent) => void): () => void;
   chooseDirectory(): Promise<string | null>;
+  remote?: DesktopRemoteAPI;
 }
 declare global {
   interface Window {

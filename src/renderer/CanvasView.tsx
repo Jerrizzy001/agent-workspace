@@ -13,21 +13,26 @@ import {
 import "@xyflow/react/dist/style.css";
 import type { Attempt, Layout, Note, Session } from "../shared/contracts";
 import { TerminalView } from "./TerminalView";
+import { registerLeaveGuard } from "./leaveWorkspace";
 type CanvasData = {
   session?: Session;
   attempt?: Attempt;
   note?: Note;
-  saveNote?: (note: Note, body: string) => Promise<void>;
+  saveNote?: (note: Note, body: string) => Promise<Note>;
 };
 function CanvasNote({
   note,
   saveNote,
 }: {
   note: Note;
-  saveNote: (note: Note, body: string) => Promise<void>;
+  saveNote: (note: Note, body: string) => Promise<Note>;
 }) {
+  const [body, setBody] = useState(note.body);
   const draft = useRef(note.body);
   const saved = useRef(note.body);
+  const currentNote = useRef(note);
+  const acceptedVersion = useRef(note.updatedAt);
+  currentNote.current = note;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saving = useRef<Promise<void> | null>(null);
   const save = useRef(saveNote);
@@ -38,14 +43,56 @@ function CanvasNote({
     if (saving.current) return saving.current.then(flush);
     if (draft.current === saved.current) return Promise.resolve();
     const body = draft.current;
-    const operation = save.current(note, body).then(() => {
-      saved.current = body;
-    });
+    const operation = save
+      .current(currentNote.current, body)
+      .then((updated) => {
+        saved.current = body;
+        acceptedVersion.current =
+          updated.updatedAt > acceptedVersion.current
+            ? updated.updatedAt
+            : acceptedVersion.current;
+        const latest = currentNote.current;
+        if (
+          draft.current === body &&
+          latest.updatedAt > acceptedVersion.current
+        ) {
+          acceptedVersion.current = latest.updatedAt;
+          draft.current = latest.body;
+          saved.current = latest.body;
+          setBody(latest.body);
+        }
+      });
     saving.current = operation;
-    return operation.finally(() => {
-      saving.current = null;
-    }).then(() => draft.current === saved.current ? undefined : flush());
+    return operation
+      .finally(() => {
+        saving.current = null;
+      })
+      .then(() => (draft.current === saved.current ? undefined : flush()));
   }, [note.id]);
+  useEffect(() => {
+    // A snapshot may arrive before the save acknowledgement. Keep the local
+    // draft authoritative until that write settles, and never apply an older
+    // snapshot over an acknowledged edit. Clean notes still follow newer edits
+    // made in another browser.
+    if (
+      saving.current ||
+      draft.current !== saved.current ||
+      note.updatedAt <= acceptedVersion.current
+    )
+      return;
+    acceptedVersion.current = note.updatedAt;
+    draft.current = note.body;
+    saved.current = note.body;
+    setBody(note.body);
+  }, [note.body, note.updatedAt]);
+  useEffect(
+    () =>
+      registerLeaveGuard(async () => {
+        await flush();
+        return true;
+      }),
+    [flush],
+  );
   useEffect(() => {
     const preventUnsavedClose = (event: BeforeUnloadEvent) => {
       if (draft.current === saved.current && !saving.current) return;
@@ -63,9 +110,10 @@ function CanvasNote({
     <textarea
       className="nodrag nowheel"
       aria-label="Canvas note"
-      defaultValue={note.body}
+      value={body}
       onChange={(event) => {
         draft.current = event.target.value;
+        setBody(event.target.value);
         if (timer.current) clearTimeout(timer.current);
         timer.current = setTimeout(() => void flush().catch(() => {}), 200);
       }}
@@ -90,9 +138,9 @@ function WorkspaceNode({ data }: NodeProps<Node<CanvasData>>) {
         <div className="nodrag nowheel terminal-in-node">
           <TerminalView session={data.session} />
         </div>
-      ) : (
-        data.note && data.saveNote ? <CanvasNote note={data.note} saveNote={data.saveNote} /> : null
-      )}
+      ) : data.note && data.saveNote ? (
+        <CanvasNote note={data.note} saveNote={data.saveNote} />
+      ) : null}
     </div>
   );
 }
@@ -145,13 +193,12 @@ export function CanvasView({
   const saveNote = useCallback(
     (note: Note, body: string) => {
       return window.workspace
-        .invoke("note.update", {
+        .invoke<Note>("note.update", {
           noteId: note.id,
           projectId,
           title: note.title,
           body,
         })
-        .then(() => {})
         .catch((error) => {
           report(error);
           throw error;
