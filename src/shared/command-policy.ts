@@ -35,6 +35,8 @@ export const COMMAND_POLICY: Record<Command, CommandAccess> = {
   "layout.save": "remote",
   "note.create": "remote",
   "note.update": "remote",
+  "settings.read": "owner",
+  "settings.write": "owner",
 };
 export const remoteAllowed = (command: Command) =>
   COMMAND_POLICY[command] === "remote";

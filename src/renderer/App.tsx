@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import type {
+  PowerStatus,
   Project,
   Provider,
   Session,
@@ -134,6 +135,33 @@ export default function App() {
   );
   useEffect(() => registerLeaveGuard(canNavigate), [canNavigate]);
   const report = useCallback((e: unknown) => setError(errorText(e)), []);
+  const [power, setPower] = useState<PowerStatus | null>(null);
+  const [powerBusy, setPowerBusy] = useState(false);
+  useEffect(() => {
+    const api = window.workspace.power;
+    if (!api || isRemoteBrowser) return;
+    let live = true;
+    const off = api.onStatus((status) => setPower(status));
+    void api
+      .status()
+      .then((status) => live && setPower(status))
+      .catch(() => {});
+    return () => {
+      live = false;
+      off();
+    };
+  }, []);
+  const togglePower = async (enabled: boolean) => {
+    if (!window.workspace.power) return;
+    setPowerBusy(true);
+    try {
+      setPower(await window.workspace.power.setEnabled(enabled));
+    } catch (e) {
+      report(e);
+    } finally {
+      setPowerBusy(false);
+    }
+  };
   const reload = useCallback(
     () =>
       window.workspace
@@ -750,6 +778,35 @@ export default function App() {
               </span>
             ))}
           </div>
+          {power && !isRemoteBrowser ? (
+            <label
+              className="keep-awake"
+              title={
+                "Prevents this computer from sleeping while a local Claude session reports it is working. " +
+                "The display can still sleep. Needs input, done, exit or a quiet turn longer than 20 minutes releases it. " +
+                "Codex and shell sessions cannot report work, so they never keep it awake."
+              }
+            >
+              <input
+                type="checkbox"
+                role="switch"
+                checked={power.enabled}
+                disabled={powerBusy}
+                aria-label="Keep awake while agents work"
+                onChange={(e) => void togglePower(e.target.checked)}
+              />
+              <span className="keep-awake-text">
+                Keep awake while agents work
+                <span className="keep-awake-status" data-active={power.active}>
+                  {!power.enabled
+                    ? "Off"
+                    : power.active
+                      ? `Keeping awake · ${power.sessions.length} ${power.sessions.length === 1 ? "session" : "sessions"} working`
+                      : "On · idle"}
+                </span>
+              </span>
+            </label>
+          ) : null}
           {window.workspace.remote ? (
             <button
               className="foot-button"

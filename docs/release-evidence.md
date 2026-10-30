@@ -56,3 +56,51 @@ macOS packaging (`npm run package`), `verify:mobile-webkit`, `verify:server-rele
 ## Reproduction notes
 
 Browser scripts accept `WORKSPACE_BROWSER=/path/to/chromium` as an alternative to installed Google Chrome. Desktop scripts accept `WORKSPACE_APP_EXECUTABLE` for a packaged or wrapped Electron executable. Tests still default to `/opt/homebrew/bin/tmux` in places; on Linux, point that path at the system tmux or set `WORKSPACE_TMUX`.
+
+## Roadmap phase 0, 1a and 1b (after 0.3.0)
+
+Built by two sub-agents in isolated worktrees and merged; results below are from the merged tree in the same Linux container.
+
+- **Phase 0.**
+  - Named migration registry: v1, v2, and v3 `roadmap_01_owner_utilities`.
+  - Consistent SQLite backup before upgrading a non-empty store, keeping the newest 3.
+  - A store newer than supported is rejected before any write.
+  - A central command policy marks every command owner-only or remote, and the gateway validator follows it.
+- **Phase 1a.**
+  - `session.rename`, with a revision check and sanitized plain text, allowed remotely.
+  - A shared safe-paste helper.
+  - Local screenshot paste:
+    - An owner-only IPC reads the clipboard image with Electron 45's `clipboard.read()`, validates it, and re-encodes it as PNG.
+    - The bytes reach the core over an internal message, never a public command.
+    - The core writes a 0600 PNG into a 0700 per-session folder and pastes the escaped path without Enter.
+    - Saved images are cleaned up 7 days after the session ends.
+- **Phase 1b.** Keep-awake:
+  - Off by default and owner-only.
+  - Holds one `prevent-app-suspension` blocker while a local Claude session reports fresh working activity.
+  - Hooks stamp `@aw_activity_at`, which gives a 20-minute lease. A repeated snapshot never renews it.
+  - Released on needs/done/exit/unknown, core loss, turning the setting off, and quit.
+- **Exit status is best effort.** Under CPU load, tmux sometimes marks a pane dead without ever recording its exit status. Plain tmux reproduced this in 1 of 20 cases. The core waits up to 1 second for it; the saved final screen is unaffected.
+
+Results:
+- `npm test` passed 52 of 52, twice.
+- These app checks passed:
+
+  | Check | Result |
+  | --- | --- |
+  | `smoke` | passed |
+  | `smoke:ui` | 9 checks passed |
+  | `verify:image-paste` | 6 checks passed |
+  | `verify:keep-awake` | 9 checks passed |
+  | `verify:workflows` | 15 checks passed |
+  | `verify:lifecycle` | 6 checks passed |
+  | `verify:terminal` | 7 checks passed |
+  | `verify:desktop` | 4 checks passed |
+  | `verify:remote-desktop` | 7 checks passed |
+  | `verify:mobile` | 14 checks passed |
+
+Not verified:
+- Native clipboard reads on macOS, Windows or Wayland. Only Linux X11 under Xvfb, with synthetic paste events, was tested.
+- Real system sleep prevention. Only Electron's blocker state was checked.
+- The real Claude CLI running the timestamp hook commands. Fixture CLIs ran them.
+- Interrupting Claude with Ctrl+C: the blocker is then released only when the 20-minute lease ends.
+- Upgrading a real user database from an older version (covered by fixtures only).

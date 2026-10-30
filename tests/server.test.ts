@@ -259,6 +259,32 @@ test("gateway authenticates real sockets, scopes commands, targets streams and r
         (await a.rpc(command, payload)).error,
         /not available remotely|Unexpected command field/,
       );
+    // Owner preferences (keep-awake and friends) never cross the gateway.
+    for (const [command, payload] of [
+      ["settings.read", { key: "keepAwake" }],
+      ["settings.write", { key: "keepAwake", value: true }],
+      ["settings.write", { projectId: "p", key: "keepAwake", value: true }],
+    ] as const)
+      assert.equal(
+        (await a.rpc(command, payload)).error,
+        "Command is not available remotely",
+      );
+    assert.equal(
+      f.calls.some((c) => String(c.command).startsWith("settings.")),
+      false,
+    );
+    // Report freshness is projected explicitly; private backend fields are not.
+    Object.assign(f.snapshot.sessions[0], {
+      activity: "running",
+      activityTracking: true,
+      activityAt: 1_800_000_000_000,
+      backendSocket: "/private/socket",
+    });
+    const projected = (await a.rpc("snapshot")).result.sessions[0];
+    assert.equal(projected.activityAt, 1_800_000_000_000);
+    assert.equal(projected.backendSocket, undefined);
+    for (const key of ["activity", "activityTracking", "activityAt", "backendSocket"])
+      delete (f.snapshot.sessions[0] as any)[key];
     const snapshotsBeforeTyping = f.calls.filter(
       (c) => c.command === "snapshot",
     ).length;

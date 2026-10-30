@@ -117,6 +117,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       ...(s.model ? { model: s.model } : {}),
       ...(s.activity ? { activity: s.activity } : {}),
       ...(s.activityTracking ? { activityTracking: true } : {}),
+      ...(typeof s.activityAt === "number" ? { activityAt: s.activityAt } : {}),
       ...(s.conversationId ? { conversationId: s.conversationId } : {}),
       ...(s.resumedFrom ? { resumedFrom: s.resumedFrom } : {}),
       ...(s.exitCode !== undefined ? { exitCode: s.exitCode } : {}),

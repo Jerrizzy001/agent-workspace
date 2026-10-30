@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { Command, CoreEvent, WorkspaceAPI } from "../shared/contracts";
+import type { Command, CoreEvent, PowerStatus, WorkspaceAPI } from "../shared/contracts";
 const api: WorkspaceAPI = {
   invoke: <T>(command: Command, payload: Record<string, unknown> = {}) =>
     ipcRenderer.invoke("workspace:invoke", command, payload) as Promise<T>,
@@ -22,6 +22,15 @@ const api: WorkspaceAPI = {
     preview: () => ipcRenderer.invoke("workspace:clipboardImage", "preview"),
     save: (target) => ipcRenderer.invoke("workspace:clipboardImage", "save", target),
     discard: (token) => ipcRenderer.invoke("workspace:clipboardImage", "discard", token),
+  },
+  power: {
+    status: () => ipcRenderer.invoke("workspace:power", "status"),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke("workspace:power", "setEnabled", enabled),
+    onStatus: (listener) => {
+      const handler = (_event: unknown, value: PowerStatus) => listener(value);
+      ipcRenderer.on("workspace:power", handler);
+      return () => ipcRenderer.removeListener("workspace:power", handler);
+    },
   },
 };
 contextBridge.exposeInMainWorld("workspace", api);

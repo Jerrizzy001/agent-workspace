@@ -1,5 +1,7 @@
 # Agent Workspace feature roadmap
 
+> **Progress:** Phase 0 (command policy and migration registry, but not the macOS packaging gate), 1a (session naming, safe paste, local screenshot paste) and 1b (keep-awake) are implemented and verified on Linux. See `docs/release-evidence.md`. Next: phase 2a, local dictation.
+
 Baseline: `jerrizzy001/agent-workspace`, `claude/jolly-clarke-oo3rm5`, commit `7b7ec9627c7df7ad71a78db2a09dc8cde8e85a88`, version 0.3.0. Research date: 2026-10-30. This document specifies future implementation; it does not claim that the proposed features have shipped or passed verification.
 
 ## Starting point and release gates

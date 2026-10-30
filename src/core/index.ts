@@ -26,6 +26,7 @@ import type {
   Core,
   CoreOptions,
   Command,
+  OwnerSettings,
   Snapshot,
   Session,
   SavedAttachment,
@@ -178,7 +179,13 @@ export async function createCore({
     const exitChecks = new Set<Promise<void>>();
     const sessionSocket = (s: Session | { backendSocket: string }) =>
       (s as Session & { backendSocket?: string }).backendSocket || socket;
-    type PaneState = { dead: boolean; exitCode?: number; activity?: Activity };
+    type PaneState = {
+      dead: boolean;
+      exitCode?: number;
+      activity?: Activity;
+      /** Epoch ms stamped by the hook that reported `activity`. */
+      activityAt?: number;
+    };
     /** Every session on a socket with its pane state; undefined when the socket is unreachable. */
     async function socketSessions(
       target: string,
@@ -190,14 +197,19 @@ export async function createCore({
             "list-panes",
             "-a",
             "-F",
-            "#{session_name}|#{pane_dead}|#{pane_dead_status}|#{@aw_activity}",
+            "#{session_name}|#{pane_dead}|#{pane_dead_status}|#{@aw_activity}|#{@aw_activity_at}",
           ],
           target,
         );
         for (const row of rows.split("\n")) {
           if (!row) continue;
-          const [name, dead, status, activity] = row.split("|");
+          const [name, dead, status, activity, at] = row.split("|");
           const previous = sessions.get(name!);
+          const reported = previous?.activity
+            ? previous.activityAt
+            : /^[0-9]{1,12}$/.test(at || "")
+              ? Number(at) * 1000
+              : undefined;
           const pane: PaneState = {
             dead: dead === "1" && (previous?.dead ?? true),
             exitCode: previous?.exitCode ?? (status ? Number(status) : undefined),
@@ -206,6 +218,7 @@ export async function createCore({
               (["running", "needs", "done"].includes(activity!)
                 ? (activity as Activity)
                 : undefined),
+            ...(reported !== undefined ? { activityAt: reported } : {}),
           };
           sessions.set(name!, pane);
         }
@@ -289,6 +302,30 @@ export async function createCore({
       if (!pending) {
         pending = (async (): Promise<Final> => {
           let saved = false;
+          // tmux marks a pane dead when its terminal closes and records the
+          // exit status when it reaps the process; on a loaded host that can
+          // lag, and occasionally tmux never records it. Wait briefly; the
+          // status stays best effort, the saved screen does not.
+          for (let retry = 0; exitCode === undefined && retry < 20; retry++) {
+            try {
+              const status = (
+                await tx(
+                  [
+                    "display-message",
+                    "-p",
+                    "-t",
+                    "=" + s.backendName + ":0.0",
+                    "#{pane_dead_status}",
+                  ],
+                  sessionSocket(s),
+                )
+              ).trim();
+              if (/^[0-9]+$/.test(status)) exitCode = Number(status);
+              else await new Promise((resolve) => setTimeout(resolve, 50));
+            } catch {
+              break;
+            }
+          }
           try {
             const data = await tx(
               [
@@ -388,7 +425,10 @@ export async function createCore({
     };
     for (const s of list("sessions")) {
       s.status = await live(s);
-      if (s.status === "exited") s.activity = undefined;
+      if (s.status === "exited") {
+        s.activity = undefined;
+        delete s.activityAt;
+      }
       if (s.status === "running")
         try {
           await tx(
@@ -894,7 +934,12 @@ export async function createCore({
             ...(provider === "claude" && features.settings
               ? {
                   activityTracking: true,
-                  ...(submitted ? { activity: "running" as const } : {}),
+                  ...(submitted
+                    ? {
+                        activity: "running" as const,
+                        activityAt: Math.floor(Date.now() / 1000) * 1000,
+                      }
+                    : {}),
                 }
               : {}),
             ...(previous ? { resumedFrom: previous.id } : {}),
@@ -980,12 +1025,22 @@ export async function createCore({
                 "=" + s.backendName + ":",
                 "@aw_activity",
                 s.activity,
+                ";",
+                "set-option",
+                "-p",
+                "-t",
+                "=" + s.backendName + ":",
+                "@aw_activity_at",
+                String(Math.floor((s.activityAt ?? Date.now()) / 1000)),
               ]).catch(() => {});
             // A CLI that fails at startup ends here with its output saved.
             const observed = await live(s);
             db.exec("BEGIN IMMEDIATE");
             s.status = observed === "exited" ? "exited" : "running";
-            if (s.status === "exited") s.activity = undefined;
+            if (s.status === "exited") {
+              s.activity = undefined;
+              delete s.activityAt;
+            }
             if (a) a.status = s.status;
             put("sessions", s);
             if (a) put("attempts", a);
@@ -1213,6 +1268,27 @@ export async function createCore({
           put("layouts", { projectId: p.projectId, positions: p.positions });
           return changed();
         }
+        case "settings.read": {
+          if (Object.keys(p).some((k) => k !== "key"))
+            throw new Error("Unexpected settings field");
+          const key = settingKey(p.key);
+          const row = db
+            .prepare("SELECT value FROM records WHERE kind='ownerSettings' AND id=?")
+            .get(key) as { value: string } | undefined;
+          return {
+            key,
+            value: row ? JSON.parse(row.value).value : ownerDefaults[key],
+          };
+        }
+        case "settings.write": {
+          const key = settingKey(p.key);
+          if (Object.keys(p).some((k) => k !== "key" && k !== "value"))
+            throw new Error("Unexpected settings field");
+          if (typeof p.value !== typeof ownerDefaults[key])
+            throw new Error("Invalid setting value");
+          put("ownerSettings", { id: key, value: p.value, updatedAt: now() });
+          return { key, value: p.value };
+        }
         case "note.create": {
           get("projects", p.projectId);
           const n = {
@@ -1240,6 +1316,13 @@ export async function createCore({
           throw new Error("Unsupported command");
       }
     }
+    // Owner preferences: an allowlist of keys, each with a typed default.
+    const ownerDefaults: OwnerSettings = { keepAwake: false };
+    function settingKey(v: unknown): keyof OwnerSettings {
+      if (typeof v !== "string" || !Object.hasOwn(ownerDefaults, v))
+        throw new Error("Unknown setting");
+      return v as keyof OwnerSettings;
+    }
     function size(v: unknown, fallback: number) {
       if (v === undefined) return fallback;
       if (typeof v !== "number" || !Number.isInteger(v) || v < 2 || v > 500)
@@ -1261,6 +1344,9 @@ export async function createCore({
       if (s.transcript) latest.transcript = true;
       if (status === "exited" || !s.activity) delete latest.activity;
       else latest.activity = s.activity;
+      if (status === "exited" || s.activityAt === undefined)
+        delete latest.activityAt;
+      else latest.activityAt = s.activityAt;
       Object.assign(s, latest);
       put("sessions", latest);
       if (s.attemptId) {
@@ -1302,15 +1388,29 @@ export async function createCore({
             : "exited"
           : "unknown";
         // Hooks write turn state into the pane; an unreachable socket keeps the last value.
+        const fromPane = observed === "running" && current.activityTracking;
         const activity =
           observed === "exited"
             ? undefined
-            : observed === "running" && current.activityTracking
+            : fromPane
               ? pane!.activity
               : current.activity;
-        if (current.status !== observed || current.activity !== activity) {
+        // The report time comes only from the hook; repeating a snapshot never renews it.
+        const activityAt =
+          observed === "exited"
+            ? undefined
+            : fromPane
+              ? pane!.activityAt
+              : current.activityAt;
+        if (
+          current.status !== observed ||
+          current.activity !== activity ||
+          current.activityAt !== activityAt
+        ) {
           current.activity = activity;
           if (!activity) delete current.activity;
+          current.activityAt = activityAt;
+          if (activityAt === undefined) delete current.activityAt;
           recordStatus(current, observed);
           updated = true;
         }

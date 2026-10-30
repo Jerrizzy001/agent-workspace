@@ -46,6 +46,8 @@ export interface Session {
   model?: string;
   activity?: Activity;
   activityTracking?: boolean;
+  /** Epoch ms of the last hook report; a working report is trusted only for a finite lease after it. */
+  activityAt?: number;
   /** Claude conversation ID, used to resume the conversation after the process ends. */
   conversationId?: string;
   resumedFrom?: string;
@@ -165,6 +167,8 @@ export const COMMANDS = [
   "layout.save",
   "note.create",
   "note.update",
+  "settings.read",
+  "settings.write",
 ] as const;
 export type Command = (typeof COMMANDS)[number];
 export interface RemoteConfig {
@@ -220,6 +224,22 @@ export interface ClipboardImageAPI {
   }): Promise<SavedAttachment>;
   discard(token: string): Promise<void>;
 }
+/** Owner preferences stored by the core; never exposed through the remote gateway. */
+export interface OwnerSettings {
+  keepAwake: boolean;
+}
+export interface PowerStatus {
+  enabled: boolean;
+  /** True while this app holds a power-save blocker. */
+  active: boolean;
+  /** Local sessions with a fresh working report. */
+  sessions: string[];
+}
+export interface DesktopPowerAPI {
+  status(): Promise<PowerStatus>;
+  setEnabled(enabled: boolean): Promise<PowerStatus>;
+  onStatus(listener: (status: PowerStatus) => void): () => void;
+}
 export interface WorkspaceAPI {
   invoke<T = unknown>(
     command: Command,
@@ -231,6 +251,8 @@ export interface WorkspaceAPI {
   browseDirectory?(path?: string): Promise<DirectoryListing>;
   remote?: DesktopRemoteAPI;
   clipboardImage?: ClipboardImageAPI;
+  /** Desktop owner only: keep the computer awake while local agents work. */
+  power?: DesktopPowerAPI;
 }
 declare global {
   interface Window {
