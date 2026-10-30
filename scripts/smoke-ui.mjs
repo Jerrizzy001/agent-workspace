@@ -1,10 +1,15 @@
+import { cleanupFixture } from "./fixture-cleanup.mjs";
 import { _electron as electron } from "playwright";
-import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  writeFile,
+  readFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 const fixture = await mkdtemp(path.join(tmpdir(), "workspace-ui-"));
 const repo = path.join(fixture, "repo");
 await mkdir(repo);
@@ -18,7 +23,9 @@ for (const args of [
 ])
   execFileSync("git", args, { cwd: repo });
 const app = await electron.launch({
-  args: ["."],
+  ...(process.env.WORKSPACE_APP_EXECUTABLE
+    ? { executablePath: process.env.WORKSPACE_APP_EXECUTABLE }
+    : { args: ["."] }),
   env: { ...process.env, WORKSPACE_TEST_DATA_DIR: path.join(fixture, "data") },
 });
 try {
@@ -109,6 +116,17 @@ try {
     ),
     1,
   );
+  await app.evaluate(({ app }) => app.quit());
+  await page.waitForTimeout(250);
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1);
+  // Cancelling native Quit must reset the quitting flag so later core crashes recover.
+  await app.evaluate(({ app }) => {
+    const core = app.getAppMetrics().find(m => m.name === "Agent Workspace Core");
+    if (!core) throw new Error("Core PID missing after cancelled quit");
+    process.kill(core.pid, "SIGKILL");
+  });
+  await page.waitForTimeout(2000);
+  assert.ok((await page.evaluate(() => window.workspace.invoke("snapshot"))).projects.length);
   await app.evaluate(({ dialog }) => {
     dialog.showMessageBoxSync = globalThis.__originalMessageBox;
   });
@@ -132,7 +150,8 @@ try {
         "attempt controls",
         "terminal typing",
         "core crash reconnect",
-        "dirty editor close cancelled",
+        "dirty editor window close and native quit cancelled",
+        "core restart after cancelled native quit",
         "board status",
         "canvas note",
         "offline Monaco editing/save",
@@ -141,13 +160,5 @@ try {
   );
 } finally {
   await app.close();
-  const socket = path.join(
-    tmpdir(),
-    `aw-${createHash("sha256").update(path.join(fixture, "data")).digest("hex").slice(0, 20)}.sock`,
-  );
-  try {
-    execFileSync("/opt/homebrew/bin/tmux", ["-S", socket, "kill-server"], {
-      stdio: "ignore",
-    });
-  } catch {}
+  await cleanupFixture(fixture);
 }

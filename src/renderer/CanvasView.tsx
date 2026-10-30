@@ -8,6 +8,7 @@ import {
   type Node,
   type NodeChange,
   type NodeProps,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { Attempt, Layout, Note, Session } from "../shared/contracts";
@@ -16,8 +17,62 @@ type CanvasData = {
   session?: Session;
   attempt?: Attempt;
   note?: Note;
-  saveNote?: (note: Note, body: string) => void;
+  saveNote?: (note: Note, body: string) => Promise<void>;
 };
+function CanvasNote({
+  note,
+  saveNote,
+}: {
+  note: Note;
+  saveNote: (note: Note, body: string) => Promise<void>;
+}) {
+  const draft = useRef(note.body);
+  const saved = useRef(note.body);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saving = useRef<Promise<void> | null>(null);
+  const save = useRef(saveNote);
+  save.current = saveNote;
+  const flush = useCallback((): Promise<void> => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    if (saving.current) return saving.current.then(flush);
+    if (draft.current === saved.current) return Promise.resolve();
+    const body = draft.current;
+    const operation = save.current(note, body).then(() => {
+      saved.current = body;
+    });
+    saving.current = operation;
+    return operation.finally(() => {
+      saving.current = null;
+    }).then(() => draft.current === saved.current ? undefined : flush());
+  }, [note.id]);
+  useEffect(() => {
+    const preventUnsavedClose = (event: BeforeUnloadEvent) => {
+      if (draft.current === saved.current && !saving.current) return;
+      void flush().catch(() => {});
+      event.preventDefault();
+      event.returnValue = "Unsaved canvas note";
+    };
+    window.addEventListener("beforeunload", preventUnsavedClose);
+    return () => {
+      window.removeEventListener("beforeunload", preventUnsavedClose);
+      void flush().catch(() => {});
+    };
+  }, [flush]);
+  return (
+    <textarea
+      className="nodrag nowheel"
+      aria-label="Canvas note"
+      defaultValue={note.body}
+      onChange={(event) => {
+        draft.current = event.target.value;
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => void flush().catch(() => {}), 200);
+      }}
+      onBlur={() => void flush().catch(() => {})}
+    />
+  );
+}
 function WorkspaceNode({ data }: NodeProps<Node<CanvasData>>) {
   return (
     <div
@@ -36,14 +91,7 @@ function WorkspaceNode({ data }: NodeProps<Node<CanvasData>>) {
           <TerminalView session={data.session} />
         </div>
       ) : (
-        <textarea
-          className="nodrag nowheel"
-          aria-label="Canvas note"
-          defaultValue={data.note?.body}
-          onBlur={(e) =>
-            data.note && data.saveNote?.(data.note, e.target.value)
-          }
-        />
+        data.note && data.saveNote ? <CanvasNote note={data.note} saveNote={data.saveNote} /> : null
       )}
     </div>
   );
@@ -65,6 +113,13 @@ export function CanvasView({
   report: (e: unknown) => void;
 }) {
   const [nodes, setNodes] = useState<Node<CanvasData>[]>([]);
+  const flow = useRef<ReactFlowInstance<Node<CanvasData>> | null>(null);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void flow.current?.fitView({ padding: 0.16, duration: 150 });
+    }, 70);
+    return () => clearTimeout(timer);
+  }, [nodes.length]);
   const history = useRef<Record<string, { x: number; y: number }>[]>([]);
   const future = useRef<Record<string, { x: number; y: number }>[]>([]);
   const [historyVersion, setHistoryVersion] = useState(0);
@@ -89,14 +144,18 @@ export function CanvasView({
   }
   const saveNote = useCallback(
     (note: Note, body: string) => {
-      void window.workspace
+      return window.workspace
         .invoke("note.update", {
           noteId: note.id,
           projectId,
           title: note.title,
           body,
         })
-        .catch(report);
+        .then(() => {})
+        .catch((error) => {
+          report(error);
+          throw error;
+        });
     },
     [projectId, report],
   );
@@ -153,6 +212,9 @@ export function CanvasView({
         </button>
       </div>
       <ReactFlow
+        onInit={(instance) => {
+          flow.current = instance;
+        }}
         nodes={nodes}
         nodeTypes={nodeTypes}
         onNodesChange={changes}

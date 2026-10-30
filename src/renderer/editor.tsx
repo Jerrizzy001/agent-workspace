@@ -38,7 +38,10 @@ export default function CodeEditor({
       height="100%"
       theme="vs-dark"
       language={language}
-      value={content}
+      key={path + String(readOnly)}
+      path={path}
+      defaultValue={content}
+      value={readOnly ? content : undefined}
       onChange={(v) => onChange(v || "")}
       options={{
         readOnly,

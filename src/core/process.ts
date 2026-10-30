@@ -9,7 +9,7 @@ export async function run(
   cwd?: string,
 ): Promise<string> {
   if (active >= 4) await new Promise<void>((resolve) => waiting.push(resolve));
-  active++;
+  else active++;
   try {
     return await new Promise((resolve, reject) =>
       execFile(
@@ -18,15 +18,16 @@ export async function run(
         { cwd, encoding: "utf8", maxBuffer: 4 * 1024 * 1024, timeout: 15000 },
         (error, stdout, stderr) => {
           if (error) {
-            Object.assign(error, { stderr });
+            Object.assign(error, { stderr, stdout });
             reject(error);
           } else resolve(stdout);
         },
       ),
     );
   } finally {
-    active--;
-    waiting.shift()?.();
+    const next = waiting.shift();
+    if (next) next();
+    else active--;
   }
 }
 export function executable(name: string) {

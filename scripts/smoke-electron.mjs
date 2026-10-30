@@ -1,3 +1,4 @@
+import { cleanupFixture } from "./fixture-cleanup.mjs";
 import { _electron as electron } from "playwright";
 import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -26,7 +27,10 @@ async function launch() {
     },
   });
 }
-let app = await launch();
+let app;
+try {
+app = await launch();
+const runtime = await app.evaluate(({app}) => ({version: app.getVersion(), packaged: app.isPackaged, electron: process.versions.electron, node: process.versions.node, architecture: process.arch}));
 let page = await app.firstWindow();
 await page.waitForFunction(() => !!window.workspace);
 let invoke = (command, payload = {}) =>
@@ -95,6 +99,7 @@ await app.close();
 console.log(
   JSON.stringify({
     passed: true,
+    runtime,
     fixture,
     checks: [
       "snapshot",
@@ -108,3 +113,8 @@ console.log(
     ],
   }),
 );
+
+} finally {
+  if (app) await app.close().catch(() => {});
+  await cleanupFixture(fixture);
+}

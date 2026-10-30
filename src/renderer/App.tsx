@@ -605,6 +605,7 @@ export default function App() {
                             <span>
                               <Terminal size={13} />
                               {session.cwd}
+                              {attempt?.model ? ` · ${attempt.model}` : ""}
                             </span>
                             <div>
                               <span>{session.status}</span>
@@ -926,6 +927,11 @@ function AttemptModal({
   report: (e: unknown) => void;
 }) {
   const [provider, setProvider] = useState<Provider>("shell");
+  const [models, setModels] = useState({
+    claude: "claude-opus-4-6",
+    codex: "gpt-6.1-sol",
+  });
+  const model = provider === "claude" ? models.claude : models.codex;
   const launch = useRef<{
     key: string;
     payload: Record<string, unknown>;
@@ -974,6 +980,10 @@ function AttemptModal({
                   provider,
                   worktreePath: worktreePath || undefined,
                   prompt,
+                  model:
+                    provider !== "shell" && model.trim()
+                      ? model.trim()
+                      : undefined,
                 },
               };
             setLaunchPending(true);
@@ -1034,6 +1044,30 @@ function AttemptModal({
               </button>
             ))}
           </div>
+          {provider !== "shell" ? (
+            <label>
+              Model <span className="muted">optional</span>
+              <input
+                value={model}
+                onChange={(e) =>
+                  setModels((current) => ({
+                    ...current,
+                    [provider]: e.target.value,
+                  }))
+                }
+                placeholder="CLI default when blank"
+                maxLength={150}
+              />
+              <span className="form-hint">
+                Selected for this attempt; clear to use CLI settings. Starting
+                selection:{" "}
+                {provider === "codex"
+                  ? "GPT-6.1 Sol"
+                  : "Claude Opus 4.6, standard context"}
+                .
+              </span>
+            </label>
+          ) : null}
           {provider !== "shell" ? (
             <label>
               Initial prompt

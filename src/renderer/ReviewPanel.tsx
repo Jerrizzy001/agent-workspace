@@ -60,7 +60,7 @@ export function ReviewPanel({
     setLoading(true);
     setLoadError(false);
     try {
-      const [git, entries, trees] = await Promise.all([
+      const [git, entries, trees] = await Promise.allSettled([
         window.workspace.invoke<GitStatus>("git.status", scope),
         window.workspace.invoke<FileEntry[]>("files.list", {
           ...scope,
@@ -69,13 +69,22 @@ export function ReviewPanel({
         window.workspace.invoke<Worktree[]>("worktree.list", scope),
       ]);
       if (ticket !== refreshTicket.current) return;
-      setStatus(git);
-      setFiles(entries);
-      setWorktrees(trees);
+      if (entries.status === "fulfilled") setFiles(entries.value);
+      else {
+        setFiles([]);
+        report(entries.reason);
+      }
+      if (git.status === "fulfilled") setStatus(git.value);
+      else {
+        setStatus({ branch: "Git unavailable", files: [] });
+        setLoadError(true);
+      }
+      setWorktrees(trees.status === "fulfilled" ? trees.value : []);
     } catch (e) {
-      if (ticket !== refreshTicket.current) return;
-      setLoadError(true);
-      report(e);
+      if (ticket === refreshTicket.current) {
+        setLoadError(true);
+        report(e);
+      }
     } finally {
       if (ticket === refreshTicket.current) setLoading(false);
     }
@@ -205,7 +214,7 @@ export function ReviewPanel({
               <div className="quiet-empty">
                 {loading
                   ? "Reading working tree…"
-                  : "Working tree unavailable. Refresh to retry."}
+                  : "Git features are unavailable for this folder. Files and shell sessions remain available."}
               </div>
             ) : status.files.length === 0 ? (
               <div className="quiet-empty">
@@ -353,6 +362,22 @@ export function ReviewPanel({
                   Save
                 </button>
               ) : null}
+              {selected ? (
+                <button
+                  className="icon-button"
+                  aria-label="Reload file from disk"
+                  title="Reload file from disk"
+                  onClick={() =>
+                    void open({
+                      name: selected.path,
+                      path: selected.path,
+                      type: "file",
+                    })
+                  }
+                >
+                  <RefreshCw size={15} />
+                </button>
+              ) : null}
               <button
                 className="icon-button"
                 onClick={() => {
@@ -370,6 +395,7 @@ export function ReviewPanel({
           </header>
           <Suspense fallback={<p className="muted">Loading editor…</p>}>
             <Editor
+              key={selected ? selected.path + selected.hash : "diff"}
               content={selected ? content : diff}
               path={selected?.path || "changes.diff"}
               readOnly={!selected}

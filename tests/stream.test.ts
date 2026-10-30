@@ -51,3 +51,80 @@ test("slow subprocess leaves event loop responsive", async () => {
   assert.equal(await process, "done");
   assert.equal(ticked, true);
 });
+
+test("provider model overrides are per-attempt literal arguments with validated syntax", () => {
+  const task = { title: "Task", description: "" };
+  assert.deepEqual(providerArguments("codex", task, undefined, "gpt-6.1-sol"), [
+    "--model",
+    "gpt-6.1-sol",
+    "--",
+    "Task",
+  ]);
+  assert.deepEqual(providerArguments("claude", task, undefined, "sonnet"), [
+    "--model",
+    "sonnet",
+    "--",
+    "Task",
+  ]);
+  assert.deepEqual(providerArguments("claude", task, undefined, ""), [
+    "--",
+    "Task",
+  ]);
+  for (const invalid of [
+    null,
+    "bad\nmodel",
+    "x".repeat(201),
+    "--flag",
+    "model with spaces",
+  ])
+    assert.throws(
+      () => providerArguments("codex", task, undefined, invalid),
+      /Invalid provider model/,
+    );
+  assert.throws(
+    () => providerArguments("shell", task, undefined, "sonnet"),
+    /do not support/,
+  );
+});
+test("output acknowledgments cannot release another viewer frame", () => {
+  const events: CoreEvent[] = [];
+  const stream = new TerminalStream("session", (event) => events.push(event));
+  stream.add("a");
+  stream.add("b");
+  stream.write("frame");
+  const a = events.find(
+    (e) => e.type === "terminal.data" && e.viewerId === "a",
+  ) as Extract<CoreEvent, { type: "terminal.data" }>;
+  const b = events.find(
+    (e) => e.type === "terminal.data" && e.viewerId === "b",
+  ) as Extract<CoreEvent, { type: "terminal.data" }>;
+  assert.throws(() => stream.ack("a", b.sequence), /Invalid output/);
+  assert.throws(() => stream.ack("b", a.sequence), /does not belong/);
+  stream.ack("a", a.sequence);
+  stream.ack("a", a.sequence);
+});
+test("overflow keeps legitimate in-flight acknowledgments valid while rejecting foreign and future frames", () => {
+  const events: CoreEvent[] = [];
+  const stream = new TerminalStream("session", (event) => events.push(event));
+  stream.add("slow");
+  stream.add("other");
+  stream.write("x".repeat(200000));
+  const frames = events.filter(
+    (e): e is Extract<CoreEvent, { type: "terminal.data" }> => e.type === "terminal.data",
+  );
+  const slow = frames.find((e) => e.viewerId === "slow")!;
+  const other = frames.find((e) => e.viewerId === "other")!;
+  stream.write("y".repeat(100000));
+  assert.equal(events.filter((e) => e.type === "terminal.resync").length, 2);
+  assert.throws(() => stream.ack("other", slow.sequence), /does not belong/);
+  assert.throws(() => stream.ack("slow", other.sequence), /Invalid output/);
+  assert.doesNotThrow(() => stream.ack("slow", slow.sequence));
+  assert.doesNotThrow(() => stream.ack("other", other.sequence));
+  stream.write("paused until reattached");
+  assert.equal(events.filter((e) => e.type === "terminal.data").length, 2);
+  stream.remove("slow");
+  stream.add("slow");
+  assert.throws(() => stream.ack("slow", slow.sequence), /Invalid output/);
+  stream.write("restored");
+  assert.equal(events.filter((e) => e.type === "terminal.data").length, 3);
+});

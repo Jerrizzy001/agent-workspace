@@ -9,7 +9,37 @@ if (process.env.WORKSPACE_TEST_DATA_DIR)
 let quitting = false;
 let ready = false;
 let shutdownComplete = false;
-let readyWaiters: Array<() => void> = [];
+let shutdownStarted = false;
+const readyWaiters = new Set<{
+  resolve: () => void;
+  reject: (error: Error) => void;
+}>();
+function waitForCore() {
+  if (ready && core) return Promise.resolve();
+  if (!core && restarts > 3)
+    return Promise.reject(
+      new Error("Core stopped. Reopen the app to reconnect persistent sessions."),
+    );
+  return new Promise<void>((resolve, reject) => {
+    const waiter = {
+      resolve: () => {
+        clearTimeout(timer);
+        readyWaiters.delete(waiter);
+        resolve();
+      },
+      reject: (error: Error) => {
+        clearTimeout(timer);
+        readyWaiters.delete(waiter);
+        reject(error);
+      },
+    };
+    const timer = setTimeout(
+      () => waiter.reject(new Error("Core startup timed out")),
+      15000,
+    );
+    readyWaiters.add(waiter);
+  });
+}
 let restarts = 0;
 let requestId = 0;
 const pending = new Map<
@@ -48,7 +78,7 @@ function startCore() {
     }
     if (message.type === "ready") {
       ready = true;
-      readyWaiters.splice(0).forEach((resolve) => resolve());
+      for (const waiter of readyWaiters) waiter.resolve();
       event({ type: "core.status", status: "ready" });
     }
     if (message.type === "result") {
@@ -72,13 +102,18 @@ function startCore() {
       );
     pending.clear();
     if (!quitting && restarts++ < 3) setTimeout(startCore, 700 * restarts);
-    else if (!quitting)
+    else if (!quitting) {
+      for (const waiter of readyWaiters)
+        waiter.reject(
+          new Error("Core stopped. Reopen the app to reconnect persistent sessions."),
+        );
       event({
         type: "core.status",
         status: "failed",
         message:
           "Core stopped. Reopen the app to reconnect persistent sessions.",
       });
+    }
   });
 }
 function createWindow() {
@@ -145,16 +180,7 @@ else {
           JSON.stringify(payload).length > 2_000_000
         )
           throw new Error("Invalid payload");
-        if (!ready)
-          await Promise.race([
-            new Promise<void>((resolve) => readyWaiters.push(resolve)),
-            new Promise<never>((_, reject) =>
-              setTimeout(
-                () => reject(new Error("Core startup timed out")),
-                15000,
-              ),
-            ),
-          ]);
+        if (!ready) await waitForCore();
         if (!core) throw new Error("Core is reconnecting");
         const id = ++requestId;
         return new Promise((resolve, reject) => {
@@ -176,7 +202,13 @@ else {
               reject(error);
             },
           });
-          core!.postMessage({ type: "invoke", id, command, payload });
+          try {
+            core!.postMessage({ type: "invoke", id, command, payload });
+          } catch (error) {
+            pending.delete(id);
+            clearTimeout(timer);
+            reject(error);
+          }
         });
       },
     );
@@ -206,11 +238,27 @@ else {
   app.on("will-quit", (ev) => {
     if (core && !shutdownComplete) {
       ev.preventDefault();
-      core.postMessage({ type: "shutdown" });
-      setTimeout(() => {
-        shutdownComplete = true;
-        app.quit();
-      }, 4000).unref();
+      if (!shutdownStarted) {
+        shutdownStarted = true;
+        // Let accepted editor/note writes finish before closing the database.
+        // beforeunload protects changes that have not reached this bridge yet.
+        void (async () => {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          const deadline = Date.now() + 2000;
+          while (pending.size && Date.now() < deadline)
+            await new Promise<void>((resolve) => setTimeout(resolve, 10));
+          try {
+            core?.postMessage({ type: "shutdown" });
+          } catch {
+            shutdownComplete = true;
+            app.quit();
+          }
+        })();
+        setTimeout(() => {
+          shutdownComplete = true;
+          app.quit();
+        }, 6000).unref();
+      }
     }
   });
 }

@@ -8,6 +8,8 @@ export class TerminalStream {
       pending: { sequence: number; bytes: number }[];
       bytes: number;
       resync: boolean;
+      lastAck: number;
+      lastSent: number;
     }
   >();
   constructor(
@@ -15,7 +17,13 @@ export class TerminalStream {
     private emit: (event: CoreEvent) => void,
   ) {}
   add(viewerId: string) {
-    this.viewers.set(viewerId, { pending: [], bytes: 0, resync: false });
+    this.viewers.set(viewerId, {
+      pending: [],
+      bytes: 0,
+      resync: false,
+      lastAck: 0,
+      lastSent: 0,
+    });
   }
   remove(viewerId: string) {
     this.viewers.delete(viewerId);
@@ -26,9 +34,13 @@ export class TerminalStream {
     if (
       !Number.isSafeInteger(sequence) ||
       sequence < 0 ||
-      sequence > this.sequence
+      sequence > v.lastSent
     )
       throw new Error("Invalid output acknowledgment");
+    if (sequence <= v.lastAck) return;
+    if (!v.pending.some((p) => p.sequence === sequence))
+      throw new Error("Acknowledgment does not belong to viewer");
+    v.lastAck = sequence;
     while (v.pending[0] && v.pending[0].sequence <= sequence) {
       v.bytes -= v.pending.shift()!.bytes;
     }
@@ -39,8 +51,9 @@ export class TerminalStream {
     for (const [viewerId, v] of this.viewers) {
       if (v.resync) continue;
       if (v.bytes + bytes > 262144 || v.pending.length >= 4096) {
-        v.pending = [];
-        v.bytes = 0;
+        // Already delivered frames can still be acknowledged while the renderer
+        // receives the resync event. Keep their bounded ownership ledger until
+        // detach rather than treating those legitimate in-flight ACKs as foreign.
         v.resync = true;
         this.emit({
           type: "terminal.resync",
@@ -50,6 +63,7 @@ export class TerminalStream {
         continue;
       }
       const sequence = ++this.sequence;
+      v.lastSent = sequence;
       v.bytes += bytes;
       v.pending.push({ sequence, bytes });
       this.emit({

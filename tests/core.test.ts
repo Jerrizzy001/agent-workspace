@@ -87,9 +87,70 @@ test("persistent core, file conflict, worktree and session ownership", async () 
       /different request/,
     );
     const session = { sessionId: sid, generation: 1, viewerId: "b" };
-    await call("session.attach", { ...session, viewerId: "a" });
-    await call("session.attach", { ...session, viewerId: "b" });
+    await call("session.attach", {
+      ...session,
+      viewerId: "a",
+      cols: 120,
+      rows: 40,
+    });
+    await call("session.attach", {
+      ...session,
+      viewerId: "b",
+      cols: 80,
+      rows: 24,
+    });
+    const sessionSocket = path.join(
+      os.tmpdir(),
+      "aw-" +
+        crypto
+          .createHash("sha256")
+          .update(fs.realpathSync(dataDir))
+          .digest("hex")
+          .slice(0, 20) +
+        ".sock",
+    );
+    const paneSize = () =>
+      execFileSync(
+        "/opt/homebrew/bin/tmux",
+        [
+          "-S",
+          sessionSocket,
+          "display-message",
+          "-p",
+          "-t",
+          first.session.backendName + ":0.0",
+          "#{pane_width},#{pane_height}",
+        ],
+        { encoding: "utf8" },
+      ).trim();
+    for (let retry = 0; retry < 20 && paneSize() !== "80,24"; retry++)
+      await new Promise((r) => setTimeout(r, 25));
+    assert.equal(paneSize(), "80,24");
+    await call("session.resize", {
+      ...session,
+      viewerId: "a",
+      cols: 60,
+      rows: 18,
+    });
+    for (let retry = 0; retry < 20 && paneSize() !== "60,18"; retry++)
+      await new Promise((r) => setTimeout(r, 25));
+    assert.equal(paneSize(), "60,18");
+    await assert.rejects(
+      call("session.resize", { ...session, generation: 2, cols: 80, rows: 24 }),
+      /Stale/,
+    );
     await call("session.detach", { ...session, viewerId: "a" });
+    for (let retry = 0; retry < 20 && paneSize() !== "80,24"; retry++)
+      await new Promise((r) => setTimeout(r, 25));
+    assert.equal(paneSize(), "80,24");
+    await assert.rejects(
+      call("session.terminate", { ...session, viewerId: "a" }),
+      /not attached/,
+    );
+    await assert.rejects(
+      call("session.input", { sessionId: sid, viewerId: "b", data: "x" }),
+      /generation required/,
+    );
     await assert.rejects(
       call("session.input", { ...session, viewerId: "a", data: "x" }),
       /not attached/,
@@ -114,6 +175,8 @@ test("persistent core, file conflict, worktree and session ownership", async () 
       '#!/bin/sh\nprintf "permission denied\\n" >&2\nexit 1\n',
       { mode: 0o700 },
     );
+    const dataAlias = path.join(temp, "data-alias");
+    fs.symlinkSync(dataDir, dataAlias);
     const oldTmux = process.env.WORKSPACE_TMUX;
     process.env.WORKSPACE_TMUX = unavailable;
     core = await createCore({ dataDir, emit: () => {} });
@@ -121,7 +184,8 @@ test("persistent core, file conflict, worktree and session ownership", async () 
     await core.close();
     if (oldTmux) process.env.WORKSPACE_TMUX = oldTmux;
     else delete process.env.WORKSPACE_TMUX;
-    core = await createCore({ dataDir, emit: () => {} });
+    core = await createCore({ dataDir: dataAlias, emit: () => {} });
+    assert.equal((await call("snapshot")).sessions[0].id, sid);
     assert.equal((await call("snapshot")).sessions[0].status, "running");
     assert.match(
       (await call("session.capture", session)).data,
@@ -132,7 +196,33 @@ test("persistent core, file conflict, worktree and session ownership", async () 
       idempotencyKey: "launch-two",
     });
     await call("session.attach", session);
+    execFileSync("/opt/homebrew/bin/tmux", [
+      "-S",
+      sessionSocket,
+      "new-session",
+      "-d",
+      "-s",
+      first.session.backendName + "-neighbor",
+      "/bin/sh",
+    ]);
     await call("session.terminate", session);
+    assert.doesNotThrow(() =>
+      execFileSync(
+        "/opt/homebrew/bin/tmux",
+        [
+          "-S",
+          sessionSocket,
+          "has-session",
+          "-t",
+          "=" + first.session.backendName + "-neighbor",
+        ],
+        { stdio: "ignore" },
+      ),
+    );
+    await assert.rejects(
+      call("session.capture", session),
+      /find session|no such session/,
+    );
     assert.equal(
       (await call("snapshot")).sessions.find(
         (s: any) => s.id === other.session.id,
@@ -159,6 +249,19 @@ test("persistent core, file conflict, worktree and session ownership", async () 
       viewerId: "b",
     });
     assert.equal((await call("snapshot")).sessions[0].status, "exited");
+    assert.equal((await call("attempt.start", args)).session.status, "exited");
+    const absentJournal = new DatabaseSync(
+      path.join(dataDir, "workspace.sqlite"),
+    );
+    absentJournal
+      .prepare("UPDATE receipts SET result=NULL WHERE key=?")
+      .run("launch-two");
+    absentJournal.close();
+    await assert.rejects(
+      call("attempt.start", { ...args, idempotencyKey: "launch-two" }),
+      /outcome unknown/,
+    );
+    assert.equal((await call("snapshot")).attempts.length, 2);
   } finally {
     if (sid)
       try {
@@ -168,7 +271,11 @@ test("persistent core, file conflict, worktree and session ownership", async () 
     const socket = path.join(
       os.tmpdir(),
       "aw-" +
-        crypto.createHash("sha256").update(dataDir).digest("hex").slice(0, 20) +
+        crypto
+          .createHash("sha256")
+          .update(fs.realpathSync(dataDir))
+          .digest("hex")
+          .slice(0, 20) +
         ".sock",
     );
     try {
@@ -209,12 +316,23 @@ test("fresh provider launch receives exact task prompt as arguments without shel
       taskId: task.id,
       provider: "codex",
       idempotencyKey: "synthetic-provider",
+      model: "fixture-model",
     });
     for (let retry = 0; retry < 40 && !fs.existsSync(received); retry++)
       await new Promise((r) => setTimeout(r, 25));
     assert.equal(
       fs.readFileSync(received, "utf8"),
-      `--\nTask\n\nliteral $(touch ${marker})\n`,
+      `--model\nfixture-model\n--\nTask\n\nliteral $(touch ${marker})\n`,
+    );
+    assert.equal(launched.attempt.model, "fixture-model");
+    await assert.rejects(
+      core.invoke("attempt.start", {
+        taskId: task.id,
+        provider: "codex",
+        idempotencyKey: "synthetic-provider",
+        model: "different-model",
+      }),
+      /different request/,
     );
     assert.equal(fs.existsSync(marker), false);
     await core.invoke("session.attach", {
@@ -232,7 +350,11 @@ test("fresh provider launch receives exact task prompt as arguments without shel
     const socket = path.join(
       os.tmpdir(),
       "aw-" +
-        crypto.createHash("sha256").update(dataDir).digest("hex").slice(0, 20) +
+        crypto
+          .createHash("sha256")
+          .update(fs.realpathSync(dataDir))
+          .digest("hex")
+          .slice(0, 20) +
         ".sock",
     );
     try {
@@ -257,7 +379,11 @@ test("detached shell exit is reconciled without reopening and private tmux has n
   const socket = path.join(
     os.tmpdir(),
     "aw-" +
-      crypto.createHash("sha256").update(dataDir).digest("hex").slice(0, 20) +
+      crypto
+        .createHash("sha256")
+        .update(fs.realpathSync(dataDir))
+        .digest("hex")
+        .slice(0, 20) +
       ".sock",
   );
   try {
@@ -318,6 +444,166 @@ test("detached shell exit is reconciled without reopening and private tmux has n
         stdio: "ignore",
       });
     } catch {}
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test("legacy socket upgrade preserves old shell identity and independently targets mixed backend sockets", async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "workspace-upgrade-"));
+  const oldTmpdir = process.env.TMPDIR;
+  const isolatedSockets = fs.mkdtempSync("/tmp/aw-sockets-");
+  process.env.TMPDIR = isolatedSockets;
+  const dataDir = path.join(temp, "data");
+  let core = await createCore({ dataDir, emit: () => {} });
+  const sockets = new Set<string>();
+  const tmux = (socket: string, args: string[]) =>
+    execFileSync("/opt/homebrew/bin/tmux", ["-S", socket, ...args], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  try {
+    const project: any = await core.invoke("project.add", { path: temp });
+    const task: any = await core.invoke("task.create", {
+      projectId: project.id,
+      title: "Upgrade fixture",
+    });
+    const modern: any = await core.invoke("attempt.start", {
+      taskId: task.id,
+      provider: "shell",
+      idempotencyKey: "modern",
+    });
+    sockets.add(modern.session.backendSocket);
+    await core.close();
+    const alias = path.join(temp, "old-data-alias");
+    fs.symlinkSync(dataDir, alias);
+    const legacySocket = path.join(
+      os.tmpdir(),
+      "aw-" +
+        crypto.createHash("sha256").update(alias).digest("hex").slice(0, 20) +
+        ".sock",
+    );
+    sockets.add(legacySocket);
+    // Real older sockets must remain discoverable beyond an arbitrary scan prefix.
+    for (let i = 0; i < 70; i++)
+      fs.writeFileSync(
+        path.join(isolatedSockets, `aw-${i.toString(16).padStart(20, "0")}.sock`),
+        "stale socket fixture",
+      );
+    const sid = crypto.randomUUID(),
+      aid = crypto.randomUUID();
+    const backendName = "aw-" + sid;
+    tmux(legacySocket, [
+      "new-session",
+      "-d",
+      "-s",
+      backendName,
+      "-c",
+      temp,
+      "/bin/sh",
+    ]);
+    const before = tmux(legacySocket, [
+      "display-message",
+      "-p",
+      "-t",
+      backendName + ":0.0",
+      "#{pane_pid}",
+    ]).trim();
+    const oldSession = {
+      id: sid,
+      attemptId: aid,
+      projectId: project.id,
+      provider: "shell",
+      cwd: temp,
+      backendName,
+      generation: 1,
+      status: "running",
+      createdAt: new Date().toISOString(),
+    };
+    const oldAttempt = {
+      id: aid,
+      taskId: task.id,
+      projectId: project.id,
+      provider: "shell",
+      sessionId: sid,
+      worktreePath: temp,
+      status: "running",
+      createdAt: new Date().toISOString(),
+    };
+    const database = new DatabaseSync(path.join(dataDir, "workspace.sqlite"));
+    database.prepare("DELETE FROM records WHERE kind=?").run("backend");
+    const modernSession = { ...modern.session };
+    delete modernSession.backendSocket;
+    database
+      .prepare("UPDATE records SET value=? WHERE kind=? AND id=?")
+      .run(JSON.stringify(modernSession), "sessions", modernSession.id);
+    database
+      .prepare("INSERT INTO records VALUES (?,?,?)")
+      .run("sessions", sid, JSON.stringify(oldSession));
+    database
+      .prepare("INSERT INTO records VALUES (?,?,?)")
+      .run("attempts", aid, JSON.stringify(oldAttempt));
+    database.close();
+    core = await createCore({
+      dataDir: fs.realpathSync(dataDir),
+      emit: () => {},
+    });
+    let snapshot: any = await core.invoke("snapshot");
+    assert.equal(
+      snapshot.sessions.find((s: any) => s.id === sid).status,
+      "running",
+    );
+    assert.equal(
+      snapshot.sessions.find((s: any) => s.id === sid).backendSocket,
+      legacySocket,
+    );
+    assert.equal(
+      tmux(legacySocket, [
+        "display-message",
+        "-p",
+        "-t",
+        backendName + ":0.0",
+        "#{pane_pid}",
+      ]).trim(),
+      before,
+    );
+    const viewer = { sessionId: sid, generation: 1, viewerId: "legacy" };
+    await core.invoke("session.attach", viewer);
+    await core.invoke("session.input", {
+      ...viewer,
+      data: "printf 'LEGACY_SOCKET_MARKER\\n'\r",
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    assert.match(
+      ((await core.invoke("session.capture", viewer)) as any).data,
+      /LEGACY_SOCKET_MARKER/,
+    );
+    assert.doesNotMatch(
+      (
+        (await core.invoke("session.capture", {
+          sessionId: modernSession.id,
+        })) as any
+      ).data,
+      /LEGACY_SOCKET_MARKER/,
+    );
+    await core.invoke("session.terminate", viewer);
+    snapshot = await core.invoke("snapshot");
+    assert.equal(
+      snapshot.sessions.find((s: any) => s.id === modernSession.id).status,
+      "running",
+    );
+    assert.equal(
+      snapshot.sessions.find((s: any) => s.id === sid).status,
+      "exited",
+    );
+  } finally {
+    await core.close();
+    for (const socket of sockets)
+      try {
+        tmux(socket, ["kill-server"]);
+      } catch {}
+    if (oldTmpdir === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = oldTmpdir;
+    fs.rmSync(isolatedSockets, { recursive: true, force: true });
     fs.rmSync(temp, { recursive: true, force: true });
   }
 });

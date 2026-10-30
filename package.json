@@ -1,6 +1,6 @@
 {
   "name": "agent-workspace",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "An original local desktop workspace for coding agents",
   "main": "dist/desktop/main.cjs",
@@ -12,7 +12,12 @@
     "postinstall": "electron-rebuild -f -w node-pty",
     "package": "npm run build && electron-builder --mac dir zip --publish never",
     "smoke": "node scripts/smoke-electron.mjs",
-    "smoke:ui": "node scripts/smoke-ui.mjs"
+    "smoke:ui": "node scripts/smoke-ui.mjs",
+    "verify:desktop": "node scripts/verify-desktop.mjs",
+    "verify:workflows": "node scripts/verify-workflows.mjs",
+    "verify:lifecycle": "node scripts/verify-lifecycle-ui.mjs",
+    "verify:terminal": "node scripts/verify-terminal-modes.mjs",
+    "verify:providers": "node scripts/verify-providers.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "4.7.0",

@@ -16,6 +16,9 @@ export function TerminalView({
   viewerCallback.current = onViewer;
   const [error, setError] = useState("");
   const [epoch, setEpoch] = useState(0);
+  const [manualRetry, setManualRetry] = useState(0);
+  const status = useRef(session.status);
+  status.current = session.status;
   const [ready, setReady] = useState(false);
   useEffect(
     () =>
@@ -33,6 +36,7 @@ export function TerminalView({
     let disposed = false;
     let attached = false;
     let resyncing = false;
+    let streamEpoch = 0;
     const pending: { data: string; sequence: number }[] = [];
     const viewerId = crypto.randomUUID();
     const identity = {
@@ -65,15 +69,23 @@ export function TerminalView({
     terminal.loadAddon(fit);
     terminal.open(host.current);
     const fail = (e: unknown) => {
-      if (!disposed) setError(String(e));
+      if (!disposed) {
+        setError(String(e));
+        setReady(false);
+        terminal.options.disableStdin = true;
+      }
     };
-    const write = (data: string, sequence: number) =>
+    const write = (data: string, sequence: number) => {
+      const writtenEpoch = streamEpoch;
       terminal.write(data, () => {
-        if (!disposed)
+        if (!disposed && writtenEpoch === streamEpoch)
           void window.workspace
             .invoke("session.ack", { ...identity, sequence })
-            .catch(fail);
+            .catch((error) => {
+              if (writtenEpoch === streamEpoch) fail(error);
+            });
       });
+    };
     const resize = () => {
       if (!attached || !host.current?.clientWidth || !host.current.clientHeight)
         return;
@@ -87,14 +99,18 @@ export function TerminalView({
         .catch(fail);
     };
     const attach = async () => {
+      streamEpoch++;
+      if (host.current?.clientWidth && host.current.clientHeight) fit.fit();
       const result = await window.workspace.invoke<{ data: string }>(
         "session.attach",
-        identity,
+        { ...identity, cols: terminal.cols, rows: terminal.rows },
       );
       if (disposed) {
         await window.workspace.invoke("session.detach", identity);
         return;
       }
+      await new Promise<void>((resolve) => terminal.write("", resolve));
+      if (disposed) return;
       terminal.reset();
       terminal.write(result.data || "", () => {
         if (disposed) return;
@@ -114,6 +130,18 @@ export function TerminalView({
       });
     };
     const unsubscribe = window.workspace.subscribe((event) => {
+      if (
+        (event.type === "session.exit" && event.sessionId === session.id) ||
+        (event.type === "snapshot" &&
+          event.snapshot.sessions.find((s) => s.id === session.id)?.status ===
+            "exited")
+      ) {
+        attached = false;
+        queuedInput = "";
+        setReady(false);
+        terminal.options.disableStdin = true;
+        viewerCallback.current?.(null);
+      }
       if (event.type === "core.status" && event.status !== "ready") {
         attached = false;
         queuedInput = "";
@@ -131,6 +159,7 @@ export function TerminalView({
           else pending.push(event);
         } else if (!resyncing) {
           resyncing = true;
+          streamEpoch++;
           attached = false;
           setReady(false);
           pending.length = 0;
@@ -158,7 +187,12 @@ export function TerminalView({
           "Terminal input is unavailable while reconnecting. Wait for attachment, then retry.",
         );
     });
-    void attach().catch(fail);
+    if (
+      status.current === "running" ||
+      (status.current === "unknown" && manualRetry > 0)
+    )
+      void attach().catch(fail);
+    else terminal.options.disableStdin = true;
     return () => {
       disposed = true;
       attached = false;
@@ -169,10 +203,24 @@ export function TerminalView({
       terminal.dispose();
       void window.workspace.invoke("session.detach", identity).catch(() => {});
     };
-  }, [session.id, session.generation, epoch]);
+  }, [session.id, session.generation, epoch, manualRetry]);
   return (
     <div className="terminal-wrap">
-      {!ready ? (
+      {session.status === "exited" ? (
+        <div className="terminal-ended" role="status">
+          Session ended. Output received in this open view remains below. Closed
+          views have no saved terminal transcript.
+        </div>
+      ) : null}
+      {session.status === "unknown" && !ready && !error ? (
+        <div className="terminal-ended" role="status">
+          Session state is unknown. Reconnect to check the existing process.
+          <button onClick={() => setManualRetry((value) => value + 1)}>
+            Reconnect
+          </button>
+        </div>
+      ) : null}
+      {!ready && !error && session.status === "running" ? (
         <div className="terminal-connection" role="status">
           Connecting terminal…
         </div>
@@ -180,6 +228,11 @@ export function TerminalView({
       {error ? (
         <div className="inline-error" role="alert">
           {error}
+          {session.status !== "exited" ? (
+            <button onClick={() => setManualRetry((value) => value + 1)}>
+              Reconnect existing session
+            </button>
+          ) : null}
         </div>
       ) : null}
       <div className="terminal-host" ref={host} />
