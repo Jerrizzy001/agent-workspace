@@ -52,6 +52,10 @@ export interface Session {
   exitCode?: number;
   /** True when the final screen was saved after the process ended on its own. */
   transcript?: boolean;
+  /** Owner-chosen plain-text name; absent shows the default title. */
+  title?: string;
+  /** Incremented on every rename; `session.rename` must name the current one. */
+  titleRevision?: number;
 }
 export interface Note {
   id: string;
@@ -147,6 +151,7 @@ export const COMMANDS = [
   "session.terminate",
   "session.capture",
   "session.ack",
+  "session.rename",
   "files.list",
   "files.read",
   "files.write",
@@ -188,6 +193,33 @@ export interface DesktopRemoteAPI {
   revokeSessions(): Promise<void>;
   chooseTLSFile(kind: "certificate" | "key"): Promise<RemoteStatus>;
 }
+export interface ClipboardImagePreview {
+  /** Short-lived handle for the validated image held by the desktop main process. */
+  token: string;
+  width: number;
+  height: number;
+  bytes: number;
+  /** Small PNG data URL for the confirmation dialog. */
+  thumbnail: string;
+}
+export interface SavedAttachment {
+  id: string;
+  /** Absolute host path of the private PNG. */
+  path: string;
+  bytes: number;
+  sha256: string;
+}
+/** Desktop owner only: reads one clipboard image after a user gesture. */
+export interface ClipboardImageAPI {
+  /** Null when the clipboard holds no image. */
+  preview(): Promise<ClipboardImagePreview | null>;
+  save(target: {
+    token: string;
+    sessionId: string;
+    generation: number;
+  }): Promise<SavedAttachment>;
+  discard(token: string): Promise<void>;
+}
 export interface WorkspaceAPI {
   invoke<T = unknown>(
     command: Command,
@@ -198,6 +230,7 @@ export interface WorkspaceAPI {
   /** Desktop owner only: lists a host folder for in-app navigation. */
   browseDirectory?(path?: string): Promise<DirectoryListing>;
   remote?: DesktopRemoteAPI;
+  clipboardImage?: ClipboardImageAPI;
 }
 declare global {
   interface Window {
@@ -210,5 +243,11 @@ export interface CoreOptions {
 }
 export interface Core {
   invoke(command: Command, payload?: Record<string, unknown>): Promise<unknown>;
+  /** Trusted desktop broker only; never reachable as a public command. */
+  createAttachment(input: {
+    sessionId: string;
+    generation: number;
+    data: Uint8Array;
+  }): Promise<SavedAttachment>;
   close(): void | Promise<void>;
 }

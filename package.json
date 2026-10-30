@@ -18,6 +18,7 @@
     "verify:workflows": "node scripts/verify-workflows.mjs",
     "verify:lifecycle": "node scripts/verify-lifecycle-ui.mjs",
     "verify:terminal": "node scripts/verify-terminal-modes.mjs",
+    "verify:image-paste": "node scripts/verify-image-paste.mjs",
     "verify:providers": "node scripts/verify-providers.mjs",
     "build:server": "vite build && node scripts/build-desktop.mjs",
     "start:server": "node dist/server/headless.mjs",

@@ -2,22 +2,111 @@ import { createId } from "./id";
 import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import type { Session } from "../shared/contracts";
+import type { ClipboardImagePreview, Session } from "../shared/contracts";
+import { shellEscapePath } from "../shared/terminal-paste";
+import { ImagePastePreview } from "./ImagePastePreview";
 import "@xterm/xterm/css/xterm.css";
 
 export function TerminalView({
   session,
   onViewer,
   endedNotice = true,
+  imagePasteRequest = 0,
 }: {
   session: Session;
   onViewer?: (id: string | null) => void;
   /** Hosts that explain an ended session themselves turn the built-in notice off. */
   endedNotice?: boolean;
+  /** Incremented by the host's "Paste image" action (desktop owner only). */
+  imagePasteRequest?: number;
 }) {
   const host = useRef<HTMLDivElement>(null);
-  const viewerCallback = useRef(onViewer);
-  viewerCallback.current = onViewer;
+  // The attached viewer, or null; image paste rechecks it before typing.
+  const viewerRef = useRef<string | null>(null);
+  const onViewerRef = useRef(onViewer);
+  onViewerRef.current = onViewer;
+  const viewerCallback = useRef((id: string | null) => {
+    viewerRef.current = id;
+    onViewerRef.current?.(id);
+  });
+  const [imagePaste, setImagePaste] = useState<{
+    preview: ClipboardImagePreview;
+    viewerId: string;
+  } | null>(null);
+  const [imageBusy, setImageBusy] = useState(false);
+  const [imageError, setImageError] = useState("");
+  const [imageNotice, setImageNotice] = useState("");
+  const startImagePaste = useRef(async () => {});
+  startImagePaste.current = async () => {
+    const api = window.workspace.clipboardImage;
+    const viewerId = viewerRef.current;
+    if (!api || imageBusy || imagePaste) return;
+    setImageNotice("");
+    if (!viewerId) {
+      setImageNotice("Connect the terminal before pasting an image.");
+      return;
+    }
+    setImageBusy(true);
+    try {
+      const preview = await api.preview();
+      if (!preview) setImageNotice("The clipboard has no image to paste.");
+      else if (viewerRef.current !== viewerId) {
+        void api.discard(preview.token).catch(() => {});
+        setImageNotice("The terminal reconnected. Paste the image again.");
+      } else {
+        setImageError("");
+        setImagePaste({ preview, viewerId });
+      }
+    } catch (error) {
+      setImageNotice(error instanceof Error ? error.message : String(error));
+    } finally {
+      setImageBusy(false);
+    }
+  };
+  const closeImagePaste = () => {
+    if (imagePaste)
+      void window.workspace.clipboardImage
+        ?.discard(imagePaste.preview.token)
+        .catch(() => {});
+    setImagePaste(null);
+    setImageError("");
+    terminalRef.current?.focus();
+  };
+  const confirmImagePaste = async () => {
+    const api = window.workspace.clipboardImage;
+    if (!api || !imagePaste) return;
+    const { preview, viewerId } = imagePaste;
+    // The same session, generation and attached viewer must still be on screen.
+    const current = () => viewerRef.current === viewerId && !!terminalRef.current;
+    if (!current()) {
+      setImageError("The terminal reconnected. Cancel and paste the image again.");
+      return;
+    }
+    setImageBusy(true);
+    try {
+      const saved = await api.save({
+        token: preview.token,
+        sessionId: session.id,
+        generation: session.generation,
+      });
+      if (!current())
+        throw new Error(
+          `The terminal disconnected; nothing was typed. The image was saved at ${saved.path}`,
+        );
+      // Bracketed paste of one escaped path, no Enter: nothing is submitted.
+      terminalRef.current!.paste(shellEscapePath(saved.path));
+      setImagePaste(null);
+      setImageError("");
+      terminalRef.current!.focus();
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setImageBusy(false);
+    }
+  };
+  useEffect(() => {
+    if (imagePasteRequest) void startImagePaste.current();
+  }, [imagePasteRequest]);
   const terminalRef = useRef<Terminal | null>(null);
   const sendRef = useRef<(data: string) => void>(() => {});
   const [pasteOpen, setPasteOpen] = useState(false);
@@ -91,6 +180,24 @@ export function TerminalView({
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(host.current);
+    // A paste that carries only an image becomes the image-path flow; text
+    // pastes are left to the terminal untouched.
+    const element = host.current;
+    const onPaste = (event: ClipboardEvent) => {
+      const data = event.clipboardData;
+      if (!window.workspace.clipboardImage || !data || data.getData("text/plain"))
+        return;
+      if (
+        !Array.from(data.items).some(
+          (item) => item.kind === "file" && item.type.startsWith("image/"),
+        )
+      )
+        return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void startImagePaste.current();
+    };
+    element.addEventListener("paste", onPaste, true);
     const fail = (e: unknown) => {
       if (!disposed) {
         clearInput();
@@ -279,6 +386,7 @@ export function TerminalView({
       clearInput();
       viewerCallback.current?.(null);
       observer.disconnect();
+      element.removeEventListener("paste", onPaste, true);
       input.dispose();
       unsubscribe();
       terminalRef.current = null;
@@ -320,7 +428,22 @@ export function TerminalView({
           ) : null}
         </div>
       ) : null}
+      {imageNotice ? (
+        <div className="terminal-connection" role="status">
+          {imageNotice}
+          <button onClick={() => setImageNotice("")}>Dismiss</button>
+        </div>
+      ) : null}
       <div className="terminal-host" ref={host} />
+      {imagePaste ? (
+        <ImagePastePreview
+          preview={imagePaste.preview}
+          busy={imageBusy}
+          error={imageError}
+          onConfirm={() => void confirmImagePaste()}
+          onCancel={closeImagePaste}
+        />
+      ) : null}
       {pasteOpen ? (
         <form
           className="terminal-paste"

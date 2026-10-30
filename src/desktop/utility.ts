@@ -10,9 +10,17 @@ port.on("message", async ({ data }: any) => {
     port.postMessage({ type: "closed" });
     process.exit(0);
   }
-  if (data.type === "invoke") {
+  if (data.type === "invoke" || data.type === "attachment") {
     try {
-      const result = await core.invoke(data.command, data.payload);
+      // Image bytes arrive only from the desktop clipboard broker in main.
+      const result =
+        data.type === "attachment"
+          ? await core.createAttachment({
+              sessionId: data.sessionId,
+              generation: data.generation,
+              data: data.data,
+            })
+          : await core.invoke(data.command, data.payload);
       port.postMessage({ type: "result", id: data.id, result });
     } catch (error) {
       port.postMessage({

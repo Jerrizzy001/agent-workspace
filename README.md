@@ -9,6 +9,8 @@ An independently authored desktop and remote browser app for running coding agen
 1. **Open a folder.** Use the in-app browser (folders first, Git repositories marked, `⌘O` / `Ctrl+O`) or the system picker. Opened folders stay in the sidebar; **Remove from list** hides one without touching its files or history.
 2. **Click Claude, Codex or Shell.** One click opens an interactive terminal in the folder shown under **Opens in**. Moving into a subfolder in the Files panel moves that target with it. Nothing is sent to an agent until you type. **Launch options** hold an optional model per provider (blank uses your CLI's own default), an optional first message (sent once, then cleared), and an existing worktree.
 3. **Work with several sessions.** The sidebar lists every session across folders, with "needs you" first. Tabs above the terminal switch between sessions in the current folder. **Interrupt** sends Ctrl+C; **End** stops the process after confirming. Switching views or folders only detaches the view; it never restarts a process or resends a prompt.
+4. **Name a session.** Click the pencil or double-click its title; Enter saves, Esc cancels, an empty name restores the default. Names are plain text (80 characters) and show in the sidebar, tabs and canvas.
+5. **Paste a screenshot.** In the desktop app, **Paste image** (or pasting an image-only clipboard into a terminal) previews the image. Confirm saves it as a private PNG under the app's data folder (`attachments/<session>/`, owner-only permissions) and types its escaped path into the terminal without pressing Enter. Saved images are removed 7 days after their session ends. Remote browsers cannot read the host clipboard or upload images.
 
 Claude sessions report **Working**, **Needs you** and **Done**. Each one is launched with its own `--session-id` and a per-session `--settings` hook that records its turn state; your global Claude configuration is not changed. You get an in-app notice, plus an OS notification when the window is in the background, when a session needs you, finishes its turn, or exits unexpectedly. Codex and shell sessions show running or ended.
 
@@ -28,6 +30,8 @@ npm run dev
 ```
 
 `npm run build` creates the renderer and Electron entrypoints. `npm run typecheck` checks TypeScript. `npm test` runs the integration tests. `npm run package` creates an unsigned internal macOS application and zip in `release/`. Open the application in `release/mac-arm64/Agent Workspace.app` on Apple silicon. Build on the target architecture.
+
+Before upgrading an existing workspace database, the app saves a consistent copy to `backups/workspace-v<old version>-<time>.sqlite` in its data folder and keeps the newest three. To roll back, quit the app, replace `workspace.sqlite` with that copy and delete `workspace.sqlite-wal` and `workspace.sqlite-shm`, then run the matching older build. A database written by a newer version is refused unchanged.
 
 ## Remote browser access
 

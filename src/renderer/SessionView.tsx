@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { History, Play, Square, Zap } from "lucide-react";
+import { History, ImagePlus, Pencil, Play, Square, Zap } from "lucide-react";
 import type { Project, Session } from "../shared/contracts";
 import { TerminalView } from "./TerminalView";
 import { providerName, sessionLocation, sessionState } from "./sessions";
@@ -24,6 +24,30 @@ export function SessionView({
   report: (error: unknown) => void;
 }) {
   const [viewerId, setViewerId] = useState<string | null>(null);
+  const [imagePasteRequest, setImagePasteRequest] = useState(0);
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const startRename = () => {
+    setDraft(session.title || title);
+    setRenaming(true);
+  };
+  const rename = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await window.workspace.invoke("session.rename", {
+        ...identity,
+        title: draft,
+        titleRevision: session.titleRevision ?? 0,
+      });
+      setRenaming(false);
+    } catch (error) {
+      report(error);
+    } finally {
+      setSaving(false);
+    }
+  };
   const state = sessionState(session);
   const identity = {
     sessionId: session.id,
@@ -45,10 +69,48 @@ export function SessionView({
         <div className="session-identity">
           <ProviderGlyph provider={session.provider} size={16} />
           <div>
-            <strong>
-              {title}
-              <StatusBadge session={session} />
-            </strong>
+            {renaming ? (
+              <input
+                className="session-rename"
+                aria-label="Session name"
+                autoFocus
+                maxLength={80}
+                value={draft}
+                disabled={saving}
+                placeholder={name}
+                onChange={(event) => setDraft(event.target.value)}
+                onFocus={(event) => event.target.select()}
+                onBlur={() => !saving && setRenaming(false)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void rename();
+                  } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    setRenaming(false);
+                  }
+                }}
+              />
+            ) : (
+              <strong>
+                <span
+                  className="session-title"
+                  title="Double-click to rename"
+                  onDoubleClick={startRename}
+                >
+                  {title}
+                </span>
+                <button
+                  className="icon-button session-rename-button"
+                  aria-label="Rename session"
+                  title="Rename session (empty restores the default name)"
+                  onClick={startRename}
+                >
+                  <Pencil size={12} />
+                </button>
+                <StatusBadge session={session} />
+              </strong>
+            )}
             <span className="session-meta" title={session.cwd}>
               <code>
                 {sessionLocation(session, project) === "/"
@@ -64,6 +126,17 @@ export function SessionView({
         <div className="session-actions">
           {session.status === "running" ? (
             <>
+              {window.workspace.clipboardImage ? (
+                <button
+                  className="button ghost small"
+                  title="Save the clipboard image privately and type its path (no Enter)"
+                  disabled={!viewerId}
+                  onClick={() => setImagePasteRequest((value) => value + 1)}
+                >
+                  <ImagePlus size={13} />
+                  Paste image
+                </button>
+              ) : null}
               <button
                 className="button ghost small"
                 title="Send Ctrl+C to the running program"
@@ -148,6 +221,7 @@ export function SessionView({
           session={session}
           onViewer={setViewerId}
           endedNotice={false}
+          imagePasteRequest={imagePasteRequest}
         />
       </div>
     </section>

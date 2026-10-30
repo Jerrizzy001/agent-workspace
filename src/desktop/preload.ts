@@ -18,5 +18,10 @@ const api: WorkspaceAPI = {
     revokeSessions: () => ipcRenderer.invoke("workspace:remote", "revokeSessions"),
     chooseTLSFile: (kind) => ipcRenderer.invoke("workspace:remote", "chooseTLSFile", kind),
   },
+  clipboardImage: {
+    preview: () => ipcRenderer.invoke("workspace:clipboardImage", "preview"),
+    save: (target) => ipcRenderer.invoke("workspace:clipboardImage", "save", target),
+    discard: (token) => ipcRenderer.invoke("workspace:clipboardImage", "discard", token),
+  },
 };
 contextBridge.exposeInMainWorld("workspace", api);
