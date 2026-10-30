@@ -121,6 +121,8 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       ...(s.resumedFrom ? { resumedFrom: s.resumedFrom } : {}),
       ...(s.exitCode !== undefined ? { exitCode: s.exitCode } : {}),
       ...(s.transcript ? { transcript: true } : {}),
+      ...(s.title ? { title: s.title } : {}),
+      ...(s.titleRevision ? { titleRevision: s.titleRevision } : {}),
     };
   }
   function filtered(s: Snapshot): Snapshot {
@@ -579,7 +581,9 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
                         ...(raw as any),
                         session: publicSession((raw as any).session),
                       }
-                    : raw;
+                    : command === "session.rename"
+                      ? publicSession(raw as Snapshot["sessions"][number])
+                      : raw;
               send(c, { type: "result", id: m.id, result });
             }
           } catch (error: any) {

@@ -250,11 +250,11 @@ test("failed database startup releases owner lock and stale owner recovery prese
     await core.close();
     assert.equal(fs.existsSync(path.join(temp, "owner.lock")), false);
     const newer = new DatabaseSync(path.join(temp, "workspace.sqlite"));
-    newer.exec("PRAGMA user_version=3");
+    newer.exec("PRAGMA user_version=4");
     newer.close();
     await assert.rejects(createCore({ dataDir: temp, emit: () => {} }), /newer app version/);
     const preserved = new DatabaseSync(path.join(temp, "workspace.sqlite"));
-    assert.equal((preserved.prepare("PRAGMA user_version").get() as any).user_version, 3);
+    assert.equal((preserved.prepare("PRAGMA user_version").get() as any).user_version, 4);
     preserved.close();
     assert.equal(fs.existsSync(path.join(temp, "owner.lock")), false);
   } finally {

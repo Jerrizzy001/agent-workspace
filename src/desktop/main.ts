@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { createSecureContext } from "node:tls";
 import { startGateway, type Gateway } from "../server/gateway";
 import { listDirectory, loginShellPath } from "./folders";
+import { discardClipboardImage, previewClipboardImage, takeClipboardImage } from "./clipboard-images";
 import { COMMANDS, type Command, type CoreEvent, type RemoteConfig, type RemoteStatus } from "../shared/contracts";
 let window: BrowserWindow | null = null;
 let core: Electron.UtilityProcess | null = null;
@@ -44,6 +45,10 @@ function validatePayload(command: unknown, payload: unknown): asserts command is
 }
 async function invokeCore(command: Command, payload: Record<string, unknown> = {}): Promise<unknown> {
   validatePayload(command, payload);
+  return coreRequest({ type: "invoke", command, payload });
+}
+/** Internal requests (invoke, attachment) share one result channel and timeout. */
+async function coreRequest(message: Record<string, unknown>): Promise<unknown> {
   if (quitting) throw new Error("Workspace is shutting down");
   if (!ready) await waitForCore();
   if (!core) throw new Error("Core is reconnecting");
@@ -57,7 +62,7 @@ async function invokeCore(command: Command, payload: Record<string, unknown> = {
       resolve: value => { clearTimeout(timer); resolve(value); },
       reject: error => { clearTimeout(timer); reject(error); },
     });
-    try { core!.postMessage({ type: "invoke", id, command, payload }); }
+    try { core!.postMessage({ ...message, id }); }
     catch (error) { pending.delete(id); clearTimeout(timer); reject(error); }
   });
 }
@@ -257,6 +262,22 @@ else {
       // remote gateway has no route to it.
       assertOwner(ev);
       return listDirectory(target);
+    });
+    ipcMain.handle("workspace:clipboardImage", async (ev, action: unknown, value: unknown) => {
+      // Owner window only: the gateway and remote browsers have no route here,
+      // and image bytes reach the core over a dedicated internal message.
+      assertOwner(ev);
+      if (action === "preview") return previewClipboardImage();
+      if (action === "discard") return discardClipboardImage(value);
+      if (action !== "save") throw new Error("Unsupported clipboard image action");
+      const v = value as Record<string, unknown>;
+      if (!v || typeof v !== "object" || Array.isArray(v) ||
+        Object.keys(v).some(key => !["token", "sessionId", "generation"].includes(key)) ||
+        typeof v.sessionId !== "string" || !v.sessionId || v.sessionId.length > 128 ||
+        !Number.isSafeInteger(v.generation) || Number(v.generation) < 1)
+        throw new Error("Invalid image save request");
+      const png = takeClipboardImage(v.token);
+      return coreRequest({ type: "attachment", sessionId: v.sessionId, generation: v.generation, data: png });
     });
     ipcMain.handle("workspace:remote", async (ev, action: unknown, value: unknown) => {
       assertOwner(ev);

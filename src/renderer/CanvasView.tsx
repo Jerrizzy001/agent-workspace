@@ -141,7 +141,7 @@ function WorkspaceNode({ data }: NodeProps<Node<CanvasData>>) {
           {data.session ? (
             <>
               <ProviderGlyph provider={data.session.provider} size={13} />
-              {providerName(data.session.provider)}
+              {data.session.title || providerName(data.session.provider)}
             </>
           ) : (
             data.note?.title

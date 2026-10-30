@@ -56,6 +56,13 @@ function fixture() {
                 backendSocket: "/private/socket",
               },
             }
+          : command === "session.rename"
+          ? {
+              ...snapshot.sessions[0],
+              title: payload.title,
+              titleRevision: 1,
+              backendSocket: "/private/socket",
+            }
           : command === "attempt.start"
           ? {
               attempt: { id: "a" },
@@ -228,6 +235,20 @@ test("gateway authenticates real sockets, scopes commands, targets streams and r
         })
       ).error,
       /Project access denied/,
+    );
+    // Naming is shared-project metadata; the result is projected like a snapshot.
+    const renamed = await a.rpc("session.rename", {
+      sessionId: "s",
+      generation: 1,
+      title: "Remote name",
+      titleRevision: 0,
+    });
+    assert.equal(renamed.result.title, "Remote name");
+    assert.equal(renamed.result.titleRevision, 1);
+    assert.equal(renamed.result.backendSocket, undefined);
+    assert.match(
+      (await a.rpc("session.rename", { sessionId: "s", title: "x", titleRevision: 1 })).error,
+      /generation required/,
     );
     for (const [command, payload] of [
       ["project.add", { path: "/" }],

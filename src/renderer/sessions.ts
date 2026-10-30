@@ -79,6 +79,7 @@ export function sessionTitle(
   attempts: Attempt[],
   tasks: Task[],
 ) {
+  if (session.title) return session.title;
   const attempt = session.attemptId
     ? attempts.find((a) => a.id === session.attemptId)
     : undefined;

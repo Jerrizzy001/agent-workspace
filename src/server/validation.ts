@@ -1,4 +1,5 @@
 import { COMMANDS, type Command } from "../shared/contracts.js";
+import { remoteAllowed } from "../shared/command-policy.js";
 const fields: Record<string, string[]> = {
   snapshot: [],
   "task.create": ["projectId", "title", "description"],
@@ -40,6 +41,7 @@ const fields: Record<string, string[]> = {
   "layout.save": ["projectId", "positions"],
   "note.create": ["projectId", "title", "body"],
   "note.update": ["noteId", "projectId", "title", "body"],
+  "session.rename": ["sessionId", "generation", "title", "titleRevision"],
 };
 for (const name of [
   "attach",
@@ -77,6 +79,7 @@ const required: Record<string, string[]> = {
   "layout.save": ["projectId", "positions"],
   "git.commit": ["projectId", "message"],
   "worktree.create": ["projectId", "branch"],
+  "session.rename": ["title", "titleRevision"],
 };
 export function validateCommand(
   command: unknown,
@@ -85,6 +88,7 @@ export function validateCommand(
   if (
     typeof command !== "string" ||
     !COMMANDS.includes(command as Command) ||
+    !remoteAllowed(command as Command) ||
     !fields[command]
   )
     throw new Error("Command is not available remotely");
@@ -115,7 +119,9 @@ export function validateCommand(
   }
   for (const [k, v] of Object.entries(p)) {
     if (v === undefined) continue;
-    if (["generation", "revision", "sequence", "cols", "rows"].includes(k)) {
+    if (["generation", "revision", "titleRevision", "sequence", "cols", "rows"].includes(
+        k,
+      )) {
       if (
         !Number.isSafeInteger(v) ||
         Number(v) < 0 ||

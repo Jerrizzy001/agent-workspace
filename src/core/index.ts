@@ -12,6 +12,13 @@ import {
   providerModel,
 } from "./providers.js";
 import { TerminalStream } from "./stream.js";
+import { migrate } from "./migrations.js";
+import {
+  ATTACHMENT_GRACE_MS,
+  removeAttachmentFile,
+  writeAttachment,
+  type AttachmentRecord,
+} from "./attachments.js";
 import { run, executable, probe } from "./process.js";
 import * as pty from "node-pty";
 import type {
@@ -21,6 +28,7 @@ import type {
   Command,
   Snapshot,
   Session,
+  SavedAttachment,
 } from "../shared/contracts.js";
 const id = () => crypto.randomUUID();
 const now = () => new Date().toISOString();
@@ -36,6 +44,18 @@ function text(value: unknown, label: string, fallback = "") {
 }
 const hash = (s: string | Buffer) =>
   crypto.createHash("sha256").update(s).digest("hex");
+/** Plain one-line label: control, zero-width and bidi-override characters removed. */
+export function sessionTitleText(value: unknown) {
+  if (typeof value !== "string" || value.length > 1024)
+    throw new Error("Invalid session title");
+  const title = value
+    .replace(/[\p{Cc}\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if ([...title].length > 80)
+    throw new Error("Session title must be 80 characters or fewer");
+  return title;
+}
 function str(v: unknown, name: string) {
   if (typeof v !== "string" || !v.trim() || v.includes("\0"))
     throw new Error(`Invalid ${name}`);
@@ -104,20 +124,7 @@ export async function createCore({
       fs.unlinkSync(acquisition);
     }
     db = new DatabaseSync(path.join(dataDir, "workspace.sqlite"));
-    const schema = (
-      db.prepare("PRAGMA user_version").get() as { user_version: number }
-    ).user_version;
-    if (schema > 2)
-      throw new Error("Workspace data belongs to a newer app version");
-    db.exec(
-      "PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS records (kind TEXT NOT NULL,id TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(kind,id)); CREATE TABLE IF NOT EXISTS receipts (key TEXT PRIMARY KEY,digest TEXT NOT NULL,result TEXT); CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT,type TEXT NOT NULL,time TEXT NOT NULL,payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS launch_intents (key TEXT PRIMARY KEY,sessionId TEXT NOT NULL,attemptId TEXT NOT NULL); CREATE TABLE IF NOT EXISTS launch_requests (key TEXT PRIMARY KEY,request TEXT NOT NULL);",
-    );
-    if (schema < 2)
-      // v2: sessions may run without a task attempt (attemptId null, launch
-      // intent attemptId ""), carry provider activity, and keep a final screen
-      // in "transcripts" records. Existing rows stay valid as written; the
-      // version bump stops older builds from misreading attempt-less sessions.
-      db.exec("PRAGMA user_version=2");
+    await migrate(db, dataDir);
     const tmux = process.env.WORKSPACE_TMUX || executable("tmux");
     const tmuxConfig = path.join(dataDir, "tmux.conf");
     fs.writeFileSync(
@@ -1065,6 +1072,20 @@ export async function createCore({
           a.stream.ack(str(p.viewerId, "viewerId"), p.sequence);
           return { ok: true };
         }
+        case "session.rename": {
+          const s = session(p);
+          if (p.generation !== s.generation)
+            throw new Error("Session generation required");
+          if (p.titleRevision !== (s.titleRevision ?? 0))
+            throw new Error("Stale session title");
+          const title = sessionTitleText(p.title);
+          if (title) s.title = title;
+          else delete s.title;
+          s.titleRevision = (s.titleRevision ?? 0) + 1;
+          put("sessions", s);
+          changed();
+          return s;
+        }
         case "session.input": {
           const s = ownedSession(p);
           if (typeof p.data !== "string" || p.data.length > 65536)
@@ -1296,6 +1317,66 @@ export async function createCore({
       }
       if (updated) changed();
     }
+    /**
+     * Pasted images stay while their session may still use them. Retention
+     * counts from the first time an ended (or removed) session is seen here.
+     */
+    function cleanupAttachments(at = Date.now()) {
+      const sessions = new Map(
+        (list("sessions") as Session[]).map((s) => [s.id, s]),
+      );
+      for (const record of list("attachments") as AttachmentRecord[]) {
+        const owner = sessions.get(record.sessionId);
+        if (owner && owner.status !== "exited") continue;
+        if (!record.sessionEndedAt) {
+          record.sessionEndedAt = new Date(at).toISOString();
+          put("attachments", record);
+        } else if (at - Date.parse(record.sessionEndedAt) > ATTACHMENT_GRACE_MS) {
+          removeAttachmentFile(dataDir, record);
+          db.prepare("DELETE FROM records WHERE kind='attachments' AND id=?").run(
+            record.id,
+          );
+        }
+      }
+    }
+    try {
+      cleanupAttachments();
+    } catch {}
+    const cleanupTimer = setInterval(() => {
+      try {
+        cleanupAttachments();
+      } catch {}
+    }, 60 * 60 * 1000);
+    cleanupTimer.unref();
+    async function createAttachment(input: {
+      sessionId: unknown;
+      generation: unknown;
+      data: unknown;
+    }): Promise<SavedAttachment> {
+      if (!(input.data instanceof Uint8Array))
+        throw new Error("Invalid attachment data");
+      const s = session({ sessionId: input.sessionId });
+      if (input.generation !== s.generation)
+        throw new Error("Stale session generation");
+      if (s.status !== "running" || (await live(s)) !== "running")
+        throw new Error("Session is not running");
+      const saved = writeAttachment(dataDir, s.id, input.data);
+      const record: AttachmentRecord = {
+        id: id(),
+        sessionId: s.id,
+        generation: s.generation,
+        mime: "image/png",
+        ...saved,
+        createdAt: now(),
+      };
+      try {
+        put("attachments", record);
+      } catch (error) {
+        fs.rmSync(saved.path, { force: true });
+        throw error;
+      }
+      return { id: record.id, ...saved };
+    }
     const reconciliationTimer = setInterval(() => {
       if (!reconciling)
         reconciling = reconcile()
@@ -1323,10 +1404,23 @@ export async function createCore({
         queues.set(key, next);
         return next;
       },
+      async createAttachment(input) {
+        if (closed) throw new Error("Core is closed");
+        if (!input || typeof input !== "object")
+          throw new Error("Invalid attachment");
+        // Serialized with the session's own commands, so End cannot interleave.
+        const key = "session:" + input.sessionId;
+        const next = (queues.get(key) || Promise.resolve())
+          .catch(() => {})
+          .then(() => createAttachment(input));
+        queues.set(key, next);
+        return next;
+      },
       close() {
         if (closing) return closing;
         closed = true;
         clearInterval(reconciliationTimer);
+        clearInterval(cleanupTimer);
         closing = (async () => {
           await reconciling;
           await Promise.allSettled([...queues.values()]);
