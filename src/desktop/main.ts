@@ -9,6 +9,7 @@ import { discardClipboardImage, previewClipboardImage, takeClipboardImage } from
 import { createPowerController } from "./power";
 import { createDictationService, defaultModelsDir } from "./dictation";
 import type { PowerPolicy } from "./power-policy";
+import { assistOnlyThroughChannel, handleAssist } from "./assist";
 import { COMMANDS, type Command, type CoreEvent, type PowerStatus, type RemoteConfig, type RemoteStatus, type Snapshot } from "../shared/contracts";
 let window: BrowserWindow | null = null;
 let core: Electron.UtilityProcess | null = null;
@@ -121,12 +122,12 @@ function validatePayload(command: unknown, payload: unknown): asserts command is
   if (!payload || typeof payload !== "object" || Array.isArray(payload) || JSON.stringify(payload).length > 2_000_000)
     throw new Error("Invalid payload");
 }
-async function invokeCore(command: Command, payload: Record<string, unknown> = {}): Promise<unknown> {
+async function invokeCore(command: Command, payload: Record<string, unknown> = {}, timeoutMs?: number): Promise<unknown> {
   validatePayload(command, payload);
-  return coreRequest({ type: "invoke", command, payload });
+  return coreRequest({ type: "invoke", command, payload }, timeoutMs);
 }
 /** Internal requests (invoke, attachment) share one result channel and timeout. */
-async function coreRequest(message: Record<string, unknown>): Promise<unknown> {
+async function coreRequest(message: Record<string, unknown>, timeoutMs = 60000): Promise<unknown> {
   if (quitting) throw new Error("Workspace is shutting down");
   if (!ready) await waitForCore();
   if (!core) throw new Error("Core is reconnecting");
@@ -135,7 +136,7 @@ async function coreRequest(message: Record<string, unknown>): Promise<unknown> {
     const timer = setTimeout(() => {
       pending.delete(id);
       reject(new Error("Core request timed out; mutation outcome may be unknown. Inspect state before retrying."));
-    }, 60000);
+    }, timeoutMs);
     pending.set(id, {
       resolve: value => { clearTimeout(timer); resolve(value); },
       reject: error => { clearTimeout(timer); reject(error); },
@@ -338,9 +339,18 @@ else {
         // main process's blocker policy always matches what is stored.
         if (command === "settings.write" && (payload as Record<string, unknown>).key === "keepAwake")
           throw new Error("Change keep-awake through the power settings");
+        // AI suggestions and their consent go only through workspace:assist.
+        if (assistOnlyThroughChannel(command, payload as Record<string, unknown>))
+          throw new Error("Use the AI suggestions controls for this");
         return invokeCore(command, payload as Record<string, unknown>);
       },
     );
+    ipcMain.handle("workspace:assist", async (ev, action: unknown, value: unknown) => {
+      // Owner window only: suggestions spend the owner's provider usage and
+      // have no route through the gateway or any other frame.
+      assertOwner(ev);
+      return handleAssist(invokeCore, action, value);
+    });
     ipcMain.handle("workspace:chooseDirectory", async (ev) => {
       if (
         ev.sender !== window?.webContents ||

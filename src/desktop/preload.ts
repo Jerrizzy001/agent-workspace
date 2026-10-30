@@ -49,5 +49,15 @@ const api: WorkspaceAPI = {
       return () => ipcRenderer.removeListener("workspace:dictation", handler);
     },
   },
+  assist: {
+    status: () => ipcRenderer.invoke("workspace:assist", "status"),
+    configure: (input) => ipcRenderer.invoke("workspace:assist", "configure", input),
+    previewCommit: (input) => ipcRenderer.invoke("workspace:assist", "previewCommit", input),
+    stagedHash: (input) => ipcRenderer.invoke("workspace:assist", "stagedHash", input),
+    suggestCommit: (input) => ipcRenderer.invoke("workspace:assist", "suggestCommit", input),
+    previewName: (input) => ipcRenderer.invoke("workspace:assist", "previewName", input),
+    suggestName: (input) => ipcRenderer.invoke("workspace:assist", "suggestName", input),
+    cancel: () => ipcRenderer.invoke("workspace:assist", "cancel"),
+  },
 };
 contextBridge.exposeInMainWorld("workspace", api);

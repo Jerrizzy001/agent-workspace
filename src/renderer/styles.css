@@ -1311,7 +1311,8 @@ kbd {
   display: flex;
   align-items: center;
   gap: 11px;
-  min-width: 0;
+  /* Keep the session name readable when many actions share the bar. */
+  min-width: 200px;
   flex: 1;
 }
 .session-identity > .glyph {
@@ -1387,8 +1388,10 @@ kbd {
 }
 .session-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
-  flex-shrink: 0;
+  min-width: 0;
 }
 .session-ended {
   padding: 9px 16px;
@@ -3335,4 +3338,136 @@ kbd {
 .dictation-progress progress {
   width: 100%;
   accent-color: var(--accent);
+}
+/* AI suggestions */
+.assist-settings p,
+.assist-dialog p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.assist-callout {
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--accent-soft);
+}
+.assist-providers,
+.assist-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.assist-providers legend,
+.assist-sources legend {
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  font-weight: 560;
+  color: var(--text-2);
+}
+.modal .assist-provider {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.assist-provider > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.assist-provider strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+.assist-state {
+  font-size: 11px;
+  font-weight: 600;
+}
+.assist-state.state-ready {
+  color: var(--done);
+}
+.assist-state.state-unverified {
+  color: var(--needs);
+}
+.assist-state.state-unavailable {
+  color: var(--danger);
+}
+.assist-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+}
+.modal .assist-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-weight: 450;
+  color: var(--text);
+}
+.assist-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+.assist-files code {
+  overflow-wrap: anywhere;
+}
+.assist-input {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.assist-dialog {
+  width: min(640px, 100%);
+}
+.assist-suggest {
+  align-self: flex-start;
+}
+.assist-draft-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.assist-draft-note.stale {
+  padding: 6px 8px;
+  border-radius: 7px;
+  color: var(--text);
+  background: rgba(245, 184, 74, 0.14);
+  border: 1px solid var(--needs);
+}
+.session-rename-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }

@@ -42,6 +42,11 @@ export const COMMAND_POLICY: Record<Command, CommandAccess> = {
   "note.update": "remote",
   "settings.read": "owner",
   "settings.write": "owner",
+  // AI suggestions spend the owner's provider usage: desktop window only.
+  "assist.status": "owner",
+  "assist.preview": "owner",
+  "assist.suggest": "owner",
+  "assist.cancel": "owner",
 };
 export const remoteAllowed = (command: Command) =>
   COMMAND_POLICY[command] === "remote";

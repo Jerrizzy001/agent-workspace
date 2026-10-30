@@ -1,5 +1,7 @@
 # Next agent implementation brief
 
+> **Superseded.** This was the 0.3.0 brief. Start from [handoff.md](handoff.md) for the current state and next work.
+
 > **Status (0.3.0):** the folder-first journey below is implemented: in-app folder browser, one-click Claude/Codex/Shell launch with no task, blank interactive launches, saved final output when a process ends, Claude running/needs-you/done status through per-session hooks, notifications, resume, and right-click canvas creation. See [release-evidence.md](release-evidence.md) for what was and was not verified.
 >
 > **Still open from the owner's priority list:**

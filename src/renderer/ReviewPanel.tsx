@@ -7,7 +7,15 @@ import {
   GitCommitHorizontal,
   Check,
   Minus,
+  Sparkles,
 } from "lucide-react";
+import {
+  AssistCommitDialog,
+  assistAvailable,
+  loadAssistProvider,
+  openAssistSettings,
+  useAssist,
+} from "./assist";
 import type {
   FileContent,
   FileEntry,
@@ -76,6 +84,32 @@ export function ReviewPanel({
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [branch, setBranch] = useState("");
   const scope = { projectId: project.id, worktreePath };
+  // AI draft: the staged fingerprint it was generated from, to flag staleness.
+  const assist = useAssist();
+  const [suggesting, setSuggesting] = useState(false);
+  const [draftSource, setDraftSource] = useState<string | null>(null);
+  const [draftStale, setDraftStale] = useState(false);
+  const draftRef = useRef<string | null>(null);
+  draftRef.current = draftSource;
+  async function checkDraft() {
+    const source = draftRef.current;
+    if (!source || !window.workspace.assist) return;
+    try {
+      const { stagedHash } = await window.workspace.assist.stagedHash(scope);
+      if (draftRef.current === source) setDraftStale(stagedHash !== source);
+    } catch {
+      if (draftRef.current === source) setDraftStale(true);
+    }
+  }
+  async function suggestMessage() {
+    const provider =
+      assist.provider ?? (await loadAssistProvider().catch(() => ""));
+    if (!provider)
+      openAssistSettings(
+        "AI suggestions are off. Choose a provider to draft commit messages; nothing is sent until you preview and click Generate.",
+      );
+    else setSuggesting(true);
+  }
   useEffect(() => {
     onDirtyChange?.(Boolean(selected && content !== selected.content));
   }, [selected, content, onDirtyChange]);
@@ -110,6 +144,7 @@ export function ReviewPanel({
       }
       if (git.status === "fulfilled") {
         setStatus(git.value);
+        void checkDraft();
         summary.current?.({
           branch: git.value.branch,
           changes: git.value.files.length,
@@ -209,8 +244,22 @@ export function ReviewPanel({
   }
   async function commit() {
     try {
+      if (draftRef.current && window.workspace.assist) {
+        const { stagedHash } = await window.workspace.assist.stagedHash(scope);
+        if (stagedHash !== draftRef.current) {
+          setDraftStale(true);
+          if (
+            !confirm(
+              "Staged changes changed after the AI draft was generated. Commit with this message anyway?",
+            )
+          )
+            return;
+        }
+      }
       await window.workspace.invoke("git.commit", { ...scope, message });
       setMessage("");
+      setDraftSource(null);
+      setDraftStale(false);
       await refresh();
     } catch (e) {
       report(e);
@@ -318,9 +367,38 @@ export function ReviewPanel({
             <textarea
               aria-label="Commit message"
               value={message}
-              onChange={(e) => setMessage(e.target.value)}
+              onChange={(e) => {
+                setMessage(e.target.value);
+                if (!e.target.value.trim()) {
+                  setDraftSource(null);
+                  setDraftStale(false);
+                }
+              }}
               placeholder="Describe these changes…"
             />
+            {draftSource ? (
+              <p
+                className={"assist-draft-note" + (draftStale ? " stale" : "")}
+                role="status"
+              >
+                {draftStale
+                  ? "Staged changes changed after this draft was generated. Review it, or suggest again."
+                  : "AI draft from the staged changes. Edit it before committing."}
+              </p>
+            ) : null}
+            {assistAvailable() ? (
+              <button
+                className="button ghost small assist-suggest"
+                disabled={status.files.every(
+                  (f) => f.index === " " || f.index === "?",
+                )}
+                title="Preview the staged diff, then generate an editable draft"
+                onClick={() => void suggestMessage()}
+              >
+                <Sparkles size={13} />
+                Suggest message
+              </button>
+            ) : null}
             <button
               className="secondary full"
               disabled={!message.trim()}
@@ -412,6 +490,24 @@ export function ReviewPanel({
             <button className="secondary full">Create worktree</button>
           </form>
         </>
+      ) : null}
+      {suggesting ? (
+        <AssistCommitDialog
+          scope={scope}
+          onClose={() => setSuggesting(false)}
+          onDraft={(draft) => {
+            if (
+              message.trim() &&
+              message !== draft.message &&
+              !confirm("Replace the commit message you typed with the AI draft?")
+            )
+              return;
+            setMessage(draft.message);
+            setDraftSource(draft.stagedHash);
+            setDraftStale(false);
+            setSuggesting(false);
+          }}
+        />
       ) : null}
       {selected || diff ? (
         <div className="editor-overlay">

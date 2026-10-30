@@ -198,6 +198,10 @@ export const COMMANDS = [
   "note.update",
   "settings.read",
   "settings.write",
+  "assist.status",
+  "assist.preview",
+  "assist.suggest",
+  "assist.cancel",
 ] as const;
 export type Command = (typeof COMMANDS)[number];
 export interface RemoteConfig {
@@ -258,6 +262,112 @@ export interface OwnerSettings {
   keepAwake: boolean;
   /** English Whisper model used for local dictation (see DICTATION_MODEL_IDS). */
   dictationModel: string;
+  /** AI suggestions provider: "" (off, the default), "claude" or "codex". */
+  assistProvider: string;
+  /** Optional model for AI suggestions; blank uses the CLI's own default. */
+  assistModel: string;
+}
+export type AssistProviderName = "claude" | "codex";
+export interface AssistAdapterStatus {
+  provider: AssistProviderName;
+  state: "ready" | "unverified" | "unavailable";
+  executable: string;
+  version: string;
+  missing: string[];
+  detail: string;
+}
+export interface AssistStatus {
+  /** "" while AI suggestions are off. */
+  provider: AssistProviderName | "";
+  model: string;
+  adapters: AssistAdapterStatus[];
+  running: boolean;
+}
+export interface AssistOmission {
+  path: string;
+  reason: "binary" | "excluded" | "size limit" | "file limit";
+}
+export interface AssistCommitPreview {
+  kind: "commit";
+  provider: AssistProviderName;
+  model: string;
+  /** Fingerprint of HEAD and the staged blobs the preview was read from. */
+  stagedHash: string;
+  files: {
+    path: string;
+    status: string;
+    bytes: number;
+    included: boolean;
+    reason?: AssistOmission["reason"];
+  }[];
+  omitted: AssistOmission[];
+  /** Exactly the text sent to the provider on stdin. */
+  input: string;
+  inputHash: string;
+  bytes: number;
+  limit: number;
+}
+export type AssistNameSource = "task" | "firstMessage" | "folder";
+export interface AssistNamePreview {
+  kind: "name";
+  provider: AssistProviderName;
+  model: string;
+  sessionId: string;
+  generation: number;
+  titleRevision: number;
+  /** Context the owner may choose to share; never terminal output. */
+  sources: { id: AssistNameSource; label: string; text: string }[];
+  input: string;
+  inputHash: string;
+}
+export interface AssistCommitSuggestion {
+  kind: "commit";
+  message: string;
+  stagedHash: string;
+  inputHash: string;
+}
+export interface AssistNameSuggestion {
+  kind: "name";
+  name: string;
+  sessionId: string;
+  generation: number;
+  titleRevision: number;
+  inputHash: string;
+}
+export interface AssistCommitSelection {
+  projectId: string;
+  worktreePath?: string;
+  exclude?: string[];
+}
+export interface AssistNameSelection {
+  sessionId: string;
+  include: AssistNameSource[];
+}
+/**
+ * Desktop owner only: opt-in commit message and session name suggestions from
+ * the owner's installed provider CLI. No route exists through the gateway.
+ */
+export interface DesktopAssistAPI {
+  status(): Promise<AssistStatus>;
+  configure(input: {
+    provider: AssistProviderName | "";
+    model: string;
+    acknowledged: boolean;
+  }): Promise<AssistStatus>;
+  previewCommit(input: AssistCommitSelection): Promise<AssistCommitPreview>;
+  /** Cheap staleness check: the current staged fingerprint. */
+  stagedHash(input: {
+    projectId: string;
+    worktreePath?: string;
+  }): Promise<{ stagedHash: string }>;
+  suggestCommit(
+    input: AssistCommitSelection & { inputHash: string; stagedHash: string },
+  ): Promise<AssistCommitSuggestion>;
+  previewName(input: AssistNameSelection): Promise<AssistNamePreview>;
+  suggestName(
+    input: AssistNameSelection & { inputHash: string },
+  ): Promise<AssistNameSuggestion>;
+  cancel(): Promise<void>;
 }
 export interface PowerStatus {
   enabled: boolean;
@@ -338,6 +448,8 @@ export interface WorkspaceAPI {
   dictation?: DesktopDictationAPI;
   /** Desktop owner only: grant a session's agent the `awctl` CLI. */
   agentControl?: DesktopAgentControlAPI;
+  /** Desktop owner only: opt-in AI commit messages and session names. */
+  assist?: DesktopAssistAPI;
 }
 declare global {
   interface Window {

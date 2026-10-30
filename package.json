@@ -23,6 +23,7 @@
     "verify:terminal": "node scripts/verify-terminal-modes.mjs",
     "verify:image-paste": "node scripts/verify-image-paste.mjs",
     "verify:dictation": "node scripts/verify-dictation.mjs",
+    "verify:assist": "node scripts/verify-assist.mjs",
     "verify:providers": "node scripts/verify-providers.mjs",
     "build:server": "vite build && node scripts/build-desktop.mjs",
     "start:server": "node dist/server/headless.mjs",
