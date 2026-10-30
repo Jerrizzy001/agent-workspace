@@ -2,6 +2,8 @@
 
 An independently authored desktop and remote browser alpha for supervising coding agents. Tasks, a board, a spatial canvas, terminals, notes, worktrees, and file review share a local core.
 
+The next iteration is focused on folder navigation and one-click Claude/Codex terminals. See the [next agent implementation brief](docs/next-agent-brief.md) for the user's requested workflow, relevant source files, and acceptance criteria.
+
 ## Run
 
 Requires macOS, Node.js 24+, Git, and tmux (`brew install tmux`). Claude and Codex commands use your existing installed CLI authentication. The app never installs providers or changes their configuration.
