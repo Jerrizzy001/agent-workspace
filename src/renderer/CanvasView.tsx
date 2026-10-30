@@ -11,9 +11,17 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { Attempt, Layout, Note, Session } from "../shared/contracts";
+import type {
+  Attempt,
+  Layout,
+  Note,
+  Provider,
+  Session,
+} from "../shared/contracts";
 import { TerminalView } from "./TerminalView";
 import { registerLeaveGuard } from "./leaveWorkspace";
+import { providerName, providers } from "./sessions";
+import { ProviderGlyph, StatusBadge } from "./ui";
 type CanvasData = {
   session?: Session;
   attempt?: Attempt;
@@ -129,10 +137,21 @@ function WorkspaceNode({ data }: NodeProps<Node<CanvasData>>) {
       }
     >
       <header>
-        <span>
-          {data.session ? "›_ " + data.session.provider : data.note?.title}
+        <span className="canvas-card-title">
+          {data.session ? (
+            <>
+              <ProviderGlyph provider={data.session.provider} size={13} />
+              {providerName(data.session.provider)}
+            </>
+          ) : (
+            data.note?.title
+          )}
         </span>
-        <span className="muted">{data.session?.status || "NOTE"}</span>
+        {data.session ? (
+          <StatusBadge session={data.session} />
+        ) : (
+          <span className="muted">NOTE</span>
+        )}
       </header>
       {data.session ? (
         <div className="nodrag nowheel terminal-in-node">
@@ -152,6 +171,7 @@ export function CanvasView({
   notes,
   layout,
   report,
+  onCreate,
 }: {
   projectId: string;
   attempts: Attempt[];
@@ -159,9 +179,19 @@ export function CanvasView({
   notes: Note[];
   layout?: Layout;
   report: (e: unknown) => void;
+  /** Creates a node's backing session or note and returns its node id. */
+  onCreate?: (kind: Provider | "note") => Promise<string | undefined>;
 }) {
   const [nodes, setNodes] = useState<Node<CanvasData>[]>([]);
   const flow = useRef<ReactFlowInstance<Node<CanvasData>> | null>(null);
+  const container = useRef<HTMLDivElement>(null);
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    position: { x: number; y: number };
+  } | null>(null);
+  // Positions chosen by right-click, applied whether the node or its id arrives first.
+  const placed = useRef<Record<string, { x: number; y: number }>>({});
   useEffect(() => {
     const timer = setTimeout(() => {
       void flow.current?.fitView({ padding: 0.16, duration: 150 });
@@ -208,36 +238,62 @@ export function CanvasView({
   );
   useEffect(() => {
     setNodes((previous) => {
-      const items: Node<CanvasData>[] = attempts.map((attempt, i) => ({
-        id: attempt.id,
-        type: "workspace",
-        position: layout?.positions[attempt.id] || {
-          x: 40 + (i % 2) * 680,
-          y: 40 + Math.floor(i / 2) * 460,
-        },
-        data: {
-          attempt,
-          session: sessions.find((s) => s.id === attempt.sessionId),
-        },
-      }));
+      // Task attempts keep their attempt-keyed layout; folder sessions use the session id.
+      // Ended folder sessions leave the canvas; their history stays in the sidebar.
+      const shown = sessions.filter(
+        (session) => session.attemptId || session.status !== "exited",
+      );
+      const items: Node<CanvasData>[] = shown.map((session, i) => {
+        const nodeId = session.attemptId || session.id;
+        return {
+          id: nodeId,
+          type: "workspace",
+          position: placed.current[nodeId] ||
+            layout?.positions[nodeId] || {
+              x: 40 + (i % 2) * 680,
+              y: 40 + Math.floor(i / 2) * 460,
+            },
+          data: {
+            attempt: attempts.find((a) => a.id === session.attemptId),
+            session,
+          },
+        };
+      });
       notes.forEach((note, i) =>
         items.push({
           id: note.id,
           type: "workspace",
-          position: layout?.positions[note.id] || {
-            x: 80 + i * 340,
-            y: Math.ceil(attempts.length / 2) * 460 + 50,
-          },
+          position: placed.current[note.id] ||
+            layout?.positions[note.id] || {
+              x: 80 + i * 340,
+              y: Math.ceil(shown.length / 2) * 460 + 50,
+            },
           data: { note, saveNote },
         }),
       );
       return items.map((node) => ({
         ...node,
         position:
-          previous.find((n) => n.id === node.id)?.position || node.position,
+          placed.current[node.id] ||
+          previous.find((n) => n.id === node.id)?.position ||
+          node.position,
       }));
     });
   }, [attempts, sessions, notes, layout, saveNote]);
+  async function create(kind: Provider | "note") {
+    const target = menu;
+    setMenu(null);
+    if (!onCreate || !target) return;
+    const nodeId = await onCreate(kind);
+    if (!nodeId) return;
+    placed.current[nodeId] = target.position;
+    setNodes((current) =>
+      current.map((n) =>
+        n.id === nodeId ? { ...n, position: target.position } : n,
+      ),
+    );
+    save({ ...positions(), [nodeId]: target.position });
+  }
   const changes = useCallback(
     (changes: NodeChange<Node<CanvasData>>[]) =>
       setNodes((n) => applyNodeChanges(changes, n)),
@@ -249,7 +305,7 @@ export function CanvasView({
     setHistoryVersion((v) => v + 1);
   }
   return (
-    <div className="canvas-container">
+    <div className="canvas-container" ref={container}>
       <div className="canvas-history" data-version={historyVersion}>
         <button disabled={!history.current.length} onClick={() => travel(true)}>
           ↶ Undo move
@@ -271,20 +327,61 @@ export function CanvasView({
         }}
         onNodeDragStop={persist}
         deleteKeyCode={null}
+        onPaneContextMenu={(event) => {
+          if (!onCreate || !flow.current) return;
+          event.preventDefault();
+          const bounds = container.current!.getBoundingClientRect();
+          setMenu({
+            x: Math.min(event.clientX - bounds.left, bounds.width - 200),
+            y: Math.min(event.clientY - bounds.top, bounds.height - 190),
+            position: flow.current.screenToFlowPosition({
+              x: event.clientX,
+              y: event.clientY,
+            }),
+          });
+        }}
+        onPaneClick={() => setMenu(null)}
         fitView
         minZoom={0.2}
         maxZoom={1.5}
         colorMode="dark"
       >
-        <Background gap={24} size={1} color="#34373a" />
+        <Background gap={24} size={1} color="#262d3a" />
         <Controls showInteractive={false} />
-        <MiniMap nodeColor="#b88c52" maskColor="#111315aa" />
+        <MiniMap nodeColor="#3a4560" maskColor="#0b0d12bb" />
       </ReactFlow>
+      {menu ? (
+        <div
+          className="canvas-menu"
+          role="menu"
+          aria-label="Add to canvas"
+          style={{ left: menu.x, top: menu.y }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setMenu(null);
+          }}
+        >
+          {providers.map((provider) => (
+            <button
+              key={provider}
+              role="menuitem"
+              autoFocus={provider === "claude"}
+              onClick={() => void create(provider)}
+            >
+              <ProviderGlyph provider={provider} size={14} />
+              New {providerName(provider)}
+            </button>
+          ))}
+          <button role="menuitem" onClick={() => void create("note")}>
+            <span className="glyph" aria-hidden="true">✎</span>
+            Note
+          </button>
+        </div>
+      ) : null}
       {!nodes.length ? (
         <div className="canvas-empty">
-          Your workspace, spatially.
+          Your sessions, spatially.
           <span>
-            Start an attempt or add a note to make room for your thinking.
+            Right-click the canvas to add Claude, Codex, a shell or a note.
           </span>
         </div>
       ) : null}

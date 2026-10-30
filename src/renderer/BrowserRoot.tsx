@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { ArrowUpRight, LockKeyhole, LogOut, RefreshCw } from "lucide-react";
 import App from "./App";
 import { remoteWorkspace } from "./remote";
+import { BrandMark } from "./ui";
 import { canLeaveWorkspace } from "./leaveWorkspace";
 
 export function BrowserRoot() {
@@ -61,15 +62,17 @@ function RemoteRoot() {
             }
           }}
         >
-          <div className="pairing-logo">a·</div>
-          <div className="eyebrow">YOUR WORKSPACE, WITH YOU</div>
+          <div className="pairing-logo">
+            <BrandMark size={40} />
+          </div>
+          <div className="eyebrow">Agent Workspace</div>
           <h1>Connect to your workspace.</h1>
           <p>
             Use the{" "}
             {state.authMode === "password"
               ? "password configured on your server"
               : "pairing code shown by the workspace owner"}
-            . Your tasks and terminals stay on that machine.
+            . Your folders and terminals stay on that machine.
           </p>
           <label htmlFor="pairing-secret">
             <LockKeyhole size={16} />

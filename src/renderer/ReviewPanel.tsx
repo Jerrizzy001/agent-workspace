@@ -17,28 +17,58 @@ import type {
 } from "../shared/contracts";
 const Editor = lazy(() => import("./editor"));
 
+export interface ReviewSummary {
+  branch: string;
+  changes: number;
+  available: boolean;
+  message?: string;
+}
 type Props = {
   project: Project;
   worktreePath?: string;
   report: (e: unknown) => void;
   onDirtyChange?: (dirty: boolean) => void;
   refreshRevision?: number;
+  /** When provided, the Files location is owned by the caller (it sets where sessions open). */
+  directory?: string;
+  onDirectoryChange?: (directory: string) => void;
+  onSummary?: (summary: ReviewSummary) => void;
 };
+/** Explains why Git review is unavailable for a folder, and what would enable it. */
+function gitProblem(reason: unknown) {
+  const text = String(reason instanceof Error ? reason.message : reason);
+  if (/not a git repository/i.test(text))
+    return "This folder isn't a Git repository. Files and terminals work normally; run git init in a Shell here to review changes.";
+  if (/repository root/i.test(text))
+    return "This folder is inside a Git repository but isn't its root. Open the repository's top folder to review its changes.";
+  if (/ENOENT|spawn git/i.test(text))
+    return "Git isn't installed on this host. Files and terminals still work.";
+  return "Git review is unavailable for this folder: " + text;
+}
 export function ReviewPanel({
   project,
   worktreePath,
   report,
   onDirtyChange,
   refreshRevision = 0,
+  directory: controlledDirectory,
+  onDirectoryChange,
+  onSummary,
 }: Props) {
   const request = useRef(0);
   const refreshTicket = useRef(0);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
-  const [tab, setTab] = useState<"changes" | "files" | "worktrees">("changes");
+  const [loadError, setLoadError] = useState("");
+  const [tab, setTab] = useState<"changes" | "files" | "worktrees">("files");
   const [status, setStatus] = useState<GitStatus>({ branch: "", files: [] });
   const [files, setFiles] = useState<FileEntry[]>([]);
-  const [directory, setDirectory] = useState("");
+  const [ownDirectory, setOwnDirectory] = useState("");
+  const controlled = controlledDirectory !== undefined && !!onDirectoryChange;
+  const directory = controlled ? controlledDirectory : ownDirectory;
+  const setDirectory = (value: string) =>
+    controlled ? onDirectoryChange!(value) : setOwnDirectory(value);
+  const summary = useRef(onSummary);
+  summary.current = onSummary;
   const [selected, setSelected] = useState<FileContent | null>(null);
   const [content, setContent] = useState("");
   const [diff, setDiff] = useState("");
@@ -60,7 +90,7 @@ export function ReviewPanel({
   async function refresh() {
     const ticket = ++refreshTicket.current;
     setLoading(true);
-    setLoadError(false);
+    setLoadError("");
     try {
       const [git, entries, trees] = await Promise.allSettled([
         window.workspace.invoke<GitStatus>("git.status", scope),
@@ -74,17 +104,32 @@ export function ReviewPanel({
       if (entries.status === "fulfilled") setFiles(entries.value);
       else {
         setFiles([]);
-        report(entries.reason);
+        // A location that vanished returns the Files view to the folder root.
+        if (directory && controlled) setDirectory("");
+        else report(entries.reason);
       }
-      if (git.status === "fulfilled") setStatus(git.value);
-      else {
-        setStatus({ branch: "Git unavailable", files: [] });
-        setLoadError(true);
+      if (git.status === "fulfilled") {
+        setStatus(git.value);
+        summary.current?.({
+          branch: git.value.branch,
+          changes: git.value.files.length,
+          available: true,
+        });
+      } else {
+        const message = gitProblem(git.reason);
+        setStatus({ branch: "", files: [] });
+        setLoadError(message);
+        summary.current?.({
+          branch: "",
+          changes: 0,
+          available: false,
+          message,
+        });
       }
       setWorktrees(trees.status === "fulfilled" ? trees.value : []);
     } catch (e) {
       if (ticket === refreshTicket.current) {
-        setLoadError(true);
+        setLoadError(gitProblem(e));
         report(e);
       }
     } finally {
@@ -95,7 +140,9 @@ export function ReviewPanel({
     request.current++;
     setSelected(null);
     setDiff("");
-    setDirectory("");
+    if (!controlled) setOwnDirectory("");
+    // The caller remounts this panel per folder; a controlled location is kept.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id, worktreePath]);
   useEffect(() => {
     void refresh();
@@ -187,13 +234,17 @@ export function ReviewPanel({
   return (
     <aside className="review-panel">
       <div className="panel-tabs">
-        {(["changes", "files", "worktrees"] as const).map((t) => (
+        {(["files", "changes", "worktrees"] as const).map((t) => (
           <button
             key={t}
             className={tab === t ? "active" : ""}
+            aria-pressed={tab === t}
             onClick={() => setTab(t)}
           >
-            {t}
+            {t === "files" ? "Files" : t === "changes" ? "Changes" : "Worktrees"}
+            {t === "changes" && status.files.length ? (
+              <span className="tab-count">{status.files.length}</span>
+            ) : null}
           </button>
         ))}
         <button
@@ -205,18 +256,18 @@ export function ReviewPanel({
         </button>
       </div>
       <div className="branch-line">
-        <span className="tiny-dot" />
-        {status.branch || "Repository"}
-        <span className="muted">{status.files.length} changes</span>
+        <span className={"tiny-dot" + (loadError ? " neutral" : "")} />
+        {loadError ? "No Git review" : status.branch || "Repository"}
+        {loadError ? null : (
+          <span className="muted">{status.files.length} changed</span>
+        )}
       </div>
       {tab === "changes" ? (
         <>
           <div className="file-list">
             {loading || loadError ? (
               <div className="quiet-empty">
-                {loading
-                  ? "Reading working tree…"
-                  : "Git features are unavailable for this folder. Files and shell sessions remain available."}
+                {loading ? "Reading working tree…" : loadError}
               </div>
             ) : status.files.length === 0 ? (
               <div className="quiet-empty">
@@ -285,16 +336,29 @@ export function ReviewPanel({
         <>
           <div className="directory-line">
             <button
-              onClick={() =>
-                setDirectory(directory.split("/").slice(0, -1).join("/"))
-              }
+              aria-label="Up one folder"
+              onClick={() => {
+                if (canDiscard())
+                  setDirectory(directory.split("/").slice(0, -1).join("/"));
+              }}
               disabled={!directory}
             >
               ↑
             </button>
-            <span>{directory || "/"}</span>
+            <span title={directory || "/"}>
+              {project.name}
+              {directory ? "/" + directory : ""}
+            </span>
           </div>
+          {controlled && !worktreePath ? (
+            <p className="files-hint">
+              New sessions open in the folder shown here.
+            </p>
+          ) : null}
           <div className="file-list">
+            {!loading && !files.length ? (
+              <div className="quiet-empty">This folder is empty.</div>
+            ) : null}
             {files.map((file) => (
               <button
                 className="tree-entry"

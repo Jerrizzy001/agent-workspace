@@ -49,7 +49,14 @@ function fixture() {
       calls.push({ command, payload });
       return command === "snapshot" || command === "layout.save"
         ? snapshot
-        : command === "attempt.start"
+        : command === "terminal.open"
+          ? {
+              session: {
+                ...snapshot.sessions[0],
+                backendSocket: "/private/socket",
+              },
+            }
+          : command === "attempt.start"
           ? {
               attempt: { id: "a" },
               session: {
@@ -204,6 +211,33 @@ test("gateway authenticates real sockets, scopes commands, targets streams and r
       idempotencyKey: "fixture-key",
     });
     assert.equal(launched.result.session.backendSocket, undefined);
+    // One-click folder launches stay inside shared projects; folder management stays local.
+    const opened = await a.rpc("terminal.open", {
+      projectId: "p",
+      provider: "claude",
+      path: "src",
+      idempotencyKey: "folder-key",
+    });
+    assert.equal(opened.result.session.backendSocket, undefined);
+    assert.match(
+      (
+        await a.rpc("terminal.open", {
+          projectId: "hidden",
+          provider: "shell",
+          idempotencyKey: "hidden-key",
+        })
+      ).error,
+      /Project access denied/,
+    );
+    for (const [command, payload] of [
+      ["project.add", { path: "/" }],
+      ["project.hide", { projectId: "p" }],
+      ["terminal.open", { projectId: "p", provider: "shell", idempotencyKey: "k", cwd: "/" }],
+    ] as const)
+      assert.match(
+        (await a.rpc(command, payload)).error,
+        /not available remotely|Unexpected command field/,
+      );
     const snapshotsBeforeTyping = f.calls.filter(
       (c) => c.command === "snapshot",
     ).length;

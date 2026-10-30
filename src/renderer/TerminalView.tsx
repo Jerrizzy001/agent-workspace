@@ -8,9 +8,12 @@ import "@xterm/xterm/css/xterm.css";
 export function TerminalView({
   session,
   onViewer,
+  endedNotice = true,
 }: {
   session: Session;
   onViewer?: (id: string | null) => void;
+  /** Hosts that explain an ended session themselves turn the built-in notice off. */
+  endedNotice?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const viewerCallback = useRef(onViewer);
@@ -63,22 +66,25 @@ export function TerminalView({
       cursorBlink: true,
       disableStdin: true,
       fontSize: 13,
-      fontFamily: '"SFMono-Regular", Menlo, monospace',
-      lineHeight: 1.45,
+      fontFamily:
+        '"JetBrains Mono", "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace',
+      lineHeight: 1.4,
       scrollback: 5000,
       theme: {
-        background: "#151719",
-        foreground: "#d6d9dc",
-        cursor: "#eeb66a",
-        selectionBackground: "#5c4b35",
-        black: "#282c30",
-        red: "#e68b82",
-        green: "#a6c592",
-        yellow: "#eeb66a",
-        blue: "#8cb4dc",
-        magenta: "#bd9aca",
-        cyan: "#8bc7bf",
-        white: "#e4e4e4",
+        background: "#0d1015",
+        foreground: "#d8dee9",
+        cursor: "#8fb4ff",
+        cursorAccent: "#0d1015",
+        selectionBackground: "#2c3a55",
+        black: "#232832",
+        red: "#f07f86",
+        green: "#8fd19e",
+        yellow: "#f0c674",
+        blue: "#82aaff",
+        magenta: "#c3a6ff",
+        cyan: "#7fd4d4",
+        white: "#d8dee9",
+        brightBlack: "#5c6577",
       },
     });
     terminalRef.current = terminal;
@@ -253,7 +259,20 @@ export function TerminalView({
       (status.current === "unknown" && manualRetry > 0)
     )
       void attach().catch(fail);
-    else terminal.options.disableStdin = true;
+    else {
+      terminal.options.disableStdin = true;
+      // An ended process may have saved its final screen; show it read-only.
+      if (status.current === "exited")
+        void window.workspace
+          .invoke<{ data: string }>("session.capture", {
+            sessionId: session.id,
+            generation: session.generation,
+          })
+          .then((result) => {
+            if (!disposed) terminal.write(result.data.replace(/\r?\n/g, "\r\n"));
+          })
+          .catch(() => {});
+    }
     return () => {
       disposed = true;
       attached = false;
@@ -270,10 +289,12 @@ export function TerminalView({
   }, [session.id, session.generation, epoch, manualRetry]);
   return (
     <div className="terminal-wrap">
-      {session.status === "exited" ? (
+      {session.status === "exited" && endedNotice ? (
         <div className="terminal-ended" role="status">
-          Session ended. Output received in this open view remains below. Closed
-          views have no saved terminal transcript.
+          Session ended.{" "}
+          {session.transcript
+            ? "Its final screen is shown below."
+            : "Output seen in this open view remains below."}
         </div>
       ) : null}
       {session.status === "unknown" && !ready && !error ? (

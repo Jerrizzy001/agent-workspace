@@ -6,6 +6,8 @@ export interface Project {
   name: string;
   path: string;
   createdAt: string;
+  /** Removed from the folder list; files and history are untouched. */
+  hidden?: boolean;
 }
 export interface Task {
   id: string;
@@ -28,8 +30,11 @@ export interface Attempt {
   status: "running" | "exited" | "unknown";
   createdAt: string;
 }
+/** Agent turn state reported by provider hooks; absent when the provider cannot report it. */
+export type Activity = "running" | "needs" | "done";
 export interface Session {
   id: string;
+  /** Null for sessions opened directly from a folder rather than a task attempt. */
   attemptId: string | null;
   projectId: string;
   provider: Provider;
@@ -38,6 +43,15 @@ export interface Session {
   generation: number;
   status: "running" | "exited" | "unknown";
   createdAt: string;
+  model?: string;
+  activity?: Activity;
+  activityTracking?: boolean;
+  /** Claude conversation ID, used to resume the conversation after the process ends. */
+  conversationId?: string;
+  resumedFrom?: string;
+  exitCode?: number;
+  /** True when the final screen was saved after the process ended on its own. */
+  transcript?: boolean;
 }
 export interface Note {
   id: string;
@@ -102,9 +116,27 @@ export type CoreEvent =
       status: "starting" | "ready" | "restarting" | "failed";
       message?: string;
     };
+export interface DirectoryEntry {
+  name: string;
+  path: string;
+  type: "directory" | "file";
+  hidden: boolean;
+  git?: boolean;
+}
+export interface DirectoryListing {
+  path: string;
+  parent: string | null;
+  home: string;
+  git: boolean;
+  entries: DirectoryEntry[];
+  truncated: boolean;
+  places: { name: string; path: string }[];
+}
 export const COMMANDS = [
   "snapshot",
   "project.add",
+  "project.hide",
+  "terminal.open",
   "task.create",
   "task.update",
   "attempt.start",
@@ -163,6 +195,8 @@ export interface WorkspaceAPI {
   ): Promise<T>;
   subscribe(listener: (event: CoreEvent) => void): () => void;
   chooseDirectory(): Promise<string | null>;
+  /** Desktop owner only: lists a host folder for in-app navigation. */
+  browseDirectory?(path?: string): Promise<DirectoryListing>;
   remote?: DesktopRemoteAPI;
 }
 declare global {

@@ -9,6 +9,7 @@ const api: WorkspaceAPI = {
     return () => ipcRenderer.removeListener("workspace:event", handler);
   },
   chooseDirectory: () => ipcRenderer.invoke("workspace:chooseDirectory"),
+  browseDirectory: (path?: string) => ipcRenderer.invoke("workspace:browse", path),
   remote: {
     status: () => ipcRenderer.invoke("workspace:remote", "status"),
     enable: (config) => ipcRenderer.invoke("workspace:remote", "enable", config),

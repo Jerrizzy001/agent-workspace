@@ -18,7 +18,7 @@ try{
   const project=await ownerInvoke('project.add',{path:repo});
   const status=await owner.evaluate(()=>window.workspace.remote.enable({host:'127.0.0.1',port:0,tls:false}));
   const secret=await owner.evaluate(()=>window.workspace.remote.pairingSecret());
-  browser=await chromium.launch({headless:true,channel:process.env.WORKSPACE_BROWSER_CHANNEL || 'chrome'});
+  browser=await chromium.launch({headless:true,...(process.env.WORKSPACE_BROWSER?{executablePath:process.env.WORKSPACE_BROWSER}:{channel:process.env.WORKSPACE_BROWSER_CHANNEL || 'chrome'})});
   const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});remotePage=await context.newPage();
   await remotePage.goto(status.url);await remotePage.getByLabel('Pairing code').fill(secret);await remotePage.getByRole('button',{name:'Connect',exact:true}).click();await remotePage.getByText('Connected to workspace',{exact:true}).waitFor();
   const invoke=(command,payload={})=>remotePage.evaluate(({command,payload})=>window.workspace.invoke(command,payload),{command,payload});

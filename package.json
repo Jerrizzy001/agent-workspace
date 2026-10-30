@@ -1,6 +1,6 @@
 {
   "name": "agent-workspace",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "A desktop and secure remote browser workspace for coding agents",
   "main": "dist/desktop/main.cjs",
@@ -11,6 +11,7 @@
     "test": "tsx --test tests/*.test.ts",
     "postinstall": "electron-rebuild -f -w node-pty && node scripts/prepare-native.mjs",
     "package": "npm run build && electron-builder --mac dir zip --publish never",
+    "make-icons": "node scripts/make-icons.mjs",
     "smoke": "node scripts/smoke-electron.mjs",
     "smoke:ui": "node scripts/smoke-ui.mjs",
     "verify:desktop": "node scripts/verify-desktop.mjs",

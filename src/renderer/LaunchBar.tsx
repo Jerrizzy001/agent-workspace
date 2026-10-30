@@ -1,0 +1,293 @@
+import { useEffect, useRef, useState } from "react";
+import {
+  ChevronRight,
+  FolderGit2,
+  Folder,
+  GitBranch,
+  LoaderCircle,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
+import type {
+  Capability,
+  Project,
+  Provider,
+  Worktree,
+} from "../shared/contracts";
+import { capability, providerHint, providerName, providers } from "./sessions";
+import { ProviderGlyph } from "./ui";
+
+export interface LaunchChoices {
+  models: { claude: string; codex: string };
+  prompt: string;
+  worktreePath: string;
+}
+export interface GitSummary {
+  branch: string;
+  changes: number;
+  available: boolean;
+  message?: string;
+}
+const modelsKey = "workspace.launch.models";
+export function savedModels(): LaunchChoices["models"] {
+  try {
+    const value = JSON.parse(localStorage.getItem(modelsKey) || "{}");
+    return {
+      claude: typeof value.claude === "string" ? value.claude : "",
+      codex: typeof value.codex === "string" ? value.codex : "",
+    };
+  } catch {
+    return { claude: "", codex: "" };
+  }
+}
+
+/** The selected folder, where new sessions start, and one button per provider. */
+export function LaunchBar({
+  project,
+  target,
+  onTarget,
+  capabilities,
+  choices,
+  onChoices,
+  onLaunch,
+  launching,
+  disabledReason,
+  git,
+}: {
+  project: Project;
+  target: string;
+  onTarget: (path: string) => void;
+  capabilities: Capability[];
+  choices: LaunchChoices;
+  onChoices: (choices: LaunchChoices) => void;
+  onLaunch: (provider: Provider) => void;
+  launching: Provider | null;
+  disabledReason: string;
+  git: GitSummary | null;
+}) {
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [trees, setTrees] = useState<Worktree[] | null>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!optionsOpen) return;
+    void window.workspace
+      .invoke<Worktree[]>("worktree.list", { projectId: project.id })
+      .then(setTrees)
+      .catch(() => setTrees([]));
+    const close = (event: MouseEvent) => {
+      if (!panel.current?.contains(event.target as Node)) setOptionsOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOptionsOpen(false);
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", escape);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", escape);
+    };
+  }, [optionsOpen, project.id]);
+  const segments = target ? target.split("/").filter(Boolean) : [];
+  const tree = choices.worktreePath
+    ? trees?.find((t) => t.path === choices.worktreePath)
+    : undefined;
+  const where = choices.worktreePath
+    ? `worktree ${tree?.branch || choices.worktreePath.split("/").pop()}`
+    : [project.name, ...segments].join("/");
+  const customised =
+    !!choices.prompt.trim() ||
+    !!choices.worktreePath ||
+    !!choices.models.claude.trim() ||
+    !!choices.models.codex.trim();
+  return (
+    <div className="launch-bar">
+      <div className="launch-target">
+        <span className="launch-label">Opens in</span>
+        <ol className="crumbs target-crumbs" aria-label="Where new sessions open">
+          <li>
+            <button
+              onClick={() => onTarget("")}
+              aria-current={!segments.length ? "location" : undefined}
+              title={project.path}
+            >
+              {git?.available ? <FolderGit2 size={14} /> : <Folder size={14} />}
+              {project.name}
+            </button>
+          </li>
+          {segments.map((segment, index) => (
+            <li key={index}>
+              <ChevronRight size={13} aria-hidden="true" />
+              <button
+                onClick={() => onTarget(segments.slice(0, index + 1).join("/"))}
+                aria-current={
+                  index === segments.length - 1 ? "location" : undefined
+                }
+              >
+                {segment}
+              </button>
+            </li>
+          ))}
+          {segments.length ? (
+            <li>
+              <button
+                className="icon-button tiny"
+                aria-label="Open at the folder root instead"
+                title="Use the folder root"
+                onClick={() => onTarget("")}
+              >
+                <X size={12} />
+              </button>
+            </li>
+          ) : null}
+        </ol>
+        {git ? (
+          <span
+            className={"git-chip" + (git.available ? "" : " muted-chip")}
+            title={git.message || ""}
+          >
+            <GitBranch size={12} />
+            {git.available
+              ? `${git.branch || "detached"}${git.changes ? ` · ${git.changes} changed` : ""}`
+              : "No Git"}
+          </span>
+        ) : null}
+      </div>
+      <div className="launch-actions" role="group" aria-label="Open a session">
+        {providers.map((provider) => {
+          const cap = capability(capabilities, provider);
+          const missing = !!cap && !cap.available;
+          const model =
+            provider === "shell" ? "" : choices.models[provider].trim();
+          return (
+            <button
+              key={provider}
+              className={
+                "launch-button launch-" +
+                provider +
+                (missing ? " is-missing" : "")
+              }
+              disabled={!!disabledReason || !!launching}
+              title={
+                disabledReason ||
+                (missing
+                  ? `${providerName(provider)} was not found on this host`
+                  : `${providerHint(provider)} in ${where}${model ? ` · ${model}` : ""}`)
+              }
+              onClick={() => onLaunch(provider)}
+            >
+              {launching === provider ? (
+                <LoaderCircle size={15} className="spin" />
+              ) : (
+                <ProviderGlyph provider={provider} />
+              )}
+              <span className="launch-name">{providerName(provider)}</span>
+              {missing ? (
+                <small>Not found</small>
+              ) : model ? (
+                <small>{model}</small>
+              ) : null}
+            </button>
+          );
+        })}
+        <div className="options-anchor" ref={panel}>
+          <button
+            className={"icon-button options-button" + (customised ? " is-set" : "")}
+            aria-label="Launch options"
+            aria-expanded={optionsOpen}
+            title="Model, first message and worktree"
+            onClick={() => setOptionsOpen((open) => !open)}
+          >
+            <SlidersHorizontal size={16} />
+          </button>
+          {optionsOpen ? (
+            <div className="popover launch-options" role="dialog" aria-label="Launch options">
+              <header>
+                <strong>Launch options</strong>
+                <span>Optional. One click works without these.</span>
+              </header>
+              <label>
+                Claude model
+                <input
+                  list="claude-models"
+                  value={choices.models.claude}
+                  placeholder="CLI default"
+                  maxLength={150}
+                  onChange={(event) =>
+                    onChoices({
+                      ...choices,
+                      models: { ...choices.models, claude: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Codex model
+                <input
+                  list="codex-models"
+                  value={choices.models.codex}
+                  placeholder="CLI default"
+                  maxLength={150}
+                  onChange={(event) =>
+                    onChoices({
+                      ...choices,
+                      models: { ...choices.models, codex: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              <datalist id="claude-models">
+                <option value="claude-opus-4-6" />
+              </datalist>
+              <datalist id="codex-models">
+                <option value="gpt-6.1-sol" />
+              </datalist>
+              <p className="hint">
+                Blank uses your CLI's configured default. A model your account
+                can't use is reported by the CLI in its terminal.
+              </p>
+              <label>
+                First message
+                <textarea
+                  value={choices.prompt}
+                  placeholder="Leave empty to open the agent and type yourself"
+                  onChange={(event) =>
+                    onChoices({ ...choices, prompt: event.target.value })
+                  }
+                />
+              </label>
+              <p className="hint">
+                Sent once to the next Claude or Codex session, then cleared.
+              </p>
+              <label>
+                Where
+                <select
+                  value={choices.worktreePath}
+                  disabled={!trees?.length}
+                  onChange={(event) =>
+                    onChoices({ ...choices, worktreePath: event.target.value })
+                  }
+                >
+                  <option value="">
+                    This folder{segments.length ? ` (${segments.join("/")})` : ""}
+                  </option>
+                  {(trees || [])
+                    .filter((t) => t.path !== project.path)
+                    .map((t) => (
+                      <option key={t.path} value={t.path}>
+                        Worktree · {t.branch || t.path}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <p className="hint">
+                {trees && !trees.length
+                  ? "Worktrees need the folder to be a Git repository root."
+                  : "Create isolated worktrees from Files → Worktrees."}
+              </p>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}

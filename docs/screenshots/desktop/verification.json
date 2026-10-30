@@ -1,0 +1,130 @@
+{
+  "version": "0.3.0",
+  "date": "2026-10-30",
+  "host": "Linux x86_64 container, Node.js 24.22.2, Electron 45.1.0 under Xvfb (--no-sandbox wrapper), tmux 3.4, Playwright-bundled Chromium; LANG=C.UTF-8",
+  "finalPass": [
+    {
+      "script": "smoke-electron",
+      "result": {
+        "passed": true,
+        "runtime": {
+          "version": "0.3.0",
+          "packaged": false,
+          "electron": "45.1.0",
+          "node": "24.22.1",
+          "architecture": "x64"
+        },
+        "checks": [
+          "snapshot",
+          "project",
+          "task",
+          "shell input/capture",
+          "git diff",
+          "worktree",
+          "quit/reopen same backend",
+          "terminate"
+        ]
+      }
+    },
+    {
+      "script": "smoke-ui",
+      "result": {
+        "passed": true,
+        "checks": [
+          "one-click folder shell (no task form)",
+          "board task controls",
+          "terminal typing",
+          "core crash reconnect",
+          "dirty editor window close and native quit cancelled",
+          "core restart after cancelled native quit",
+          "board status",
+          "canvas note",
+          "offline Monaco editing/save"
+        ]
+      }
+    },
+    {
+      "script": "verify-desktop",
+      "result": {
+        "passed": true,
+        "checks": [
+          "IPC allowlist, payload bound, foreign-window rejection and popup denial",
+          "three real core crashes automatically restart; same session and generation accept shell input",
+          "fourth crash exhausts restart budget and rejects new requests promptly",
+          "reopening after exhausted core recovers same persistent tmux session"
+        ]
+      }
+    },
+    {
+      "script": "verify-workflows",
+      "result": {
+        "passed": true,
+        "checks": [
+          "create and edit task with revision; task sheet status",
+          "board select and drag moves",
+          "terminal immediate input and output",
+          "terminal resize and typing",
+          "canvas note persistence; drag; undo; redo",
+          "offline Monaco save; unsaved project navigation cancel",
+          "external write conflict refuses stale save",
+          "explicit reload resolves external conflict with on-disk content",
+          "unstaged/staged diff; stage; unstage; commit",
+          "untracked content preview",
+          "worktree creation and listing",
+          "failed launch retries same immutable request after directory recovery; no duplicate attempt",
+          "second attempt bound to isolated worktree; attempt switching preserves distinct sessions",
+          "multiple-project switching; persisted notes and layout",
+          "non-Git folder clearly reports unavailable git; file browsing/editor works"
+        ]
+      }
+    },
+    {
+      "script": "verify-lifecycle-ui",
+      "result": {
+        "passed": true,
+        "checks": [
+          "injected unknown-state UI reconnects to the same actual live shell without a new attempt",
+          "natural shell exit, terminal and canvas remount show ended state and saved final screen without spinner",
+          "provider-specific model fields start at the CLI default; independent custom values per provider",
+          "explicit terminate and remount show ended state without spinner",
+          "canvas note autosaves without blur",
+          "immediate focused-note close flushes, protects pending text, and persists through app restart"
+        ]
+      }
+    },
+    {
+      "script": "verify-terminal-modes",
+      "result": {
+        "passed": false,
+        "checks": [
+          "Unicode render and explicit ANSI alternate screen",
+          "alternate-screen redraw across board/canvas/terminals",
+          "alternate screen exit restores usable normal buffer",
+          "burst visible rows are distinct, sequential, and match tmux capture",
+          "10000 line burst drains and subsequent typing works"
+        ],
+        "error": "TimeoutError: page.waitForFunction: Timeout 20000ms exceeded."
+      }
+    },
+    {
+      "script": "verify-remote-desktop",
+      "result": {
+        "passed": true,
+        "checks": [
+          "default-off gateway, network TLS enforcement and owner-only management IPC",
+          "desktop serves its bundled browser assets; phone-sized Chrome pairs against the same desktop core",
+          "remote authenticated browser protocol shares desktop session ID, generation, actual shell PID and terminal bytes",
+          "gateway broadcasts core reconnect/recovery and reconnects the same persistent shell",
+          "revoke closes the active WebSocket, expires browser access and rotates pairing",
+          "stopping remote gateway detaches browsers while desktop shell stays alive",
+          "quitting an enabled gateway and reopening the same desktop data leaves remote access off"
+        ]
+      }
+    }
+  ],
+  "notes": [
+    "verify-terminal-modes timed out once at its deliberately blocked-renderer resync step during the back-to-back final pass (5 of 7 checks done), then passed all 7 checks in 3 of 3 standalone reruns; recorded as a timing flake under load.",
+    "smoke-electron and smoke-ui also passed against an unpacked Linux package (release/linux-unpacked, app.isPackaged true, version 0.3.0).",
+    "macOS packaging, verify-mobile-webkit, verify-linux-server (Docker), verify-server-release and the live provider scripts were not run for 0.3.0."
+  ]
+}

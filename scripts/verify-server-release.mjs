@@ -20,7 +20,7 @@ try{
   child=spawn(process.execPath,['dist/server/headless.mjs','--data-dir',path.join(fixture,'data'),'--project',repo,'--port','0'],{cwd:serverDir,env:{...process.env,NODE_PATH:''},stdio:['ignore','pipe','pipe']});
   const status=await new Promise((resolve,reject)=>{let out='';const timer=setTimeout(()=>reject(new Error('Host startup timed out')),15000);child.once('exit',code=>{clearTimeout(timer);reject(new Error('Host exited '+code));});child.stdout.on('data',bytes=>{out+=bytes;const line=out.split('\n').find(l=>l.startsWith('{'));if(line){clearTimeout(timer);resolve(JSON.parse(line));}});});
   const secret=(await readFile(path.join(fixture,'data','remote-pairing.secret'),'utf8')).trim();
-  browser=await chromium.launch({headless:true,channel:process.env.WORKSPACE_BROWSER_CHANNEL || 'chrome'});const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+  browser=await chromium.launch({headless:true,...(process.env.WORKSPACE_BROWSER?{executablePath:process.env.WORKSPACE_BROWSER}:{channel:process.env.WORKSPACE_BROWSER_CHANNEL || 'chrome'})});const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(status.url);await page.getByLabel('Pairing code').fill(secret);await page.getByRole('button',{name:'Connect',exact:true}).click();
   await page.getByText('Connected to workspace',{exact:true}).waitFor();const invoke=(command,payload={})=>page.evaluate(({command,payload})=>window.workspace.invoke(command,payload),{command,payload});

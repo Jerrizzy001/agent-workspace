@@ -41,6 +41,9 @@ test("initial prompts remain literal arguments and shell never executes task tex
   ]);
   assert.deepEqual(providerArguments("shell", task), []);
   assert.throws(() => providerArguments("claude", task, "\0bad"), /Invalid/);
+  // An explicit blank prompt opens the CLI interactively instead of inventing one.
+  assert.deepEqual(providerArguments("claude", task, ""), []);
+  assert.deepEqual(providerArguments("codex", task, "  \n"), []);
 });
 test("slow subprocess leaves event loop responsive", async () => {
   let ticked = false;

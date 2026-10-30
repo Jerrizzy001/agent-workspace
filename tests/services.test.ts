@@ -250,11 +250,11 @@ test("failed database startup releases owner lock and stale owner recovery prese
     await core.close();
     assert.equal(fs.existsSync(path.join(temp, "owner.lock")), false);
     const newer = new DatabaseSync(path.join(temp, "workspace.sqlite"));
-    newer.exec("PRAGMA user_version=2");
+    newer.exec("PRAGMA user_version=3");
     newer.close();
     await assert.rejects(createCore({ dataDir: temp, emit: () => {} }), /newer app version/);
     const preserved = new DatabaseSync(path.join(temp, "workspace.sqlite"));
-    assert.equal((preserved.prepare("PRAGMA user_version").get() as any).user_version, 2);
+    assert.equal((preserved.prepare("PRAGMA user_version").get() as any).user_version, 3);
     preserved.close();
     assert.equal(fs.existsSync(path.join(temp, "owner.lock")), false);
   } finally {
@@ -351,6 +351,42 @@ test("legacy live ownership files are never stolen and failed acquisition releas
       await core.close();
     }
   } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test("owner folder listing sorts folders first, flags repositories and explains denied folders", async () => {
+  const { listDirectory } = await import("../src/desktop/folders.js");
+  const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "workspace-browse-")));
+  try {
+    fs.mkdirSync(path.join(temp, "beta"));
+    fs.mkdirSync(path.join(temp, "alpha", ".git"), { recursive: true });
+    fs.mkdirSync(path.join(temp, ".hidden"));
+    fs.writeFileSync(path.join(temp, "notes.txt"), "x");
+    fs.symlinkSync(path.join(temp, "beta"), path.join(temp, "beta-link"));
+    const listing = await listDirectory(temp);
+    assert.equal(listing.path, temp);
+    assert.equal(listing.parent, path.dirname(temp));
+    assert.deepEqual(
+      listing.entries.map((e) => [e.name, e.type, !!e.git, e.hidden]),
+      [
+        [".hidden", "directory", false, true],
+        ["alpha", "directory", true, false],
+        ["beta", "directory", false, false],
+        ["beta-link", "directory", false, false],
+        ["notes.txt", "file", false, false],
+      ],
+    );
+    assert.ok(listing.places.some((p) => p.name === "Home"));
+    await assert.rejects(listDirectory("relative/path"), /Choose a folder/);
+    await assert.rejects(listDirectory(path.join(temp, "missing")), /no longer exists/);
+    await assert.rejects(listDirectory(path.join(temp, "notes.txt")), /file, not a folder/);
+    if (process.getuid?.() !== 0) {
+      fs.mkdirSync(path.join(temp, "locked"), { mode: 0o000 });
+      await assert.rejects(listDirectory(path.join(temp, "locked")), /permission/);
+    }
+  } finally {
+    fs.chmodSync(temp, 0o700);
     fs.rmSync(temp, { recursive: true, force: true });
   }
 });

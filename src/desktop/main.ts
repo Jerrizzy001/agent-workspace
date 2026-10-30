@@ -4,6 +4,7 @@ import os from "node:os";
 import { readFile } from "node:fs/promises";
 import { createSecureContext } from "node:tls";
 import { startGateway, type Gateway } from "../server/gateway";
+import { listDirectory, loginShellPath } from "./folders";
 import { COMMANDS, type Command, type CoreEvent, type RemoteConfig, type RemoteStatus } from "../shared/contracts";
 let window: BrowserWindow | null = null;
 let core: Electron.UtilityProcess | null = null;
@@ -104,22 +105,33 @@ function event(value: CoreEvent) {
   if (window && !window.isDestroyed())
     window.webContents.send("workspace:event", value);
 }
+let corePath = process.env.PATH || "";
+/** Provider CLIs are found through the user's login-shell PATH plus common install folders. */
+async function resolveCorePath() {
+  const login = await loginShellPath();
+  corePath = [
+    ...new Set(
+      [
+        ...(process.env.PATH || "").split(path.delimiter),
+        ...login.split(path.delimiter),
+        path.join(os.homedir(), ".local/bin"),
+        path.join(os.homedir(), ".npm-global/bin"),
+        path.join(os.homedir(), ".volta/bin"),
+        path.join(os.homedir(), ".bun/bin"),
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+      ].filter((entry) => entry && path.isAbsolute(entry)),
+    ),
+  ].join(path.delimiter);
+}
 function startCore() {
   event({ type: "core.status", status: restarts ? "restarting" : "starting" });
   core = utilityProcess.fork(path.join(__dirname, "utility.mjs"), [], {
     env: {
       ...process.env,
-      PATH: [
-        ...new Set([
-          ...(process.env.PATH || "").split(path.delimiter),
-          path.join(os.homedir(), ".local/bin"),
-          path.join(os.homedir(), ".npm-global/bin"),
-          "/opt/homebrew/bin",
-          "/usr/local/bin",
-          "/usr/bin",
-          "/bin",
-        ]),
-      ].join(path.delimiter),
+      PATH: corePath,
       WORKSPACE_DATA_DIR: app.getPath("userData"),
     },
     serviceName: "Agent Workspace Core",
@@ -177,7 +189,7 @@ function createWindow() {
     height: 940,
     minWidth: 1000,
     minHeight: 680,
-    backgroundColor: "#101214",
+    backgroundColor: "#0b0d12",
     title: "Agent Workspace",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -239,6 +251,12 @@ else {
         properties: ["openDirectory"],
       });
       return result.canceled ? null : result.filePaths[0];
+    });
+    ipcMain.handle("workspace:browse", async (ev, target: unknown) => {
+      // Host-wide navigation is an owner capability of this window only; the
+      // remote gateway has no route to it.
+      assertOwner(ev);
+      return listDirectory(target);
     });
     ipcMain.handle("workspace:remote", async (ev, action: unknown, value: unknown) => {
       assertOwner(ev);
@@ -316,7 +334,7 @@ else {
         return remoteStatus();
       } finally { gatewayMutation = false; }
     });
-    startCore();
+    void resolveCorePath().finally(startCore);
     createWindow();
     app.on("activate", () => {
       if (!window) createWindow();

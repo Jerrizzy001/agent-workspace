@@ -1,48 +1,56 @@
 import { createId } from "./id";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Plus,
-  FolderOpen,
-  Command,
-  LayoutGrid,
-  Network,
-  PanelLeftClose,
-  ArrowUpRight,
-  Terminal,
-  GitBranch,
-  X,
-  Search,
+  Bell,
+  ChevronDown,
+  Ellipsis,
   FileText,
-  Square,
-  Activity,
+  Files,
+  FolderOpen,
+  FolderPlus,
+  LayoutGrid,
   Menu,
+  Network,
+  PanelRight,
+  PanelRightClose,
+  Plus,
+  RefreshCw,
+  Search,
   Smartphone,
+  SquareTerminal,
+  X,
 } from "lucide-react";
 import type {
-  Attempt,
   Project,
   Provider,
+  Session,
   Snapshot,
   Task,
-  TaskStatus,
-  Worktree,
 } from "../shared/contracts";
-import { TerminalView } from "./TerminalView";
-import { ReviewPanel } from "./ReviewPanel";
+import { ReviewPanel, type ReviewSummary } from "./ReviewPanel";
 import { CanvasView } from "./CanvasView";
 import { RemoteAccessPanel } from "./RemoteAccessPanel";
+import { FolderBrowser } from "./FolderBrowser";
+import { LaunchBar, savedModels, type LaunchChoices } from "./LaunchBar";
+import { SessionView } from "./SessionView";
+import { AttemptModal, Board, TaskModal, statusLabel } from "./Board";
 import { isRemoteBrowser } from "./remote";
 import { registerLeaveGuard } from "./leaveWorkspace";
 import { mergeSnapshot } from "./snapshot";
+import {
+  capability,
+  errorText,
+  isOpen,
+  orderSessions,
+  providerName,
+  providers,
+  sessionLocation,
+  sessionState,
+  sessionTitle,
+  shortPath,
+} from "./sessions";
+import { BrandMark, ProviderGlyph, StatusBadge } from "./ui";
 
-function savedSelection(key: string) {
-  if (!isRemoteBrowser) return "";
-  try {
-    return localStorage.getItem("workspace.selection." + key) || "";
-  } catch {
-    return "";
-  }
-}
 const initial: Snapshot = {
   projects: [],
   tasks: [],
@@ -52,47 +60,80 @@ const initial: Snapshot = {
   layouts: [],
   capabilities: [],
 };
-const columns: { id: TaskStatus; label: string }[] = [
-  { id: "backlog", label: "Backlog" },
-  { id: "ready", label: "Ready" },
-  { id: "in_progress", label: "In progress" },
-  { id: "review", label: "In review" },
-  { id: "done", label: "Done" },
-];
-const label = (status: TaskStatus) =>
-  columns.find((c) => c.id === status)?.label;
+const isMac = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent);
+const modKey = isMac ? "⌘" : "Ctrl";
+function stored(key: string, fallback = "") {
+  try {
+    return localStorage.getItem("workspace.selection." + key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+function store(key: string, value: string) {
+  try {
+    localStorage.setItem("workspace.selection." + key, value);
+  } catch {
+    /* Selection persistence is optional; credentials are never stored here. */
+  }
+}
+type View = "terminals" | "board" | "canvas";
+type LaunchProblem = {
+  provider: Provider;
+  message: string;
+  kind: "missing" | "uncertain" | "error";
+  retry?: { key: string; payload: Record<string, unknown> };
+};
+type Toast = {
+  id: string;
+  sessionId: string;
+  title: string;
+  detail: string;
+  tone: string;
+};
+const installHints: Record<string, string> = {
+  claude: "npm install -g @anthropic-ai/claude-code",
+  codex: "npm install -g @openai/codex",
+};
 
 export default function App() {
+  const [snapshot, setSnapshot] = useState(initial);
+  const [core, setCore] = useState("starting");
+  const [error, setError] = useState("");
+  const [projectId, setProjectId] = useState(() => stored("project"));
+  const [sessionId, setSessionId] = useState(() => stored("session"));
+  const [taskId, setTaskId] = useState("");
+  const [modalTask, setModalTask] = useState<Task | undefined>();
+  const [view, setView] = useState<View>("terminals");
+  const [browsing, setBrowsing] = useState(false);
+  const [targets, setTargets] = useState<Record<string, string>>({});
+  const [choices, setChoices] = useState<LaunchChoices>(() => ({
+    models: savedModels(),
+    prompt: "",
+    worktreePath: "",
+  }));
+  const [launching, setLaunching] = useState<Provider | null>(null);
+  const [problem, setProblem] = useState<LaunchProblem | null>(null);
+  const [git, setGit] = useState<ReviewSummary | null>(null);
+  const [filesOpen, setFilesOpen] = useState(() => stored("files", "1") !== "0");
   const [drawer, setDrawer] = useState(false);
-  const [remotePanel, setRemotePanel] = useState(false);
-  const [reviewRefresh, setReviewRefresh] = useState(0);
   const [mobilePane, setMobilePane] = useState<"terminal" | "files">(
     "terminal",
   );
+  const [modal, setModal] = useState<
+    "task" | "edit-task" | "attempt" | "palette" | null
+  >(null);
+  const [remotePanel, setRemotePanel] = useState(false);
+  const [folderMenu, setFolderMenu] = useState(false);
+  const [showEnded, setShowEnded] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [reviewRefresh, setReviewRefresh] = useState(0);
   const [editorDirty, setEditorDirty] = useState(false);
   const canNavigate = useCallback(
     () => !editorDirty || confirm("Discard unsaved editor changes?"),
     [editorDirty],
   );
   useEffect(() => registerLeaveGuard(canNavigate), [canNavigate]);
-  const [viewerId, setViewerId] = useState<string | null>(null);
-  const [attention, setAttention] = useState(false);
-  const [snapshot, setSnapshot] = useState(initial);
-  const [projectId, setProjectId] = useState(() => savedSelection("project"));
-  const [taskId, setTaskId] = useState(() => savedSelection("task"));
-  const [attemptId, setAttemptId] = useState(() => savedSelection("attempt"));
-  const [view, setView] = useState<"focus" | "board" | "canvas">("focus");
-  const [modal, setModal] = useState<
-    "task" | "edit-task" | "attempt" | "palette" | null
-  >(null);
-  const [error, setError] = useState("");
-  const [core, setCore] = useState("starting");
-  const [query, setQuery] = useState("");
-  const [review, setReview] = useState(true);
-  const report = useCallback(
-    (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
-    [],
-  );
+  const report = useCallback((e: unknown) => setError(errorText(e)), []);
   const reload = useCallback(
     () =>
       window.workspace
@@ -121,106 +162,377 @@ export default function App() {
       }
     });
   }, [reload]);
+
+  const projects = snapshot.projects.filter((p) => !p.hidden);
   useEffect(() => {
-    if (
-      snapshot.projects.length &&
-      !snapshot.projects.some((project) => project.id === projectId)
-    )
-      setProjectId(snapshot.projects[0]!.id);
-  }, [snapshot.projects, projectId]);
-  useEffect(() => {
-    if (!isRemoteBrowser) return;
-    try {
-      localStorage.setItem("workspace.selection.project", projectId);
-      localStorage.setItem("workspace.selection.task", taskId);
-      localStorage.setItem("workspace.selection.attempt", attemptId);
-    } catch {
-      /* Selection persistence is optional; credentials are never stored here. */
-    }
-  }, [projectId, taskId, attemptId]);
-  const project = snapshot.projects.find((p) => p.id === projectId);
+    if (!projects.length || projects.some((p) => p.id === projectId)) return;
+    setProjectId(projects[0]!.id);
+  }, [projects, projectId]);
+  useEffect(() => store("project", projectId), [projectId]);
+  useEffect(() => store("session", sessionId), [sessionId]);
+  useEffect(() => store("files", filesOpen ? "1" : "0"), [filesOpen]);
+
+  const project = projects.find((p) => p.id === projectId);
+  const session = snapshot.sessions.find(
+    (s) => s.id === sessionId && s.projectId === projectId,
+  );
+  const target = targets[projectId] || "";
+  const folderSessions = useMemo(
+    () =>
+      orderSessions(
+        snapshot.sessions.filter((s) => s.projectId === projectId),
+      ),
+    [snapshot.sessions, projectId],
+  );
+  const tabs = useMemo(() => {
+    const open = folderSessions.filter(isOpen);
+    const ended = folderSessions.filter((s) => !isOpen(s)).slice(0, 4);
+    const list = [...open, ...ended];
+    if (session && !list.includes(session)) list.push(session);
+    return list;
+  }, [folderSessions, session]);
   const tasks = snapshot.tasks.filter((t) => t.projectId === projectId);
-  const task = tasks.find((t) => t.id === taskId);
   const attempts = snapshot.attempts.filter((a) => a.projectId === projectId);
-  const taskAttempts = attempts.filter((a) => a.taskId === taskId);
-  const attempt =
-    taskAttempts.find((a) => a.id === attemptId) || taskAttempts[0];
-  const session = snapshot.sessions.find((s) => s.id === attempt?.sessionId);
-  const running = attempts.filter((a) => a.status === "running").length;
-  const chooseProject = (id: string) => {
-    if (!canNavigate()) return;
+  const attempt = session?.attemptId
+    ? snapshot.attempts.find((a) => a.id === session.attemptId)
+    : undefined;
+  // Files follow a task attempt's isolated worktree when one is selected.
+  const reviewTree =
+    attempt && project && attempt.worktreePath !== project.path
+      ? attempt.worktreePath
+      : undefined;
+  const allSessions = useMemo(
+    () => orderSessions(snapshot.sessions),
+    [snapshot.sessions],
+  );
+  const needsYou = allSessions.filter(
+    (s) => s.status === "running" && s.activity === "needs",
+  );
+  const openSessions = allSessions.filter(isOpen);
+  const endedSessions = allSessions.filter((s) => !isOpen(s)).slice(0, 12);
+  const projectName = (id: string) =>
+    snapshot.projects.find((p) => p.id === id)?.name || "Folder";
+  const titleOf = (s: Session) =>
+    sessionTitle(s, snapshot.attempts, snapshot.tasks);
+  const disabledReason =
+    core === "ready" || (core === "starting" && snapshot.projects.length)
+      ? ""
+      : core === "failed"
+        ? "The workspace core stopped. Reopen the app."
+        : "Reconnecting to the workspace…";
+
+  // ---- Notifications: needs-you, finished turns and unexpected exits.
+  const previous = useRef(new Map<string, Pick<Session, "status" | "activity">>());
+  const endedByUser = useRef(new Set<string>());
+  const visibleSession = useRef("");
+  visibleSession.current = view === "terminals" ? session?.id || "" : "";
+  const dismissToast = (id: string) =>
+    setToasts((current) => current.filter((t) => t.id !== id));
+  useEffect(() => {
+    const before = previous.current;
+    const next = new Map<string, Pick<Session, "status" | "activity">>();
+    for (const s of snapshot.sessions) {
+      next.set(s.id, { status: s.status, activity: s.activity });
+      const was = before.get(s.id);
+      if (!was) continue;
+      let message = "";
+      if (s.status === "running" && s.activity === "needs" && was.activity !== "needs")
+        message = "needs you";
+      else if (s.activity === "done" && was.activity === "running")
+        message = "finished its turn";
+      else if (
+        s.status === "exited" &&
+        was.status !== "exited" &&
+        !endedByUser.current.has(s.id)
+      )
+        message =
+          s.exitCode && s.exitCode !== 0
+            ? `exited with status ${s.exitCode}`
+            : "ended";
+      if (!message) continue;
+      const title = `${providerName(s.provider)} ${message}`;
+      const detail = `${projectName(s.projectId)} · ${sessionLocation(
+        s,
+        snapshot.projects.find((p) => p.id === s.projectId),
+      )}`;
+      const away = document.hidden || !document.hasFocus();
+      if (away && "Notification" in window && Notification.permission === "granted") {
+        try {
+          const note = new Notification(title, { body: detail, tag: s.id });
+          note.onclick = () => {
+            window.focus();
+            openSession(s);
+          };
+        } catch {}
+      }
+      if (away || visibleSession.current !== s.id) {
+        const toast = {
+          id: createId(),
+          sessionId: s.id,
+          title,
+          detail,
+          tone: sessionState(s).tone,
+        };
+        setToasts((current) => [toast, ...current].slice(0, 3));
+        setTimeout(() => dismissToast(toast.id), 9000);
+      }
+    }
+    previous.current = next;
+    // openSession is stable enough for a notification click.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshot.sessions]);
+  useEffect(() => {
+    document.title = needsYou.length
+      ? `(${needsYou.length}) Agent Workspace`
+      : "Agent Workspace";
+  }, [needsYou.length]);
+
+  // ---- Navigation
+  function chooseProject(id: string) {
+    if (id !== projectId && !canNavigate()) return;
     setDrawer(false);
+    setBrowsing(false);
+    setProblem(null);
+    setFolderMenu(false);
+    if (id === projectId) return;
     setProjectId(id);
     setTaskId("");
-    setAttemptId("");
-  };
-  const chooseTask = (id: string) => {
-    if (!canNavigate()) return;
-    setDrawer(false);
-    setMobilePane("terminal");
-    setTaskId(id);
-    setAttemptId("");
-    setView("focus");
-  };
-  const openProject = useCallback(async () => {
-    if (!canNavigate()) return;
-    if (isRemoteBrowser) {
-      setDrawer(true);
+    setGit(null);
+    const first = orderSessions(
+      snapshot.sessions.filter((s) => s.projectId === id && isOpen(s)),
+    )[0];
+    setSessionId(first?.id || "");
+    setChoices((current) => ({ ...current, worktreePath: "" }));
+  }
+  function openSession(s: Session) {
+    const sessionAttempt = s.attemptId
+      ? snapshot.attempts.find((a) => a.id === s.attemptId)
+      : undefined;
+    const sessionProject = snapshot.projects.find((p) => p.id === s.projectId);
+    const tree =
+      sessionAttempt && sessionProject && sessionAttempt.worktreePath !== sessionProject.path
+        ? sessionAttempt.worktreePath
+        : undefined;
+    if (sessionProject?.hidden) {
+      setError(
+        "This session's folder was removed from the list. Open the folder again to see it.",
+      );
       return;
     }
-    try {
-      const path = await window.workspace.chooseDirectory();
-      if (path) {
+    if ((s.projectId !== projectId || tree !== reviewTree) && !canNavigate())
+      return;
+    if (s.projectId !== projectId) {
+      setProjectId(s.projectId);
+      setTaskId("");
+      setGit(null);
+    }
+    setSessionId(s.id);
+    setBrowsing(false);
+    setView("terminals");
+    setMobilePane("terminal");
+    setDrawer(false);
+  }
+  function switchView(next: View) {
+    if (next === view) return;
+    if (!canNavigate()) return;
+    setView(next);
+    setMobilePane("terminal");
+  }
+  const browse = useCallback(() => {
+    if (!canNavigate()) return;
+    setDrawer(false);
+    setFolderMenu(false);
+    if (window.workspace.browseDirectory) setBrowsing(true);
+  }, [canNavigate]);
+  const openFolder = useCallback(
+    async (path: string) => {
+      try {
         const added = await window.workspace.invoke<Project>("project.add", {
           path,
         });
+        setBrowsing(false);
         setProjectId(added.id);
         setTaskId("");
+        setGit(null);
+        setView("terminals");
+        setMobilePane("terminal");
+        setSessionId(
+          orderSessions(
+            snapshot.sessions.filter(
+              (s) => s.projectId === added.id && isOpen(s),
+            ),
+          )[0]?.id || "",
+        );
         await reload();
+      } catch (e) {
+        report(e);
       }
+    },
+    [reload, report, snapshot.sessions],
+  );
+  const systemPicker = useCallback(async () => {
+    if (!canNavigate()) return;
+    try {
+      const path = await window.workspace.chooseDirectory();
+      if (path) await openFolder(path);
     } catch (e) {
       report(e);
     }
-  }, [reload, report, canNavigate]);
+  }, [canNavigate, openFolder, report]);
+
+  // ---- Launching
+  async function invokeLaunch(
+    provider: Provider,
+    key: string,
+    payload: Record<string, unknown>,
+    stay = false,
+  ) {
+    setLaunching(provider);
+    setProblem(null);
+    try {
+      const result = await window.workspace.invoke<{ session: Session }>(
+        "terminal.open",
+        { ...payload, idempotencyKey: key },
+      );
+      setSessionId(result.session.id);
+      if (!stay) {
+        setView("terminals");
+        setMobilePane("terminal");
+      }
+      if (provider !== "shell" && payload.prompt)
+        setChoices((current) => ({ ...current, prompt: "" }));
+      return result.session;
+    } catch (e) {
+      const message = errorText(e);
+      setProblem({
+        provider,
+        message,
+        kind: /not installed/.test(message)
+          ? "missing"
+          : /uncertain|outcome unknown|timed out|interrupted/i.test(message)
+            ? "uncertain"
+            : "error",
+        retry: { key, payload },
+      });
+      return undefined;
+    } finally {
+      setLaunching(null);
+    }
+  }
+  async function launch(provider: Provider, stay = false) {
+    if (!project) return;
+    if ("Notification" in window && Notification.permission === "default")
+      void Notification.requestPermission().catch(() => {});
+    const cap = capability(snapshot.capabilities, provider);
+    if (cap && !cap.available) {
+      setProblem({ provider, message: cap.detail, kind: "missing" });
+      return undefined;
+    }
+    const model = provider === "shell" ? "" : choices.models[provider].trim();
+    const prompt = provider === "shell" ? "" : choices.prompt;
+    return invokeLaunch(
+      provider,
+      createId(),
+      {
+        projectId: project.id,
+        provider,
+        ...(choices.worktreePath
+          ? { worktreePath: choices.worktreePath }
+          : target
+            ? { path: target }
+            : {}),
+        ...(model ? { model } : {}),
+        ...(prompt.trim() ? { prompt } : {}),
+      },
+      stay,
+    );
+  }
+  function resume(s: Session) {
+    void invokeLaunch(s.provider, createId(), {
+      projectId: s.projectId,
+      provider: s.provider,
+      resumeSessionId: s.id,
+    });
+  }
+  function restart(s: Session) {
+    const sessionProject = snapshot.projects.find((p) => p.id === s.projectId);
+    const relative =
+      sessionProject && s.cwd.startsWith(sessionProject.path + "/")
+        ? s.cwd.slice(sessionProject.path.length + 1)
+        : "";
+    const tree = s.attemptId
+      ? snapshot.attempts.find((a) => a.id === s.attemptId)?.worktreePath
+      : undefined;
+    void invokeLaunch(s.provider, createId(), {
+      projectId: s.projectId,
+      provider: s.provider,
+      ...(tree && sessionProject && tree !== sessionProject.path
+        ? { worktreePath: tree }
+        : relative
+          ? { path: relative }
+          : {}),
+      ...(s.model ? { model: s.model } : {}),
+    });
+  }
+  async function addNote() {
+    if (!project) return undefined;
+    try {
+      const note = await window.workspace.invoke<{ id: string }>("note.create", {
+        projectId: project.id,
+        title: "Note",
+        body: "",
+      });
+      return note.id;
+    } catch (e) {
+      report(e);
+      return undefined;
+    }
+  }
+  async function hideProject() {
+    if (!project) return;
+    setFolderMenu(false);
+    if (
+      !confirm(
+        `Remove ${project.name} from your folders? Files on disk are not touched, and opening the folder again brings back its history.`,
+      )
+    )
+      return;
+    try {
+      await window.workspace.invoke("project.hide", { projectId: project.id });
+      setSessionId("");
+    } catch (e) {
+      report(e);
+    }
+  }
+
+  // ---- Keyboard
   useEffect(() => {
     function key(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      if (e.key === "Escape") {
+        setModal((m) => (m === "palette" ? null : m));
+        setFolderMenu(false);
+        return;
+      }
+      const mod = isMac ? e.metaKey : e.ctrlKey;
+      if (!mod || e.altKey || e.shiftKey) return;
+      // Off macOS, Ctrl shortcuts inside a terminal belong to the terminal.
+      if (!isMac && (e.target as HTMLElement | null)?.closest?.(".xterm")) return;
+      const k = e.key.toLowerCase();
+      if (k === "k") {
         e.preventDefault();
         setModal((m) => (m === "palette" ? null : "palette"));
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") {
+      } else if (k === "o" && window.workspace.browseDirectory) {
         e.preventDefault();
-        if (projectId) setModal("task");
+        browse();
+      } else if (k === "n" && projectId) {
+        e.preventDefault();
+        setModalTask(undefined);
+        setModal("task");
       }
-      if (e.key === "Escape") setModal(null);
     }
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [projectId]);
-  async function move(t: Task, status: TaskStatus) {
-    try {
-      await window.workspace.invoke("task.update", {
-        taskId: t.id,
-        revision: t.revision,
-        status,
-      });
-    } catch (e) {
-      report(e);
-    }
-  }
-  async function addNote() {
-    if (!canNavigate()) return;
-    try {
-      await window.workspace.invoke("note.create", {
-        projectId,
-        title: "Workspace note",
-        body: "",
-      });
-      setView("canvas");
-    } catch (e) {
-      report(e);
-    }
-  }
+  }, [projectId, browse]);
   useEffect(() => {
     if (!editorDirty) return;
     function preventUnsavedClose(event: BeforeUnloadEvent) {
@@ -234,245 +546,342 @@ export default function App() {
     return () =>
       window.removeEventListener("beforeunload", preventUnsavedClose);
   }, [editorDirty]);
+
+  const showBrowser =
+    !isRemoteBrowser &&
+    !!window.workspace.browseDirectory &&
+    (browsing || !project);
+  const sidebarSession = (s: Session) => {
+    const sessionProject = snapshot.projects.find((p) => p.id === s.projectId);
+    return (
+      <button
+        key={s.id}
+        className={
+          "session-row tone-" +
+          sessionState(s).tone +
+          (s.id === session?.id && view === "terminals" && !showBrowser
+            ? " selected"
+            : "")
+        }
+        onClick={() => openSession(s)}
+      >
+        <ProviderGlyph provider={s.provider} />
+        <span className="session-row-text">
+          <strong>{titleOf(s)}</strong>
+          <small>
+            {sessionProject?.name || "Folder"}
+            {sessionLocation(s, sessionProject) === "/"
+              ? ""
+              : " / " + sessionLocation(s, sessionProject)}
+          </small>
+        </span>
+        <StatusBadge session={s} compact />
+      </button>
+    );
+  };
   return (
     <div
       className={
         "app-shell " +
         (drawer ? "drawer-open " : "") +
-        (mobilePane === "files" ? "mobile-files" : "mobile-terminal")
+        (mobilePane === "files" && view === "terminals"
+          ? "mobile-files"
+          : "mobile-terminal")
       }
     >
       {drawer ? (
         <button
           className="drawer-scrim"
-          aria-label="Close project navigation"
+          aria-label="Close folders and sessions"
           onClick={() => setDrawer(false)}
         />
       ) : null}
-      <aside className="sidebar" aria-label="Projects and tasks">
-        <button
-          className="drawer-close icon-button"
-          aria-label="Close project navigation"
-          onClick={() => setDrawer(false)}
-        >
-          <X size={20} />
-        </button>
-        <div className="brand">
-          <div className="brand-mark">
-            a<span>·</span>
-          </div>
-          <div>
+      <aside className="sidebar" aria-label="Folders and sessions">
+        <div className="sidebar-head">
+          <BrandMark />
+          <div className="brand-name">
             Agent Workspace
-            <small>
-              {isRemoteBrowser ? "CONNECTED WORKSPACE" : "LOCAL WORKSPACE"}
-            </small>
+            <small>{isRemoteBrowser ? "Remote workspace" : "This computer"}</small>
           </div>
-        </div>
-        <button
-          className="search-button"
-          onClick={() => {
-            setQuery("");
-            setModal("palette");
-          }}
-        >
-          <Search size={15} />
-          <span>Find anything</span>
-          <kbd>⌘ K</kbd>
-        </button>
-        <div className="section-heading">
-          PROJECTS
-          {!isRemoteBrowser ? (
-            <button
-              className="icon-button"
-              aria-label={
-                isRemoteBrowser ? "Choose server project" : "Open repository"
-              }
-              onClick={() => void openProject()}
-            >
-              <Plus size={15} />
-            </button>
-          ) : null}
-        </div>
-        <nav className="projects">
-          {snapshot.projects.map((p) => (
-            <button
-              key={p.id}
-              className={p.id === projectId ? "selected" : ""}
-              onClick={() => chooseProject(p.id)}
-            >
-              <FolderOpen size={16} />
-              <span>{p.name}</span>
-              {p.id === projectId ? <span className="selected-dot" /> : null}
-            </button>
-          ))}
-          {!snapshot.projects.length ? (
-            isRemoteBrowser ? (
-              <p className="sidebar-empty">
-                The workspace owner can share a registered repository from the
-                desktop app or server configuration.
-              </p>
-            ) : (
-              <button onClick={() => void openProject()}>
-                <Plus size={15} />
-                Open a repository
-              </button>
-            )
-          ) : null}
-        </nav>
-        <div className="section-heading">
-          TASKS <span>{tasks.length}</span>
-          {project ? (
-            <button
-              className="icon-button"
-              aria-label="Create task"
-              onClick={() => setModal("task")}
-            >
-              <Plus size={15} />
-            </button>
-          ) : null}
-        </div>
-        <div className="task-list">
-          {tasks.map((t) => (
-            <button
-              key={t.id}
-              className={"task-link " + (taskId === t.id ? "selected" : "")}
-              onClick={() => chooseTask(t.id)}
-            >
-              <span className={"status-dot " + t.status} />
-              <div>
-                <span>{t.title}</span>
-                <small>
-                  {label(t.status)} ·{" "}
-                  {attempts.filter((a) => a.taskId === t.id).length} attempts
-                </small>
-              </div>
-            </button>
-          ))}
-          {project && !tasks.length ? (
-            <div className="sidebar-empty">
-              Give your agents a clear starting point.
-              <button onClick={() => setModal("task")}>
-                Create your first task <ArrowUpRight size={12} />
-              </button>
-            </div>
-          ) : null}
-        </div>
-        <div className="sidebar-bottom">
-          <div className="connection">
-            <span className={"tiny-dot " + (core === "failed" ? "red" : "")} />
-            {isRemoteBrowser ? "Workspace server" : "Local core"}
-            <span>
-              {core === "starting" && snapshot.projects.length
-                ? "Connected"
-                : core === "ready"
-                  ? "Connected"
-                  : core}
-            </span>
-          </div>
-          <button onClick={() => setModal("palette")}>
-            <Command size={14} />
-            Keyboard & commands<kbd>⌘ K</kbd>
+          <button
+            className="drawer-close icon-button"
+            aria-label="Close folders and sessions"
+            onClick={() => setDrawer(false)}
+          >
+            <X size={18} />
           </button>
         </div>
+        <button
+          className="command-button"
+          onClick={() => setModal("palette")}
+        >
+          <Search size={14} />
+          <span>Search and commands</span>
+          <kbd>{modKey} K</kbd>
+        </button>
+        <section className="side-section" aria-labelledby="folders-heading">
+          <header>
+            <h2 id="folders-heading">Folders</h2>
+            {window.workspace.browseDirectory ? (
+              <button
+                className="icon-button"
+                aria-label="Open folder"
+                title={`Open a folder (${modKey} O)`}
+                onClick={browse}
+              >
+                <FolderPlus size={15} />
+              </button>
+            ) : null}
+          </header>
+          <nav className="folder-list" aria-label="Folders">
+            {projects.map((p) => {
+              const open = snapshot.sessions.filter(
+                (s) => s.projectId === p.id && isOpen(s),
+              );
+              const waiting = open.some((s) => s.activity === "needs");
+              return (
+                <button
+                  key={p.id}
+                  className={
+                    "folder-row" +
+                    (p.id === projectId && !showBrowser ? " selected" : "")
+                  }
+                  title={p.path}
+                  onClick={() => chooseProject(p.id)}
+                >
+                  <FolderOpen size={15} />
+                  <span>{p.name}</span>
+                  {waiting ? (
+                    <span className="needs-dot" title="A session needs you" />
+                  ) : null}
+                  {open.length ? (
+                    <span className="count-pill">{open.length}</span>
+                  ) : null}
+                </button>
+              );
+            })}
+            {!projects.length ? (
+              isRemoteBrowser ? (
+                <p className="sidebar-empty">
+                  No folders are shared yet. The host owner registers folders on
+                  the host computer.
+                </p>
+              ) : (
+                <button className="folder-row add" onClick={browse}>
+                  <FolderPlus size={15} />
+                  <span>Open a folder</span>
+                </button>
+              )
+            ) : null}
+          </nav>
+        </section>
+        <section
+          className="side-section sessions-section"
+          aria-labelledby="sessions-heading"
+        >
+          <header>
+            <h2 id="sessions-heading">Sessions</h2>
+            {openSessions.length ? (
+              <span className="count-pill">{openSessions.length} open</span>
+            ) : null}
+          </header>
+          <div className="session-list">
+            {needsYou.length ? (
+              <>
+                <p className="group-label needs">
+                  <Bell size={11} /> Needs you
+                </p>
+                {needsYou.map(sidebarSession)}
+              </>
+            ) : null}
+            {openSessions.filter((s) => !needsYou.includes(s)).length ? (
+              <>
+                {needsYou.length ? <p className="group-label">Open</p> : null}
+                {openSessions
+                  .filter((s) => !needsYou.includes(s))
+                  .map(sidebarSession)}
+              </>
+            ) : null}
+            {!openSessions.length ? (
+              <p className="sidebar-empty">
+                Nothing running. Choose a folder, then Claude, Codex or Shell.
+              </p>
+            ) : null}
+            {endedSessions.length ? (
+              <>
+                <button
+                  className="group-toggle"
+                  aria-expanded={showEnded}
+                  onClick={() => setShowEnded((v) => !v)}
+                >
+                  <ChevronDown size={12} className={showEnded ? "" : "rotated"} />
+                  Ended · {endedSessions.length}
+                </button>
+                {showEnded ? endedSessions.map(sidebarSession) : null}
+              </>
+            ) : null}
+          </div>
+        </section>
+        <footer className="sidebar-foot">
+          <div className="connection" role="status">
+            <span
+              className={
+                "tiny-dot " +
+                (core === "failed" ? "red" : disabledReason ? "neutral" : "")
+              }
+            />
+            {isRemoteBrowser ? "Host" : "Local core"}
+            <span>
+              {disabledReason
+                ? core === "failed"
+                  ? "Stopped"
+                  : "Reconnecting"
+                : "Connected"}
+            </span>
+          </div>
+          <div className="capabilities" aria-label="Installed tools">
+            {snapshot.capabilities.map((c) => (
+              <span
+                key={c.name}
+                className={c.available ? "ok" : "missing"}
+                title={c.detail}
+              >
+                {c.name}
+              </span>
+            ))}
+          </div>
+          {window.workspace.remote ? (
+            <button
+              className="foot-button"
+              aria-label="Remote access settings"
+              onClick={() => setRemotePanel(true)}
+            >
+              <Smartphone size={14} />
+              Remote access
+            </button>
+          ) : null}
+        </footer>
       </aside>
-      <main>
+      <main className="main">
         <header className="topbar">
           <button
             className="mobile-menu icon-button"
-            aria-label="Open projects and tasks"
+            aria-label="Open folders and sessions"
             aria-expanded={drawer}
             onClick={() => setDrawer(true)}
           >
-            <Menu size={20} />
+            <Menu size={19} />
+            {needsYou.length ? <span className="needs-dot" /> : null}
           </button>
-          <div className="breadcrumb">
-            <span>Workspace</span>
-            <span>/</span>
-            <strong>{project?.name || "Welcome"}</strong>
+          <div className="topbar-title">
+            {showBrowser ? (
+              <h1>Open a folder</h1>
+            ) : project ? (
+              <>
+                <h1>{project.name}</h1>
+                <span className="topbar-path" title={project.path}>
+                  {shortPath(project.path)}
+                </span>
+              </>
+            ) : (
+              <h1>Welcome</h1>
+            )}
           </div>
-          <div className="top-actions">
-            {window.workspace.remote ? (
+          {project && !showBrowser ? (
+            <nav className="view-switch" aria-label="Views">
               <button
-                className="icon-button"
-                aria-label="Remote access settings"
-                onClick={() => setRemotePanel(true)}
+                className={view === "terminals" ? "active" : ""}
+                aria-pressed={view === "terminals"}
+                onClick={() => switchView("terminals")}
               >
-                <Smartphone size={17} />
+                <SquareTerminal size={14} />
+                Terminals
+              </button>
+              <button
+                className={view === "board" ? "active" : ""}
+                aria-pressed={view === "board"}
+                onClick={() => switchView("board")}
+              >
+                <LayoutGrid size={14} />
+                Board
+              </button>
+              <button
+                className={view === "canvas" ? "active" : ""}
+                aria-pressed={view === "canvas"}
+                onClick={() => switchView("canvas")}
+              >
+                <Network size={14} />
+                Canvas
+              </button>
+            </nav>
+          ) : null}
+          <div className="topbar-actions">
+            {showBrowser && project ? (
+              <button
+                className="button ghost small"
+                onClick={() => setBrowsing(false)}
+              >
+                Back to {project.name}
               </button>
             ) : null}
-            <button
-              className="live-count"
-              onClick={() => setAttention((a) => !a)}
-            >
-              <Activity size={13} />
-              {running} running
-            </button>
-            <button
-              className="icon-button"
-              aria-label="Toggle review panel"
-              onClick={() => {
-                if (canNavigate()) {
-                  setReview((r) => !r);
-                  setMobilePane((pane) =>
-                    pane === "files" ? "terminal" : "files",
-                  );
-                }
-              }}
-            >
-              <PanelLeftClose size={17} />
-            </button>
-            {project ? (
+            {project && !showBrowser && view === "terminals" ? (
               <button
-                className="primary small"
-                onClick={() => setModal("task")}
+                className="icon-button desktop-only"
+                aria-label="Toggle files panel"
+                aria-pressed={filesOpen}
+                title="Files and changes"
+                onClick={() => {
+                  if (filesOpen && !canNavigate()) return;
+                  setFilesOpen((open) => !open);
+                }}
               >
-                <Plus size={14} />
-                New task
+                {filesOpen ? <PanelRightClose size={17} /> : <PanelRight size={17} />}
               </button>
+            ) : null}
+            {project && !showBrowser ? (
+              <div className="menu-anchor">
+                <button
+                  className="icon-button"
+                  aria-label="Folder actions"
+                  aria-expanded={folderMenu}
+                  onClick={() => setFolderMenu((open) => !open)}
+                >
+                  <Ellipsis size={17} />
+                </button>
+                {folderMenu ? (
+                  <div className="popover menu" role="menu">
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setFolderMenu(false);
+                        void navigator.clipboard
+                          ?.writeText(project.path)
+                          .catch(() => {});
+                      }}
+                    >
+                      Copy folder path
+                    </button>
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setFolderMenu(false);
+                        setModalTask(undefined);
+                        setModal("task");
+                      }}
+                    >
+                      New task
+                    </button>
+                    {window.workspace.browseDirectory ? (
+                      <button role="menuitem" onClick={() => void hideProject()}>
+                        Remove from list…
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
             ) : null}
           </div>
         </header>
-        {attention ? (
-          <div className="attention-panel">
-            <header>
-              <strong>Session attention</strong>
-              <button
-                className="icon-button"
-                aria-label="Close session attention"
-                onClick={() => setAttention(false)}
-              >
-                <X size={15} />
-              </button>
-            </header>
-            <p>
-              Agent questions and permission requests appear in their terminal.
-              Open an attempt to respond directly.
-            </p>
-            {attempts
-              .filter((a) => a.status === "unknown")
-              .map((a) => (
-                <button
-                  key={a.id}
-                  onClick={() => {
-                    chooseTask(a.taskId);
-                    setAttemptId(a.id);
-                    setAttention(false);
-                  }}
-                >
-                  Check {a.provider} session · runtime unknown
-                </button>
-              ))}
-            {snapshot.capabilities.map((c) => (
-              <div key={c.name}>
-                <span
-                  className={"tiny-dot " + (c.available ? "" : "neutral")}
-                />
-                <strong>{c.name}</strong>
-                <small>{c.detail}</small>
-              </div>
-            ))}
-          </div>
-        ) : null}
         {error ? (
           <div className="error-banner" role="alert">
             <span>{error}</span>
@@ -481,812 +890,646 @@ export default function App() {
             </button>
           </div>
         ) : null}
-        {!project ? (
-          <div className="welcome">
-            <div className="welcome-eyebrow">A LITTLE ROOM TO BUILD</div>
-            <h1>
-              Good work starts
-              <br />
-              with a clear workspace.
-            </h1>
+        {showBrowser ? (
+          <FolderBrowser
+            projects={snapshot.projects}
+            sessions={snapshot.sessions}
+            onOpenFolder={openFolder}
+            onSelectProject={chooseProject}
+            onSystemPicker={() => void systemPicker()}
+          />
+        ) : !project ? (
+          <div className="empty-state">
+            <BrandMark size={44} />
+            <h2>No folders are shared with this browser yet</h2>
             <p>
-              Bring your repository, your agents, and your next idea.
-              <br />
-              Keep every attempt close to the work it belongs to.
+              Folders live on the host computer. On the host, open the folder in
+              the desktop app, then stop and enable Remote access again, or start
+              the server with <code>--project /path/to/folder</code>.
             </p>
-            {isRemoteBrowser ? (
-              <p className="server-project-hint">
-                No server projects are available yet. The owner can register a
-                repository in the desktop app or headless server configuration.
-              </p>
-            ) : (
-              <button className="primary" onClick={() => void openProject()}>
-                <FolderOpen size={17} />
-                Open a repository
-                <ArrowUpRight size={16} />
-              </button>
-            )}
-            <div className="welcome-features">
-              <span>
-                <Terminal size={16} />
-                Persistent terminals
-              </span>
-              <span>
-                <GitBranch size={16} />
-                Isolated worktrees
-              </span>
-              <span>
-                <Network size={16} />A canvas for context
-              </span>
-            </div>
           </div>
         ) : (
-          <>
-            <div className="workspace-heading">
-              <div>
-                <div className="eyebrow">PROJECT WORKSPACE</div>
-                <h1>{project.name}</h1>
-                <p>{project.path}</p>
-              </div>
-              <div className="view-tabs">
-                <button
-                  className={view === "focus" ? "active" : ""}
-                  onClick={() => setView("focus")}
-                >
-                  <Terminal size={14} />
-                  Focus
-                </button>
-                <button
-                  className={view === "board" ? "active" : ""}
-                  onClick={() => {
-                    if (canNavigate()) setView("board");
-                  }}
-                >
-                  <LayoutGrid size={14} />
-                  Board
-                </button>
-                <button
-                  className={view === "canvas" ? "active" : ""}
-                  onClick={() => {
-                    if (canNavigate()) setView("canvas");
-                  }}
-                >
-                  <Network size={14} />
-                  Canvas
-                </button>
-              </div>
-            </div>
-            {view === "board" ? (
-              <div className="board">
-                {columns.map((column) => (
-                  <section
-                    className="board-column"
-                    key={column.id}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      const item = tasks.find(
-                        (t) => t.id === e.dataTransfer.getData("text/plain"),
-                      );
-                      if (item) void move(item, column.id);
-                    }}
-                  >
-                    <header>
-                      <span className={"status-dot " + column.id} />
-                      <strong>{column.label}</strong>
-                      <span>
-                        {tasks.filter((t) => t.status === column.id).length}
-                      </span>
-                    </header>
-                    {tasks
-                      .filter((t) => t.status === column.id)
-                      .map((t) => (
-                        <article
-                          key={t.id}
-                          className="board-card"
-                          draggable
-                          onDragStart={(e) =>
-                            e.dataTransfer.setData("text/plain", t.id)
-                          }
-                        >
+          <div className="workspace">
+            <LaunchBar
+              project={project}
+              target={target}
+              onTarget={(path) =>
+                setTargets((current) => ({ ...current, [project.id]: path }))
+              }
+              capabilities={snapshot.capabilities}
+              choices={choices}
+              onChoices={(next) => {
+                setChoices(next);
+                try {
+                  localStorage.setItem(
+                    "workspace.launch.models",
+                    JSON.stringify(next.models),
+                  );
+                } catch {}
+              }}
+              onLaunch={(provider) => void launch(provider, view === "canvas")}
+              launching={launching}
+              disabledReason={disabledReason}
+              git={git}
+            />
+            {problem ? (
+              <LaunchNotice
+                problem={problem}
+                target={target}
+                onDismiss={() => setProblem(null)}
+                onRetry={() =>
+                  problem.retry
+                    ? void invokeLaunch(
+                        problem.provider,
+                        problem.kind === "uncertain" ? problem.retry.key : createId(),
+                        problem.retry.payload,
+                      )
+                    : void launch(problem.provider)
+                }
+                onCheckAgain={async () => {
+                  await reload();
+                  setProblem(null);
+                  const fresh = await window.workspace
+                    .invoke<Snapshot>("snapshot")
+                    .catch(() => null);
+                  const cap = fresh?.capabilities.find(
+                    (c) => c.name === problem.provider,
+                  );
+                  if (cap && !cap.available)
+                    setProblem({ ...problem, message: cap.detail });
+                }}
+                onShell={() => void launch("shell")}
+                onRoot={() =>
+                  setTargets((current) => ({ ...current, [project.id]: "" }))
+                }
+              />
+            ) : null}
+            <div
+              className={
+                "workspace-body" +
+                (view === "terminals" && filesOpen ? " with-files" : "")
+              }
+            >
+              <div className="stage">
+                {view === "terminals" ? (
+                  <>
+                    {tabs.length ? (
+                      <div className="session-tabs" aria-label="Sessions in this folder">
+                        {tabs.map((s) => (
                           <button
-                            className="card-title"
-                            onClick={() => chooseTask(t.id)}
+                            key={s.id}
+                            className={
+                              "session-tab tone-" +
+                              sessionState(s).tone +
+                              (s.id === session?.id ? " active" : "")
+                            }
+                            aria-pressed={s.id === session?.id}
+                            title={`${providerName(s.provider)} · ${s.cwd}`}
+                            onClick={() => openSession(s)}
                           >
-                            {t.title}
-                          </button>
-                          {t.description ? <p>{t.description}</p> : null}
-                          <footer>
+                            <ProviderGlyph provider={s.provider} size={13} />
                             <span>
-                              {attempts.filter((a) => a.taskId === t.id).length}{" "}
-                              attempts
+                              {titleOf(s)}
+                              {sessionLocation(s, project) !== "/" ? (
+                                <em>{sessionLocation(s, project)}</em>
+                              ) : null}
                             </span>
-                            <select
-                              aria-label={"Status for " + t.title}
-                              value={t.status}
-                              onChange={(e) =>
-                                void move(t, e.target.value as TaskStatus)
-                              }
-                            >
-                              {columns.map((c) => (
-                                <option key={c.id} value={c.id}>
-                                  {c.label}
-                                </option>
-                              ))}
-                            </select>
-                          </footer>
-                        </article>
-                      ))}
-                    <button
-                      className="board-add"
-                      onClick={() => setModal("task")}
-                    >
-                      <Plus size={13} />
-                      Add task
-                    </button>
-                  </section>
-                ))}
-              </div>
-            ) : null}
-            {view === "canvas" ? (
-              <div className="canvas-area">
-                <div className="canvas-toolbar">
-                  <span>Sessions stay alive as you move between views.</span>
-                  <button className="secondary" onClick={() => void addNote()}>
-                    <FileText size={14} />
-                    Add note
-                  </button>
-                </div>
-                <CanvasView
-                  key={projectId}
-                  projectId={projectId}
-                  attempts={attempts}
-                  sessions={snapshot.sessions}
-                  notes={snapshot.notes.filter(
-                    (n) => n.projectId === projectId,
-                  )}
-                  layout={snapshot.layouts.find(
-                    (l) => l.projectId === projectId,
-                  )}
-                  report={report}
-                />
-              </div>
-            ) : null}
-            {view === "focus" ? (
-              <div className="focus-layout">
-                <section className="focus-main">
-                  {task ? (
-                    <>
-                      <div className="task-heading">
-                        <div>
-                          <div className="eyebrow">
-                            TASK · {label(task.status)}
-                          </div>
-                          <h2>
-                            {task.title}{" "}
-                            <button
-                              className="edit-task-button"
-                              onClick={() => setModal("edit-task")}
-                            >
-                              Edit
-                            </button>
-                          </h2>
-                          {task.description ? <p>{task.description}</p> : null}
-                        </div>
-                        <select
-                          aria-label="Task workflow status"
-                          value={task.status}
-                          onChange={(e) =>
-                            void move(task, e.target.value as TaskStatus)
-                          }
-                        >
-                          {columns.map((c) => (
-                            <option value={c.id} key={c.id}>
-                              {c.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="attempt-tabs">
-                        {taskAttempts.map((a, i) => (
-                          <button
-                            key={a.id}
-                            className={a.id === attempt?.id ? "active" : ""}
-                            onClick={() => {
-                              if (canNavigate()) setAttemptId(a.id);
-                            }}
-                          >
-                            <span
-                              className={
-                                "tiny-dot " +
-                                (a.status === "running" ? "" : "neutral")
-                              }
-                            />
-                            {a.provider}
-                            <span>#{i + 1}</span>
+                            <StatusBadge session={s} compact />
                           </button>
                         ))}
-                        <button onClick={() => setModal("attempt")}>
+                        <button
+                          className={"session-tab new-tab" + (!session ? " active" : "")}
+                          aria-label="New session"
+                          title="Start another session"
+                          onClick={() => setSessionId("")}
+                        >
                           <Plus size={14} />
-                          New attempt
                         </button>
                       </div>
-                      {session ? (
-                        <>
-                          <div className="terminal-toolbar">
-                            <span>
-                              <Terminal size={13} />
-                              {session.cwd}
-                              {attempt?.model ? ` · ${attempt.model}` : ""}
-                            </span>
-                            <div>
-                              <span>{session.status}</span>
-                              {session.status === "running" && viewerId ? (
-                                <>
-                                  <button
-                                    title="Send interrupt"
-                                    onClick={() =>
-                                      void window.workspace
-                                        .invoke("session.input", {
-                                          sessionId: session.id,
-                                          generation: session.generation,
-                                          viewerId,
-                                          data: "\u0003",
-                                        })
-                                        .catch(report)
-                                    }
-                                  >
-                                    Interrupt
-                                  </button>
-                                  <button
-                                    title="End this terminal process"
-                                    onClick={() => {
-                                      if (
-                                        confirm(
-                                          "Terminate this session? The running process will stop.",
-                                        )
-                                      )
-                                        void window.workspace
-                                          .invoke("session.terminate", {
-                                            sessionId: session.id,
-                                            generation: session.generation,
-                                            viewerId,
-                                          })
-                                          .catch(report);
-                                    }}
-                                  >
-                                    <Square size={11} />
-                                    End
-                                  </button>
-                                </>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div className="focus-terminal">
-                            <TerminalView
-                              key={session.id}
-                              session={session}
-                              onViewer={setViewerId}
-                            />
-                          </div>
-                        </>
-                      ) : (
-                        <div className="work-empty">
-                          <div className="empty-terminal">›_</div>
-                          <h2>Make your first attempt.</h2>
-                          <p>
-                            Run a shell, Claude, or Codex in this task’s working
-                            directory.
-                            <br />
-                            Every attempt keeps its own terminal and history.
-                          </p>
-                          <button
-                            className="primary"
-                            onClick={() => setModal("attempt")}
-                          >
-                            <Plus size={15} />
-                            Start an attempt
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="work-empty">
-                      <div className="empty-terminal">↗</div>
-                      <h2>
-                        {tasks.length
-                          ? "Choose your next focus."
-                          : "What are we building?"}
-                      </h2>
-                      <p>
-                        {tasks.length
-                          ? "Select a task from the sidebar, or explore your board."
-                          : "Create a task to organize your agents and their attempts."}
-                      </p>
-                      <button
-                        className="primary"
-                        onClick={() => setModal("task")}
-                      >
-                        <Plus size={15} />
-                        Create a task
-                      </button>
-                    </div>
-                  )}
-                </section>
-                {review || mobilePane === "files" ? (
-                  <ReviewPanel
-                    key={projectId + attempt?.worktreePath}
-                    project={project}
-                    worktreePath={attempt?.worktreePath}
+                    ) : null}
+                    {session ? (
+                      <SessionView
+                        key={session.id}
+                        session={session}
+                        project={project}
+                        title={titleOf(session)}
+                        onResume={resume}
+                        onRestart={restart}
+                        onEnded={(s) => endedByUser.current.add(s.id)}
+                        report={report}
+                      />
+                    ) : (
+                      <Launchpad
+                        project={project}
+                        target={target}
+                        capabilities={snapshot.capabilities}
+                        launching={launching}
+                        disabledReason={disabledReason}
+                        onLaunch={(provider) => void launch(provider)}
+                        recent={folderSessions.filter((s) => !isOpen(s)).slice(0, 4)}
+                        titleOf={titleOf}
+                        onOpen={openSession}
+                        onResume={resume}
+                      />
+                    )}
+                  </>
+                ) : null}
+                {view === "board" ? (
+                  <Board
+                    tasks={tasks}
+                    attempts={attempts}
+                    sessions={snapshot.sessions}
+                    selectedTaskId={taskId}
+                    onSelectTask={setTaskId}
+                    onNewTask={() => {
+                      setModalTask(undefined);
+                      setModal("task");
+                    }}
+                    onEditTask={(t) => {
+                      setModalTask(t);
+                      setModal("edit-task");
+                    }}
+                    onStartAttempt={(t) => {
+                      setModalTask(t);
+                      setModal("attempt");
+                    }}
+                    onOpenSession={(id) => {
+                      const s = snapshot.sessions.find((x) => x.id === id);
+                      if (s) openSession(s);
+                    }}
                     report={report}
-                    onDirtyChange={setEditorDirty}
-                    refreshRevision={reviewRefresh}
                   />
                 ) : null}
+                {view === "canvas" ? (
+                  <div className="canvas-area">
+                    <div className="canvas-toolbar">
+                      <span>
+                        Right-click the canvas to add a session or note.
+                        Sessions keep running when you switch views.
+                      </span>
+                      <button
+                        className="button ghost small"
+                        onClick={() => void addNote()}
+                      >
+                        <FileText size={14} />
+                        Add note
+                      </button>
+                    </div>
+                    <CanvasView
+                      key={projectId}
+                      projectId={projectId}
+                      attempts={attempts}
+                      sessions={snapshot.sessions.filter(
+                        (s) => s.projectId === projectId,
+                      )}
+                      notes={snapshot.notes.filter(
+                        (n) => n.projectId === projectId,
+                      )}
+                      layout={snapshot.layouts.find(
+                        (l) => l.projectId === projectId,
+                      )}
+                      report={report}
+                      onCreate={async (kind) => {
+                        if (kind === "note") return addNote();
+                        const created = await launch(kind, true);
+                        return created ? created.attemptId || created.id : undefined;
+                      }}
+                    />
+                  </div>
+                ) : null}
               </div>
-            ) : null}
-            <footer className="statusbar">
-              <span>
-                <span className="tiny-dot" />
-                {isRemoteBrowser ? "Execution on server" : "Local execution"}
-              </span>
-              <span>
-                {snapshot.capabilities
-                  .filter((c) => c.available)
-                  .map((c) => c.name)
-                  .join(" · ") || "Checking capabilities"}
-              </span>
-              <span>⌘ K commands</span>
-            </footer>
-          </>
+              {view === "terminals" && (filesOpen || mobilePane === "files") ? (
+                <ReviewPanel
+                  key={projectId + (reviewTree || "")}
+                  project={project}
+                  worktreePath={reviewTree}
+                  report={report}
+                  onDirtyChange={setEditorDirty}
+                  refreshRevision={reviewRefresh}
+                  directory={reviewTree ? undefined : target}
+                  onDirectoryChange={
+                    reviewTree
+                      ? undefined
+                      : (path) =>
+                          setTargets((current) => ({
+                            ...current,
+                            [project.id]: path,
+                          }))
+                  }
+                  onSummary={setGit}
+                />
+              ) : null}
+            </div>
+          </div>
         )}
       </main>
       <nav className="mobile-navigation" aria-label="Workspace navigation">
         <button onClick={() => setDrawer(true)}>
-          <Menu size={18} />
-          <span>Tasks</span>
+          <FolderOpen size={18} />
+          <span>Folders</span>
+          {needsYou.length ? <span className="needs-dot" /> : null}
         </button>
         <button
-          className={
-            view === "focus" && mobilePane === "terminal" ? "active" : ""
-          }
+          className={view === "terminals" && mobilePane === "terminal" ? "active" : ""}
           onClick={() => {
             if (canNavigate()) {
-              setView("focus");
+              setView("terminals");
               setMobilePane("terminal");
             }
           }}
         >
-          <Terminal size={18} />
+          <SquareTerminal size={18} />
           <span>Terminal</span>
         </button>
         <button
-          className={view === "board" ? "active" : ""}
-          onClick={() => {
-            if (canNavigate()) setView("board");
-          }}
-        >
-          <LayoutGrid size={18} />
-          <span>Board</span>
-        </button>
-        <button
-          className={view === "focus" && mobilePane === "files" ? "active" : ""}
+          className={view === "terminals" && mobilePane === "files" ? "active" : ""}
           onClick={() => {
             if (canNavigate()) {
-              setView("focus");
+              setView("terminals");
               setMobilePane("files");
               setReviewRefresh((value) => value + 1);
             }
           }}
         >
-          <FolderOpen size={18} />
+          <Files size={18} />
           <span>Files</span>
         </button>
+        <button
+          className={view === "board" ? "active" : ""}
+          onClick={() => switchView("board")}
+        >
+          <LayoutGrid size={18} />
+          <span>Board</span>
+        </button>
+        <button
+          className={view === "canvas" ? "active" : ""}
+          onClick={() => switchView("canvas")}
+        >
+          <Network size={18} />
+          <span>Canvas</span>
+        </button>
       </nav>
+      {toasts.length ? (
+        <div className="toasts" aria-live="polite">
+          {toasts.map((toast) => (
+            <div key={toast.id} className={"toast tone-" + toast.tone} role="status">
+              <span className="status-light" />
+              <div>
+                <strong>{toast.title}</strong>
+                <small>{toast.detail}</small>
+              </div>
+              <button
+                className="button small"
+                onClick={() => {
+                  dismissToast(toast.id);
+                  const s = snapshot.sessions.find((x) => x.id === toast.sessionId);
+                  if (s) openSession(s);
+                }}
+              >
+                Open
+              </button>
+              <button
+                className="icon-button"
+                aria-label="Dismiss notification"
+                onClick={() => dismissToast(toast.id)}
+              >
+                <X size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {remotePanel ? (
         <RemoteAccessPanel onClose={() => setRemotePanel(false)} />
       ) : null}
-      {modal === "task" || modal === "edit-task" ? (
+      {(modal === "task" || modal === "edit-task") && project ? (
         <TaskModal
-          existing={modal === "edit-task" ? task : undefined}
-          projectId={projectId}
+          existing={modal === "edit-task" ? modalTask : undefined}
+          projectId={project.id}
           close={() => setModal(null)}
           created={(id) => {
-            chooseTask(id);
+            setTaskId(id);
+            setView("board");
             setModal(null);
           }}
           report={report}
         />
       ) : null}
-      {modal === "attempt" && task ? (
+      {modal === "attempt" && modalTask ? (
         <AttemptModal
-          task={task}
+          task={modalTask}
+          capabilities={snapshot.capabilities}
           close={() => setModal(null)}
-          created={(a) => {
-            setAttemptId(a.id);
+          created={(result) => {
             setModal(null);
+            openSession(result.session);
           }}
           report={report}
         />
       ) : null}
       {modal === "palette" ? (
-        <div className="modal-backdrop" onMouseDown={() => setModal(null)}>
-          <section
-            className="palette"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Command palette"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="palette-search">
-              <Search size={18} />
-              <input
-                autoFocus
-                placeholder="Search tasks or run a command…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-              <kbd>ESC</kbd>
+        <Palette
+          close={() => setModal(null)}
+          items={[
+            ...(window.workspace.browseDirectory
+              ? [{ id: "open", label: "Open folder…", hint: `${modKey} O`, run: browse }]
+              : []),
+            ...(project
+              ? providers.map((p) => ({
+                  id: "launch-" + p,
+                  label: `New ${providerName(p)} in ${[project.name, target].filter(Boolean).join("/")}`,
+                  run: () => void launch(p),
+                }))
+              : []),
+            ...(project
+              ? [
+                  { id: "view-terminals", label: "Show terminals", run: () => switchView("terminals") },
+                  { id: "view-board", label: "Show board", run: () => switchView("board") },
+                  { id: "view-canvas", label: "Show canvas", run: () => switchView("canvas") },
+                  {
+                    id: "task",
+                    label: "Create task",
+                    hint: `${modKey} N`,
+                    run: () => {
+                      setModalTask(undefined);
+                      setModal("task");
+                    },
+                  },
+                  {
+                    id: "note",
+                    label: "Add canvas note",
+                    run: () => {
+                      switchView("canvas");
+                      void addNote();
+                    },
+                  },
+                ]
+              : []),
+            ...projects.map((p) => ({
+              id: "folder-" + p.id,
+              label: p.name,
+              hint: "Folder",
+              run: () => chooseProject(p.id),
+            })),
+            ...allSessions.slice(0, 30).map((s) => ({
+              id: "session-" + s.id,
+              label: `${titleOf(s)} · ${projectName(s.projectId)}/${sessionLocation(
+                s,
+                snapshot.projects.find((p) => p.id === s.projectId),
+              )}`,
+              hint: sessionState(s).label,
+              run: () => openSession(s),
+            })),
+            ...tasks.map((t) => ({
+              id: "task-" + t.id,
+              label: t.title,
+              hint: statusLabel(t.status) || "Task",
+              run: () => {
+                setTaskId(t.id);
+                switchView("board");
+              },
+            })),
+          ]}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function Launchpad({
+  project,
+  target,
+  capabilities,
+  launching,
+  disabledReason,
+  onLaunch,
+  recent,
+  titleOf,
+  onOpen,
+  onResume,
+}: {
+  project: Project;
+  target: string;
+  capabilities: Snapshot["capabilities"];
+  launching: Provider | null;
+  disabledReason: string;
+  onLaunch: (provider: Provider) => void;
+  recent: Session[];
+  titleOf: (s: Session) => string;
+  onOpen: (s: Session) => void;
+  onResume: (s: Session) => void;
+}) {
+  const where = [project.name, target].filter(Boolean).join("/");
+  return (
+    <div className="launchpad">
+      <div className="launchpad-card">
+        <p className="eyebrow">Ready in {where}</p>
+        <h2>Open an agent or a shell here</h2>
+        <div className="launchpad-options">
+          {providers.map((provider) => {
+            const cap = capability(capabilities, provider);
+            const missing = !!cap && !cap.available;
+            return (
+              <button
+                key={provider}
+                className={"launchpad-option launch-" + provider + (missing ? " is-missing" : "")}
+                aria-label={`Open ${providerName(provider)} here`}
+                disabled={!!disabledReason || !!launching}
+                onClick={() => onLaunch(provider)}
+              >
+                <ProviderGlyph provider={provider} size={22} />
+                <strong>{providerName(provider)}</strong>
+                <span>
+                  {missing
+                    ? "Not found on this host"
+                    : provider === "claude"
+                      ? "Claude Code, ready for your first message"
+                      : provider === "codex"
+                        ? "Codex CLI, ready for your first message"
+                        : "A terminal in this folder"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="hint">
+          Nothing is sent until you type. Sessions keep running when you switch
+          folders or views, and after you close the window.
+        </p>
+      </div>
+      {recent.length ? (
+        <div className="recent-sessions">
+          <h3 className="section-label">Recently ended here</h3>
+          {recent.map((s) => (
+            <div key={s.id} className="recent-session">
+              <ProviderGlyph provider={s.provider} />
+              <button className="link-button" onClick={() => onOpen(s)}>
+                {titleOf(s)}
+                <small>
+                  {sessionLocation(s, project)} · {sessionState(s).label}
+                </small>
+              </button>
+              {s.provider === "claude" && s.conversationId ? (
+                <button className="button ghost small" onClick={() => onResume(s)}>
+                  Resume
+                </button>
+              ) : null}
             </div>
-            <div className="palette-options">
-              {!query || "open repository".includes(query.toLowerCase()) ? (
-                <button
-                  onClick={() => {
-                    setModal(null);
-                    void openProject();
-                  }}
-                >
-                  <FolderOpen size={16} />
-                  {isRemoteBrowser
-                    ? "Choose server project"
-                    : "Open repository"}
-                </button>
-              ) : null}
-              {project &&
-              (!query || "new task".includes(query.toLowerCase())) ? (
-                <button onClick={() => setModal("task")}>
-                  <Plus size={16} />
-                  Create task<kbd>⌘ N</kbd>
-                </button>
-              ) : null}
-              {project &&
-              (!query || "canvas note".includes(query.toLowerCase())) ? (
-                <button
-                  onClick={() => {
-                    setModal(null);
-                    void addNote();
-                  }}
-                >
-                  <FileText size={16} />
-                  Add canvas note
-                </button>
-              ) : null}
-              {tasks
-                .filter((t) =>
-                  t.title.toLowerCase().includes(query.toLowerCase()),
-                )
-                .map((t) => (
-                  <button
-                    key={t.id}
-                    onClick={() => {
-                      chooseTask(t.id);
-                      setModal(null);
-                    }}
-                  >
-                    <span className={"status-dot " + t.status} />
-                    {t.title}
-                    <span className="muted">{label(t.status)}</span>
-                  </button>
-                ))}
-            </div>
-          </section>
+          ))}
         </div>
       ) : null}
     </div>
   );
 }
-function TaskModal({
-  existing,
-  projectId,
-  close,
-  created,
-  report,
+
+function LaunchNotice({
+  problem,
+  target,
+  onDismiss,
+  onRetry,
+  onCheckAgain,
+  onShell,
+  onRoot,
 }: {
-  existing?: Task;
-  projectId: string;
-  close: () => void;
-  created: (id: string) => void;
-  report: (e: unknown) => void;
+  problem: LaunchProblem;
+  target: string;
+  onDismiss: () => void;
+  onRetry: () => void;
+  onCheckAgain: () => void;
+  onShell: () => void;
+  onRoot: () => void;
 }) {
-  const [title, setTitle] = useState(existing?.title || "");
-  const [description, setDescription] = useState(existing?.description || "");
-  const [busy, setBusy] = useState(false);
+  const name = providerName(problem.provider);
   return (
-    <div className="modal-backdrop">
-      <form
-        className="modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="task-title"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setBusy(true);
-          try {
-            const task = await window.workspace.invoke<Task>(
-              existing ? "task.update" : "task.create",
-              {
-                taskId: existing?.id,
-                revision: existing?.revision,
-                projectId,
-                title,
-                description,
-              },
-            );
-            created(task.id);
-          } catch (e) {
-            report(e);
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <header>
-          <div>
-            <div className="eyebrow">MAKE ROOM FOR AN IDEA</div>
-            <h2 id="task-title">{existing ? "Edit task" : "Create a task"}</h2>
-          </div>
-          <button
-            type="button"
-            className="icon-button"
-            onClick={close}
-            aria-label="Close"
-          >
-            <X size={19} />
+    <div className="notice notice-error launch-notice" role="alert">
+      <div>
+        <strong>
+          {problem.kind === "missing"
+            ? `${name} isn't available on this host`
+            : problem.kind === "uncertain"
+              ? `${name} may or may not have started`
+              : `${name} couldn't open`}
+        </strong>
+        <p>{problem.message}</p>
+        {problem.kind === "missing" && installHints[problem.provider] ? (
+          <p className="hint">
+            To install it, run <code>{installHints[problem.provider]}</code> in a
+            Shell, then run <code>{problem.provider}</code> once to sign in. If
+            it's already installed, make sure your login shell's PATH includes
+            it.
+          </p>
+        ) : null}
+        {problem.kind === "uncertain" ? (
+          <p className="hint">
+            Checking again asks about the same launch. It never starts a second
+            process.
+          </p>
+        ) : null}
+      </div>
+      <div className="notice-actions">
+        {problem.kind === "missing" ? (
+          <>
+            <button className="button small" onClick={onCheckAgain}>
+              <RefreshCw size={13} />
+              Check again
+            </button>
+            <button className="button ghost small" onClick={onShell}>
+              Open a Shell here
+            </button>
+          </>
+        ) : (
+          <button className="button small" onClick={onRetry}>
+            <RefreshCw size={13} />
+            {problem.kind === "uncertain" ? "Check the same launch" : "Try again"}
           </button>
-        </header>
-        <label>
-          Task name
-          <input
-            autoFocus
-            required
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="What do you want to work on?"
-          />
-        </label>
-        <label>
-          Description <span className="muted">optional</span>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Add context, constraints, or an intended outcome."
-          />
-        </label>
-        <footer>
-          <button type="button" className="secondary" onClick={close}>
-            Cancel
+        )}
+        {target && /no longer exists|permission/i.test(problem.message) ? (
+          <button className="button ghost small" onClick={onRoot}>
+            Use the folder root
           </button>
-          <button className="primary" disabled={busy || !title.trim()}>
-            {busy ? "Saving…" : existing ? "Save task" : "Create task"}
-            <ArrowUpRight size={15} />
-          </button>
-        </footer>
-      </form>
+        ) : null}
+        <button
+          className="icon-button"
+          aria-label="Dismiss launch problem"
+          onClick={onDismiss}
+        >
+          <X size={14} />
+        </button>
+      </div>
     </div>
   );
 }
-function AttemptModal({
-  task,
+
+function Palette({
+  items,
   close,
-  created,
-  report,
 }: {
-  task: Task;
+  items: { id: string; label: string; hint?: string; run: () => void }[];
   close: () => void;
-  created: (attempt: Attempt) => void;
-  report: (e: unknown) => void;
 }) {
-  const [provider, setProvider] = useState<Provider>("shell");
-  const [models, setModels] = useState({
-    claude: "claude-opus-4-6",
-    codex: "gpt-6.1-sol",
-  });
-  const model = provider === "claude" ? models.claude : models.codex;
-  const launch = useRef<{
-    key: string;
-    payload: Record<string, unknown>;
-  } | null>(null);
-  const createdTree = useRef<string | null>(null);
-  const [launchPending, setLaunchPending] = useState(false);
-  const [prompt, setPrompt] = useState(
-    task.description ? task.title + "\n\n" + task.description : task.title,
-  );
-  const [trees, setTrees] = useState<Worktree[]>([]);
-  const [path, setPath] = useState("");
-  const [newTree, setNewTree] = useState(false);
-  const [branch, setBranch] = useState("");
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    void window.workspace
-      .invoke<Worktree[]>("worktree.list", { projectId: task.projectId })
-      .then(setTrees)
-      .catch(report);
-  }, [task.projectId, report]);
+  const [query, setQuery] = useState("");
+  const [active, setActive] = useState(0);
+  const matches = items
+    .filter((item) => item.label.toLowerCase().includes(query.trim().toLowerCase()))
+    .slice(0, 40);
+  const run = (index: number) => {
+    const item = matches[index];
+    if (!item) return;
+    close();
+    item.run();
+  };
   return (
-    <div className="modal-backdrop">
-      <form
-        className="modal"
+    <div className="modal-backdrop" onMouseDown={close}>
+      <section
+        className="palette"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="attempt-title"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setBusy(true);
-          try {
-            let worktreePath = createdTree.current || path;
-            if (newTree && !createdTree.current && !launch.current) {
-              const tree = await window.workspace.invoke<Worktree>(
-                "worktree.create",
-                { projectId: task.projectId, branch },
-              );
-              worktreePath = tree.path;
-              createdTree.current = tree.path;
-            }
-            if (!launch.current)
-              launch.current = {
-                key: createId(),
-                payload: {
-                  taskId: task.id,
-                  provider,
-                  worktreePath: worktreePath || undefined,
-                  prompt,
-                  model:
-                    provider !== "shell" && model.trim()
-                      ? model.trim()
-                      : undefined,
-                },
-              };
-            setLaunchPending(true);
-            const result = await window.workspace.invoke<{ attempt: Attempt }>(
-              "attempt.start",
-              { ...launch.current.payload, idempotencyKey: launch.current.key },
-            );
-            created(result.attempt);
-          } catch (e) {
-            report(e);
-          } finally {
-            setBusy(false);
-          }
-        }}
+        aria-label="Command palette"
+        onMouseDown={(e) => e.stopPropagation()}
       >
-        <header>
-          <div>
-            <div className="eyebrow">A FRESH PERSPECTIVE</div>
-            <h2 id="attempt-title">Start an attempt</h2>
-          </div>
-          <button
-            type="button"
-            className="icon-button"
-            aria-label="Close"
-            onClick={close}
-          >
-            <X size={19} />
-          </button>
-        </header>
-        <p className="modal-context">{task.title}</p>
-        {launchPending ? (
-          <p className="form-hint">
-            A launch was requested. Retrying checks the same attempt; it does
-            not start another process.
-          </p>
-        ) : null}
-        <fieldset disabled={launchPending || busy} className="attempt-fields">
-          <label>Run with</label>
-          <div className="provider-options">
-            {(["shell", "claude", "codex"] as const).map((p) => (
-              <button
-                className={provider === p ? "selected" : ""}
-                type="button"
-                key={p}
-                onClick={() => setProvider(p)}
-              >
-                <Terminal size={19} />
-                <strong>
-                  {p === "shell"
-                    ? "Shell"
-                    : p === "claude"
-                      ? "Claude"
-                      : "Codex"}
-                </strong>
-                <span>
-                  {p === "shell" ? "Your local shell" : "Installed CLI"}
-                </span>
-              </button>
-            ))}
-          </div>
-          {provider !== "shell" ? (
-            <label>
-              Model <span className="muted">optional</span>
-              <input
-                value={model}
-                onChange={(e) =>
-                  setModels((current) => ({
-                    ...current,
-                    [provider]: e.target.value,
-                  }))
-                }
-                placeholder="CLI default when blank"
-                maxLength={150}
-              />
-              <span className="form-hint">
-                Selected for this attempt; clear to use CLI settings. Starting
-                selection:{" "}
-                {provider === "codex"
-                  ? "GPT-6.1 Sol"
-                  : "Claude Opus 4.6, standard context"}
-                .
-              </span>
-            </label>
-          ) : null}
-          {provider !== "shell" ? (
-            <label>
-              Initial prompt
-              <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Describe the work for this attempt"
-              />
-            </label>
-          ) : null}
-          <label>
-            Working directory
-            <select
-              value={newTree ? "__new" : path}
-              onChange={(e) => {
-                setNewTree(e.target.value === "__new");
-                setPath(e.target.value === "__new" ? "" : e.target.value);
-              }}
+        <div className="palette-search">
+          <Search size={17} />
+          <input
+            autoFocus
+            placeholder="Search folders, sessions and commands…"
+            value={query}
+            aria-label="Search folders, sessions and commands"
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setActive(0);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setActive((i) => Math.min(i + 1, matches.length - 1));
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setActive((i) => Math.max(i - 1, 0));
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                run(active);
+              }
+            }}
+          />
+          <kbd>ESC</kbd>
+        </div>
+        <div className="palette-options">
+          {matches.map((item, index) => (
+            <button
+              key={item.id}
+              className={index === active ? "active" : ""}
+              onMouseEnter={() => setActive(index)}
+              onClick={() => run(index)}
             >
-              <option value="">Main repository</option>
-              {trees.map((tree) => (
-                <option key={tree.path} value={tree.path}>
-                  {tree.branch || tree.path}
-                </option>
-              ))}
-              <option value="__new">Create an isolated worktree…</option>
-            </select>
-          </label>
-          {newTree ? (
-            <label>
-              New branch
-              <input
-                required
-                value={branch}
-                onChange={(e) => setBranch(e.target.value)}
-                placeholder="feature/my-task"
-              />
-            </label>
+              <span>{item.label}</span>
+              {item.hint ? <span className="muted">{item.hint}</span> : null}
+            </button>
+          ))}
+          {!matches.length ? (
+            <p className="palette-empty">No matches.</p>
           ) : null}
-        </fieldset>
-        <p className="form-hint">
-          {provider === "shell"
-            ? "The shell starts in the selected working directory."
-            : "The CLI uses your existing installation and authentication. The initial prompt is sent once at launch; follow-up input goes through the terminal."}
-        </p>
-        <footer>
-          <button className="secondary" type="button" onClick={close}>
-            Cancel
-          </button>
-          <button className="primary" disabled={busy}>
-            {busy
-              ? "Starting…"
-              : launchPending
-                ? "Check same launch"
-                : "Start attempt"}
-            <ArrowUpRight size={15} />
-          </button>
-        </footer>
-      </form>
+        </div>
+      </section>
     </div>
   );
 }

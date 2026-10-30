@@ -44,33 +44,33 @@ try {
   await page.waitForFunction(() => !!window.workspace);
   const p1 = await command("project.add", { path: repo });
   const p2 = await command("project.add", { path: repo2 });
-  await page.locator(".projects button").filter({ hasText: "alpha" }).click();
-  await page.getByRole("button", { name: "Create task", exact: true }).click();
+  await page.locator(".folder-list button").filter({ hasText: "alpha" }).click();
+  // Tasks are optional planning on the board; the folder itself needs none.
+  await page.getByRole("button", { name: "Open Shell here" }).waitFor();
+  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await page.getByRole("button", { name: "New task", exact: true }).click();
   await page
     .getByPlaceholder("What do you want to work on?")
     .fill("Build workflow");
   await page
     .getByPlaceholder("Add context, constraints, or an intended outcome.")
     .fill("A disposable verification task");
-  await page
-    .getByRole("button", { name: "Create task", exact: true })
-    .last()
-    .click();
+  await page.getByRole("button", { name: "Create task", exact: true }).click();
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page
     .getByPlaceholder("What do you want to work on?")
     .fill("Verified workflow");
   await page.getByRole("button", { name: "Save task", exact: true }).click();
   await page
-    .getByRole("heading", { name: "Verified workflow Edit", exact: true })
+    .getByRole("heading", { name: "Verified workflow", exact: true })
     .waitFor();
   await page.getByLabel("Task workflow status").selectOption("in_progress");
   assert.equal((await snapshot()).tasks[0].status, "in_progress");
-  checks.push("create and edit task with revision; focus status");
-  await page.getByRole("button", { name: "Board", exact: true }).click();
+  checks.push("create and edit task with revision; task sheet status");
   await page.getByLabel("Status for Verified workflow").selectOption("ready");
   // The async status write moves the card between columns; finish it before dragging.
   await waitFor(() => document.querySelector('select[aria-label="Status for Verified workflow"]')?.closest(".board-column")?.querySelector("header strong")?.textContent === "Ready");
+  await page.getByRole("button", { name: "Close task details" }).click();
   const card = page.locator(".board-card");
   const target = page.locator(".board-column").filter({
     has: page.locator("header strong").filter({ hasText: "In review" }),
@@ -141,15 +141,15 @@ try {
   assert.equal(await node.getAttribute("style"), moved);
   await page.screenshot({ path: path.join(fixture, "canvas.png") });
   checks.push("canvas note persistence; drag; undo; redo");
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
-  await page.getByRole("button", { name: "files", exact: true }).click();
+  await page.getByRole("button", { name: "Terminals", exact: true }).click();
+  await page.getByRole("button", { name: "Files", exact: true }).click();
   await page.getByRole("button", { name: "hello.txt", exact: true }).click();
   await page.locator(".monaco-editor textarea").first().waitFor();
   await page.locator(".monaco-editor .view-lines").click();
-  await page.keyboard.press("Meta+A");
+  await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("edited in offline Monaco\n", { delay: 8 });
   page.once("dialog", (dialog) => dialog.dismiss());
-  await page.locator(".projects button").filter({ hasText: "beta" }).click();
+  await page.locator(".folder-list button").filter({ hasText: "beta" }).click();
   assert.equal(await page.locator(".editor-overlay").count(), 1);
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await page.waitForFunction(
@@ -161,7 +161,7 @@ try {
   );
   checks.push("offline Monaco save; unsaved project navigation cancel");
   await page.locator(".monaco-editor .view-lines").click();
-  await page.keyboard.press("Meta+A");
+  await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.insertText("local conflict\n");
   await writeFile(path.join(repo, "hello.txt"), "external conflict\n");
   await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -187,7 +187,7 @@ try {
   );
   await page.getByLabel("Close editor").click();
   await page.getByLabel("Dismiss error").click();
-  await page.getByRole("button", { name: "changes", exact: true }).click();
+  await page.getByRole("button", { name: /^Changes/ }).click();
   await page.getByLabel("Refresh files and git").click();
   await page
     .locator(".file-row")
@@ -247,14 +247,17 @@ try {
   );
   await page.getByLabel("Close editor").click();
   checks.push("untracked content preview");
-  await page.getByRole("button", { name: "worktrees", exact: true }).click();
+  await page.getByRole("button", { name: "Worktrees", exact: true }).click();
   await page.getByPlaceholder("feature/my-change").fill("verify/isolated");
   await page
     .getByRole("button", { name: "Create worktree", exact: true })
     .click();
   await page.getByText("verify/isolated", { exact: true }).waitFor();
   checks.push("worktree creation and listing");
-  await page.getByRole("button", { name: "New attempt", exact: true }).click();
+  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Start an attempt", exact: true })
+    .click();
   await page
     .getByLabel("Working directory")
     .selectOption({ label: "verify/isolated" });
@@ -288,21 +291,20 @@ try {
     state.attempts[0].worktreePath,
     state.attempts[1].worktreePath,
   );
-  await page.locator(".attempt-tabs button").filter({ hasText: "#1" }).click();
-  await page.locator(".terminal-connection").waitFor({ state: "detached" });
-  await page.locator(".attempt-tabs button").filter({ hasText: "#2" }).click();
-  await page.locator(".terminal-connection").waitFor({ state: "detached" });
+  for (const attemptLabel of ["#1", "#2"]) {
+    await page.getByRole("button", { name: "Board", exact: true }).click();
+    await page.locator(".attempt-row").filter({ hasText: attemptLabel }).click();
+    await page.locator(".session-view").waitFor();
+    await page.locator(".terminal-connection").waitFor({ state: "detached" });
+  }
+  assert.equal((await snapshot()).sessions.filter((s) => s.status === "running").length, 2);
   checks.push(
     "second attempt bound to isolated worktree; attempt switching preserves distinct sessions",
   );
 
-  await page.locator(".projects button").filter({ hasText: "beta" }).click();
-  await page.getByText("What are we building?", { exact: true }).waitFor();
-  await page.locator(".projects button").filter({ hasText: "alpha" }).click();
-  await page
-    .locator(".task-link")
-    .filter({ hasText: "Verified workflow" })
-    .click();
+  await page.locator(".folder-list button").filter({ hasText: "beta" }).click();
+  await page.getByText("Open an agent or a shell here", { exact: true }).waitFor();
+  await page.locator(".folder-list button").filter({ hasText: "alpha" }).click();
   await page.getByRole("button", { name: "Canvas", exact: true }).click();
   await page.getByLabel("Canvas note").waitFor();
   assert.equal(
@@ -320,17 +322,19 @@ try {
   );
   await command("project.add", { path: plain });
   await page
-    .locator(".projects button")
+    .locator(".folder-list button")
     .filter({ hasText: "plain-folder" })
     .click();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page.getByRole("button", { name: "Terminals", exact: true }).click();
+  await page.getByText("No Git", { exact: true }).waitFor();
+  await page.getByRole("button", { name: /^Changes/ }).click();
   await page
     .getByText(
-      "Git features are unavailable for this folder. Files and shell sessions remain available.",
+      "This folder isn't a Git repository. Files and terminals work normally; run git init in a Shell here to review changes.",
       { exact: true },
     )
     .waitFor();
-  await page.getByRole("button", { name: "files", exact: true }).click();
+  await page.getByRole("button", { name: "Files", exact: true }).click();
   await page.getByRole("button", { name: "plain.txt", exact: true }).click();
   await page.locator(".monaco-editor textarea").first().waitFor();
   await page.waitForFunction(() =>

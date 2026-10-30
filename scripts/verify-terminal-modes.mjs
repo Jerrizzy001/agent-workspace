@@ -62,7 +62,7 @@ try {
     idempotencyKey: "terminal-mode-fixture",
   });
   await page
-    .locator(".task-link")
+    .locator(".session-row")
     .filter({ hasText: "Terminal modes fixture" })
     .click();
   await page.locator(".terminal-connection").waitFor({ state: "detached" });
@@ -75,9 +75,9 @@ try {
   await page.getByRole("button", { name: "Canvas", exact: true }).click();
   await screenIncludes("ALT_SCREEN_654 世界 λ");
   await page.screenshot({ path: path.join(fixture, "alternate-canvas.png") });
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page.getByRole("button", { name: "Terminals", exact: true }).click();
   await screenIncludes("ALT_SCREEN_654 世界 λ");
-  checks.push("alternate-screen redraw across board/canvas/focus");
+  checks.push("alternate-screen redraw across board/canvas/terminals");
   await page.locator(".xterm-helper-textarea").first().focus();
   await page.keyboard.press("Enter");
   await type(`python3 -c 'print("NORMAL_" + "BUFFER_987")'`);

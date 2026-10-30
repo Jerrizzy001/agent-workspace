@@ -17,25 +17,86 @@ export function providerModel(
     throw new Error("Invalid provider model");
   return model;
 }
-/** Interactive positional prompts verified against installed CLI --help. No global settings changes. */
+/** A blank or absent prompt opens the provider interactively; nothing is submitted for the user. */
+export function initialPrompt(requested: unknown): string | undefined {
+  if (requested === undefined) return undefined;
+  if (
+    typeof requested !== "string" ||
+    requested.includes("\0") ||
+    Buffer.byteLength(requested) > 65536
+  )
+    throw new Error("Invalid initial prompt");
+  return requested.trim() ? requested : undefined;
+}
+export interface LaunchOptions {
+  prompt?: unknown;
+  model?: unknown;
+  /** Claude conversation identity: a new `--session-id`, or `--resume` of an earlier one. */
+  conversation?: { id: string; resume: boolean };
+  /** Codex: open its own resume picker instead of a new conversation. */
+  resumePicker?: boolean;
+  /** Claude per-session settings JSON (status hooks); never written to global config. */
+  settings?: string;
+}
+/** Interactive argv verified against installed CLI --help. Prompts stay literal after `--`. */
+export function launchArguments(
+  provider: string,
+  options: LaunchOptions = {},
+): string[] {
+  const model = providerModel(provider, options.model);
+  if (provider === "shell") return [];
+  const prompt = initialPrompt(options.prompt);
+  if (provider === "codex" && options.resumePicker) return ["resume"];
+  const conversation =
+    provider === "claude" && options.conversation
+      ? options.conversation.resume
+        ? ["--resume", options.conversation.id]
+        : ["--session-id", options.conversation.id]
+      : [];
+  return [
+    ...(model ? ["--model", model] : []),
+    ...conversation,
+    ...(provider === "claude" && options.settings
+      ? ["--settings", options.settings]
+      : []),
+    ...(prompt ? ["--", prompt] : []),
+  ];
+}
+/** Task attempts default to the task text; an explicit blank prompt launches interactively. */
 export function providerArguments(
   provider: string,
   task: { title: string; description: string },
   requested?: unknown,
   requestedModel?: unknown,
 ): string[] {
-  const model = providerModel(provider, requestedModel);
-  if (provider === "shell") return [];
-  const prompt =
-    requested === undefined
-      ? [task.title, task.description].filter(Boolean).join("\n\n")
-      : requested;
-  if (
-    typeof prompt !== "string" ||
-    !prompt.trim() ||
-    prompt.includes("\0") ||
-    Buffer.byteLength(prompt) > 65536
-  )
-    throw new Error("Invalid initial prompt");
-  return [...(model ? ["--model", model] : []), "--", prompt];
+  return launchArguments(provider, {
+    model: requestedModel,
+    prompt:
+      requested === undefined
+        ? [task.title, task.description].filter(Boolean).join("\n\n")
+        : requested,
+  });
+}
+const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
+/**
+ * Claude hook settings that record the agent's turn state as a tmux pane option.
+ * The hook runs inside the session's own pane, so `$TMUX` already names the private socket.
+ */
+export function claudeActivitySettings(tmux: string): string {
+  const set = (state: "running" | "needs" | "done") =>
+    `${quote(tmux)} set-option -p @aw_activity ${state} >/dev/null 2>&1 || true`;
+  const hook = (state: "running" | "needs" | "done", matcher?: string) => [
+    {
+      ...(matcher ? { matcher } : {}),
+      hooks: [{ type: "command", command: set(state) }],
+    },
+  ];
+  return JSON.stringify({
+    hooks: {
+      UserPromptSubmit: hook("running"),
+      PostToolUse: hook("running", "*"),
+      Notification: hook("needs", "permission_prompt|elicitation_dialog"),
+      Stop: hook("done"),
+    },
+  });
 }

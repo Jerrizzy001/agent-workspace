@@ -40,7 +40,7 @@ try {
   await page.getByRole('button',{name:'Close remote access'}).click();
   const code=await manage('pairingSecret');const login=await fetch(origin+'/api/login',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({secret:code})});assert.equal(login.status,200);
   const cookie=login.headers.get('set-cookie').split(';')[0];
-  browser=await chromium.launch({headless:true,channel:process.env.WORKSPACE_BROWSER_CHANNEL || 'chrome'});
+  browser=await chromium.launch({headless:true,...(process.env.WORKSPACE_BROWSER?{executablePath:process.env.WORKSPACE_BROWSER}:{channel:process.env.WORKSPACE_BROWSER_CHANNEL || 'chrome'})});
   const browserPage=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
   const browserErrors=[];browserPage.on('pageerror',error=>browserErrors.push(error.message));
   await browserPage.goto(origin);await browserPage.getByLabel('Pairing code').fill(code);

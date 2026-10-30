@@ -5,11 +5,17 @@ import os from "node:os";
 import crypto from "node:crypto";
 import { isUtf8 } from "node:buffer";
 import { gitStatus, gitDiff, gitIndex } from "./git.js";
-import { providerArguments, providerModel } from "./providers.js";
+import {
+  claudeActivitySettings,
+  initialPrompt,
+  launchArguments,
+  providerModel,
+} from "./providers.js";
 import { TerminalStream } from "./stream.js";
-import { run, executable } from "./process.js";
+import { run, executable, probe } from "./process.js";
 import * as pty from "node-pty";
 import type {
+  Activity,
   Core,
   CoreOptions,
   Command,
@@ -98,19 +104,25 @@ export async function createCore({
       fs.unlinkSync(acquisition);
     }
     db = new DatabaseSync(path.join(dataDir, "workspace.sqlite"));
-    if (
-      (db.prepare("PRAGMA user_version").get() as { user_version: number })
-        .user_version > 1
-    )
+    const schema = (
+      db.prepare("PRAGMA user_version").get() as { user_version: number }
+    ).user_version;
+    if (schema > 2)
       throw new Error("Workspace data belongs to a newer app version");
     db.exec(
-      "PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS records (kind TEXT NOT NULL,id TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(kind,id)); CREATE TABLE IF NOT EXISTS receipts (key TEXT PRIMARY KEY,digest TEXT NOT NULL,result TEXT); CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT,type TEXT NOT NULL,time TEXT NOT NULL,payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS launch_intents (key TEXT PRIMARY KEY,sessionId TEXT NOT NULL,attemptId TEXT NOT NULL); CREATE TABLE IF NOT EXISTS launch_requests (key TEXT PRIMARY KEY,request TEXT NOT NULL); PRAGMA user_version=1;",
+      "PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS records (kind TEXT NOT NULL,id TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(kind,id)); CREATE TABLE IF NOT EXISTS receipts (key TEXT PRIMARY KEY,digest TEXT NOT NULL,result TEXT); CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT,type TEXT NOT NULL,time TEXT NOT NULL,payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS launch_intents (key TEXT PRIMARY KEY,sessionId TEXT NOT NULL,attemptId TEXT NOT NULL); CREATE TABLE IF NOT EXISTS launch_requests (key TEXT PRIMARY KEY,request TEXT NOT NULL);",
     );
+    if (schema < 2)
+      // v2: sessions may run without a task attempt (attemptId null, launch
+      // intent attemptId ""), carry provider activity, and keep a final screen
+      // in "transcripts" records. Existing rows stay valid as written; the
+      // version bump stops older builds from misreading attempt-less sessions.
+      db.exec("PRAGMA user_version=2");
     const tmux = process.env.WORKSPACE_TMUX || executable("tmux");
     const tmuxConfig = path.join(dataDir, "tmux.conf");
     fs.writeFileSync(
       tmuxConfig,
-      "set -g status off\nset -g history-limit 5000\n",
+      "set -g status off\nset -g history-limit 5000\nset -g remain-on-exit on\n",
       { mode: 0o600 },
     );
     const activeLaunches = new Set<string>();
@@ -159,21 +171,44 @@ export async function createCore({
     const exitChecks = new Set<Promise<void>>();
     const sessionSocket = (s: Session | { backendSocket: string }) =>
       (s as Session & { backendSocket?: string }).backendSocket || socket;
+    type PaneState = { dead: boolean; exitCode?: number; activity?: Activity };
+    /** Every session on a socket with its pane state; undefined when the socket is unreachable. */
     async function socketSessions(
       target: string,
-    ): Promise<Set<string> | undefined> {
+    ): Promise<Map<string, PaneState> | undefined> {
       try {
-        return new Set(
-          (await tx(["list-sessions", "-F", "#{session_name}"], target))
-            .trim()
-            .split("\n"),
+        const sessions = new Map<string, PaneState>();
+        const rows = await tx(
+          [
+            "list-panes",
+            "-a",
+            "-F",
+            "#{session_name}|#{pane_dead}|#{pane_dead_status}|#{@aw_activity}",
+          ],
+          target,
         );
+        for (const row of rows.split("\n")) {
+          if (!row) continue;
+          const [name, dead, status, activity] = row.split("|");
+          const previous = sessions.get(name!);
+          const pane: PaneState = {
+            dead: dead === "1" && (previous?.dead ?? true),
+            exitCode: previous?.exitCode ?? (status ? Number(status) : undefined),
+            activity:
+              previous?.activity ??
+              (["running", "needs", "done"].includes(activity!)
+                ? (activity as Activity)
+                : undefined),
+          };
+          sessions.set(name!, pane);
+        }
+        return sessions;
       } catch (error: any) {
         return tmux &&
           /no server running|error connecting.*No such file/.test(
             String(error.stderr || error.message),
           )
-          ? new Set()
+          ? new Map()
           : undefined;
       }
     }
@@ -193,7 +228,7 @@ export async function createCore({
       ]),
     ];
     const oldSessions = list("sessions").filter((s) => !s.backendSocket);
-    const catalog = new Map<string, Set<string> | undefined>();
+    const catalog = new Map<string, Map<string, PaneState> | undefined>();
     if (oldSessions.length) {
       await Promise.all(
         candidates.map(async (candidate) =>
@@ -236,22 +271,117 @@ export async function createCore({
       }
     }
     put("backend", { id: "tmux", socket });
+    type Final = { exitCode?: number; transcript: boolean };
+    const finalizing = new Map<string, Promise<Final>>();
+    /**
+     * A dead pane (remain-on-exit) keeps the process's last screen. Save it as
+     * the session transcript, then remove the tmux session.
+     */
+    async function finalize(s: Session, exitCode?: number) {
+      let pending = finalizing.get(s.id);
+      if (!pending) {
+        pending = (async (): Promise<Final> => {
+          let saved = false;
+          try {
+            const data = await tx(
+              [
+                "capture-pane",
+                "-e",
+                "-p",
+                "-t",
+                "=" + s.backendName + ":0.0",
+                "-S",
+                "-2000",
+              ],
+              sessionSocket(s),
+            );
+            // Unused pane rows sit between the last output and tmux's
+            // "Pane is dead" footer; drop them so the output stays in view.
+            const plain = (line: string) =>
+              line.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").trim();
+            const lines = data.split("\n");
+            const dropBlank = () => {
+              while (lines.length && !plain(lines[lines.length - 1]!))
+                lines.pop();
+            };
+            dropBlank();
+            const footer =
+              lines.length && /^Pane is dead/.test(plain(lines[lines.length - 1]!))
+                ? lines.pop()
+                : undefined;
+            dropBlank();
+            if (footer) lines.push("", footer);
+            put("transcripts", {
+              id: s.id,
+              data: (lines.join("\n") + "\n").slice(-256 * 1024),
+              exitCode,
+              savedAt: now(),
+            });
+            db.exec(
+              "DELETE FROM records WHERE kind='transcripts' AND rowid NOT IN (SELECT rowid FROM records WHERE kind='transcripts' ORDER BY rowid DESC LIMIT 100)",
+            );
+            saved = true;
+          } catch {}
+          try {
+            await tx(["kill-session", "-t", "=" + s.backendName], sessionSocket(s));
+          } catch {}
+          return {
+            ...(Number.isInteger(exitCode) ? { exitCode } : {}),
+            transcript: saved,
+          };
+        })().finally(() => finalizing.delete(s.id));
+        finalizing.set(s.id, pending);
+      }
+      // Concurrent observers share one capture; each applies it to its own record.
+      const result = await pending;
+      if (result.exitCode !== undefined) s.exitCode = result.exitCode;
+      if (result.transcript) s.transcript = true;
+      return result;
+    }
+    const transcript = (sid: string) => {
+      const row = db
+        .prepare("SELECT value FROM records WHERE kind='transcripts' AND id=?")
+        .get(sid) as { value: string } | undefined;
+      return row
+        ? (JSON.parse(row.value) as { data: string; exitCode?: number })
+        : undefined;
+    };
     const live = async (s: Session) => {
+      let panes: string;
       try {
-        await tx(["has-session", "-t", "=" + s.backendName], sessionSocket(s));
-        return "running";
+        panes = await tx(
+          [
+            "list-panes",
+            "-s",
+            "-t",
+            "=" + s.backendName,
+            "-F",
+            "#{pane_dead}|#{pane_dead_status}",
+          ],
+          sessionSocket(s),
+        );
       } catch (error: any) {
         const detail = String(error.stderr || error.message);
         return tmux &&
-          /no server running|no such session|can't find session|error connecting.*No such file/.test(
+          /no server running|no such session|can't find session|can't find window|error connecting.*No such file/.test(
             detail,
           )
           ? "exited"
           : "unknown";
       }
+      const rows = panes
+        .split("\n")
+        .filter(Boolean)
+        .map((row) => row.split("|"));
+      if (rows.length && rows.every(([dead]) => dead === "1")) {
+        await finalize(s, rows[0]![1] ? Number(rows[0]![1]) : undefined);
+        return "exited";
+      }
+      return "running";
     };
     for (const s of list("sessions")) {
       s.status = await live(s);
+      if (s.status === "exited") s.activity = undefined;
       if (s.status === "running")
         try {
           await tx(
@@ -266,18 +396,34 @@ export async function createCore({
         put("attempts", a);
       }
     }
-    const capabilitySnapshot = ["tmux", "git", "claude", "codex"].map(
-      (name) => ({
-        name,
-        available: !!(name === "tmux" ? tmux : executable(name)),
-        detail:
-          name === "tmux"
-            ? "Private persistent tmux sessions"
-            : name === "git"
-              ? "Local Git operations"
-              : "Interactive terminal; structured approvals and activity unavailable",
-      }),
-    );
+    // Installs can change while the app runs; re-resolve PATH at most every few seconds.
+    let capabilityCache: { at: number; value: Snapshot["capabilities"] } = {
+      at: 0,
+      value: [],
+    };
+    const capabilities = () => {
+      if (Date.now() - capabilityCache.at < 4000) return capabilityCache.value;
+      const value = ["tmux", "git", "claude", "codex"].map((name) => {
+        const found = name === "tmux" ? tmux : executable(name);
+        return {
+          name,
+          available: !!found,
+          detail: !found
+            ? name === "tmux"
+              ? "tmux was not found. Install tmux and restart the workspace."
+              : name === "git"
+                ? "Git was not found. Folders still open; change review is unavailable."
+                : `The ${name} command was not found on this host's PATH. Install and sign in to it, then check again.`
+            : name === "tmux"
+              ? "Private persistent tmux sessions"
+              : name === "git"
+                ? "Local Git operations"
+                : found,
+        };
+      });
+      capabilityCache = { at: Date.now(), value };
+      return value;
+    };
     const snapshot = (): Snapshot => ({
       projects: list("projects"),
       tasks: list("tasks"),
@@ -285,8 +431,28 @@ export async function createCore({
       sessions: list("sessions"),
       notes: list("notes"),
       layouts: list("layouts"),
-      capabilities: capabilitySnapshot,
+      capabilities: capabilities(),
     });
+    // Optional Claude flags are used only when this installed version lists them.
+    const claudeSupport = new Map<
+      string,
+      Promise<{ sessionId: boolean; settings: boolean }>
+    >();
+    function claudeFeatures(bin: string) {
+      let key = bin;
+      try {
+        key += ":" + fs.statSync(bin).mtimeMs;
+      } catch {}
+      let features = claudeSupport.get(key);
+      if (!features) {
+        features = probe(bin, ["--help"]).then((help) => ({
+          sessionId: /--session-id\b/.test(help),
+          settings: /--settings\b/.test(help),
+        }));
+        claudeSupport.set(key, features);
+      }
+      return features;
+    }
     const changed = () => {
       db.prepare("INSERT INTO events(type,time,payload) VALUES (?,?,?)").run(
         "workspace.changed",
@@ -370,6 +536,7 @@ export async function createCore({
     async function attach(s: Session, viewer: string, cols = 100, rows = 30) {
       const observed = await live(s);
       if (observed !== s.status) {
+        if (observed === "exited") s.activity = undefined;
         recordStatus(s, observed);
         changed();
       }
@@ -415,12 +582,10 @@ export async function createCore({
           const check = (async () => {
             if (attachments.get(s.id)?.terminal === terminal)
               attachments.delete(s.id);
-            if ((await live(s)) === "exited" && !closed) {
-              s.status = "exited";
-              put("sessions", s);
-              const at = get("attempts", s.attemptId);
-              at.status = "exited";
-              put("attempts", at);
+            const current = get("sessions", s.id) as Session;
+            if ((await live(current)) === "exited" && !closed) {
+              current.activity = undefined;
+              recordStatus(current, "exited");
               emit({ type: "session.exit", sessionId: s.id, exitCode });
               changed();
             }
@@ -471,6 +636,10 @@ export async function createCore({
           if (!fs.statSync(r).isDirectory())
             throw new Error("Project must be a directory");
           let project = list("projects").find((v) => v.path === r);
+          if (project?.hidden) {
+            delete project.hidden;
+            put("projects", project);
+          }
           if (!project) {
             project = {
               id: id(),
@@ -480,6 +649,21 @@ export async function createCore({
             };
             put("projects", project);
           }
+          changed();
+          return project;
+        }
+        case "project.hide": {
+          const project = get("projects", p.projectId);
+          if (
+            list("sessions").some(
+              (s) => s.projectId === project.id && s.status !== "exited",
+            )
+          )
+            throw new Error(
+              "End this folder's running sessions before removing it from the list",
+            );
+          project.hidden = true;
+          put("projects", project);
           changed();
           return project;
         }
@@ -523,9 +707,13 @@ export async function createCore({
           changed();
           return t;
         }
-        case "attempt.start": {
+        case "attempt.start":
+        case "terminal.open": {
           const key = str(p.idempotencyKey, "idempotencyKey");
-          const digest = hash(JSON.stringify(p));
+          // attempt.start keeps its original digest so existing receipts still match.
+          const digest = hash(
+            (command === "terminal.open" ? command : "") + JSON.stringify(p),
+          );
           const receipt = db
             .prepare("SELECT * FROM receipts WHERE key=?")
             .get(key) as any;
@@ -539,14 +727,16 @@ export async function createCore({
               if (intent) {
                 const session = get("sessions", intent.sessionId);
                 if ((await live(session)) === "running") {
-                  const attempt = get("attempts", intent.attemptId);
+                  const attempt = intent.attemptId
+                    ? get("attempts", intent.attemptId)
+                    : undefined;
                   session.status = "running";
-                  attempt.status = "running";
-                  const result = { attempt, session };
+                  if (attempt) attempt.status = "running";
+                  const result = { ...(attempt ? { attempt } : {}), session };
                   db.exec("BEGIN IMMEDIATE");
                   try {
                     put("sessions", session);
-                    put("attempts", attempt);
+                    if (attempt) put("attempts", attempt);
                     db.prepare("UPDATE receipts SET result=? WHERE key=?").run(
                       JSON.stringify(result),
                       key,
@@ -566,39 +756,125 @@ export async function createCore({
             }
             const result = JSON.parse(receipt.result);
             return {
-              attempt: get("attempts", result.attempt.id),
+              ...(result.attempt
+                ? { attempt: get("attempts", result.attempt.id) }
+                : {}),
               session: get("sessions", result.session.id),
             };
           }
-          const task = get("tasks", p.taskId);
+          const task =
+            command === "attempt.start" ? get("tasks", p.taskId) : undefined;
+          const projectId: string = task
+            ? task.projectId
+            : get("projects", p.projectId).id;
           const provider = p.provider || "shell";
           if (!["shell", "claude", "codex"].includes(provider))
             throw new Error("Unsupported provider");
+          const name =
+            provider === "claude"
+              ? "Claude"
+              : provider === "codex"
+                ? "Codex"
+                : "Shell";
+          let previous: Session | undefined;
+          if (p.resumeSessionId !== undefined) {
+            if (command !== "terminal.open")
+              throw new Error("Resume is only available for folder sessions");
+            previous = get("sessions", p.resumeSessionId) as Session;
+            if (
+              previous.projectId !== projectId ||
+              previous.provider !== provider
+            )
+              throw new Error("That session does not belong to this folder");
+            if (provider === "shell")
+              throw new Error("A shell cannot be resumed; open a new shell");
+            if (provider === "claude" && !previous.conversationId)
+              throw new Error(
+                "This Claude session has no saved conversation to resume",
+              );
+            if ((await live(previous)) !== "exited")
+              throw new Error(
+                "This session is still open. Switch to its terminal instead.",
+              );
+          }
           const bin =
             provider === "shell"
               ? process.env.SHELL ||
                 (process.platform === "darwin" ? "/bin/zsh" : "/bin/sh")
               : executable(provider);
-          if (!bin) throw new Error(`${provider} executable unavailable`);
-          const providerArgs = providerArguments(
-            provider,
-            task,
-            p.prompt,
-            p.model,
-          );
-          const selectedModel = providerModel(provider, p.model);
-          const cwd = await root({
-            projectId: task.projectId,
-            worktreePath: p.worktreePath,
-          });
+          if (!bin)
+            throw new Error(
+              `${name} is not installed on this host. Install the ${provider} command-line tool and sign in to it, then try again.`,
+            );
           if (!tmux)
             throw new Error("tmux is unavailable. Install tmux and restart.");
-          const aid = id(),
+          const base = await root({
+            projectId,
+            worktreePath: p.worktreePath,
+          });
+          const cwd = previous
+            ? previous.cwd
+            : typeof p.path === "string" && p.path && p.path !== "."
+              ? await scoped({
+                  projectId,
+                  worktreePath: p.worktreePath,
+                  path: p.path,
+                }).catch((error) => {
+                  if (error?.code === "ENOENT")
+                    throw new Error(
+                      "That folder no longer exists. Choose another folder.",
+                    );
+                  throw error;
+                })
+              : base;
+          let folder: fs.Stats;
+          try {
+            folder = fs.statSync(cwd);
+          } catch {
+            throw new Error(
+              "That folder no longer exists. Choose another folder.",
+            );
+          }
+          if (!folder.isDirectory())
+            throw new Error("Choose a folder, not a file, to open a terminal.");
+          try {
+            fs.accessSync(cwd, fs.constants.R_OK | fs.constants.X_OK);
+          } catch {
+            throw new Error("You don't have permission to open this folder.");
+          }
+          const selectedModel = providerModel(provider, p.model);
+          const prompt =
+            task && p.prompt === undefined
+              ? [task.title, task.description].filter(Boolean).join("\n\n")
+              : p.prompt;
+          const submitted = !!initialPrompt(prompt);
+          const features =
+            provider === "claude"
+              ? await claudeFeatures(bin)
+              : { sessionId: false, settings: false };
+          const conversationId =
+            provider === "claude"
+              ? previous?.conversationId ||
+                (features.sessionId ? id() : undefined)
+              : undefined;
+          const providerArgs = launchArguments(provider, {
+            prompt,
+            model: p.model,
+            conversation: conversationId
+              ? { id: conversationId, resume: !!previous }
+              : undefined,
+            resumePicker: provider === "codex" && !!previous,
+            settings:
+              provider === "claude" && features.settings
+                ? claudeActivitySettings(tmux)
+                : undefined,
+          });
+          const aid = task ? id() : "",
             sid = id();
-          const s = {
+          const s: Session & { backendSocket: string } = {
             id: sid,
-            attemptId: aid,
-            projectId: task.projectId,
+            attemptId: task ? aid : null,
+            projectId,
             provider,
             cwd,
             backendName: "aw-" + sid,
@@ -606,18 +882,29 @@ export async function createCore({
             generation: 1,
             status: "unknown",
             createdAt: now(),
-          };
-          const a = {
-            id: aid,
-            taskId: task.id,
-            projectId: task.projectId,
-            provider,
-            sessionId: sid,
-            worktreePath: cwd,
             ...(selectedModel ? { model: selectedModel } : {}),
-            status: "unknown",
-            createdAt: now(),
+            ...(conversationId ? { conversationId } : {}),
+            ...(provider === "claude" && features.settings
+              ? {
+                  activityTracking: true,
+                  ...(submitted ? { activity: "running" as const } : {}),
+                }
+              : {}),
+            ...(previous ? { resumedFrom: previous.id } : {}),
           };
+          const a = task
+            ? {
+                id: aid,
+                taskId: task.id,
+                projectId,
+                provider,
+                sessionId: sid,
+                worktreePath: cwd,
+                ...(selectedModel ? { model: selectedModel } : {}),
+                status: "unknown",
+                createdAt: now(),
+              }
+            : undefined;
           db.exec("BEGIN IMMEDIATE");
           try {
             db.prepare("INSERT INTO receipts VALUES (?,?,NULL)").run(
@@ -625,7 +912,7 @@ export async function createCore({
               digest,
             );
             put("sessions", s);
-            put("attempts", a);
+            if (a) put("attempts", a);
             db.prepare("INSERT INTO launch_intents VALUES (?,?,?)").run(
               key,
               sid,
@@ -634,7 +921,7 @@ export async function createCore({
             db.prepare("INSERT INTO launch_requests VALUES (?,?)").run(
               key,
               JSON.stringify({
-                taskId: task.id,
+                ...(task ? { taskId: task.id } : { projectId }),
                 provider,
                 cwd,
                 executable: bin,
@@ -648,6 +935,11 @@ export async function createCore({
           }
           activeLaunches.add(sid);
           try {
+            // A server started by an older build lacks remain-on-exit from the
+            // config file; without it a fast-exiting CLI loses its error output.
+            await tx(["set-option", "-g", "remain-on-exit", "on"]).catch(
+              () => {},
+            );
             await tx([
               "new-session",
               "-d",
@@ -673,12 +965,24 @@ export async function createCore({
               ["set-option", "-t", s.backendName, "status", "off"],
               sessionSocket(s),
             );
+            if (s.activity)
+              await tx([
+                "set-option",
+                "-p",
+                "-t",
+                "=" + s.backendName + ":",
+                "@aw_activity",
+                s.activity,
+              ]).catch(() => {});
+            // A CLI that fails at startup ends here with its output saved.
+            const observed = await live(s);
             db.exec("BEGIN IMMEDIATE");
-            s.status = "running";
-            a.status = "running";
+            s.status = observed === "exited" ? "exited" : "running";
+            if (s.status === "exited") s.activity = undefined;
+            if (a) a.status = s.status;
             put("sessions", s);
-            put("attempts", a);
-            const result = { attempt: a, session: s };
+            if (a) put("attempts", a);
+            const result = { ...(a ? { attempt: a } : {}), session: s };
             db.prepare("UPDATE receipts SET result=? WHERE key=?").run(
               JSON.stringify(result),
               key,
@@ -709,20 +1013,27 @@ export async function createCore({
         }
         case "session.capture": {
           const s = session(p);
-          return {
-            data: await tx(
-              [
-                "capture-pane",
-                "-e",
-                "-p",
-                "-t",
-                "=" + s.backendName + ":0.0",
-                "-S",
-                "-2000",
-              ],
-              sessionSocket(s),
-            ),
-          };
+          try {
+            return {
+              data: await tx(
+                [
+                  "capture-pane",
+                  "-e",
+                  "-p",
+                  "-t",
+                  "=" + s.backendName + ":0.0",
+                  "-S",
+                  "-2000",
+                ],
+                sessionSocket(s),
+              ),
+            };
+          } catch (error) {
+            // An ended process may have left its final screen behind.
+            const saved = transcript(s.id);
+            if (!saved) throw error;
+            return { data: saved.data, exitCode: saved.exitCode, saved: true };
+          }
         }
         case "session.detach": {
           const s = session(p),
@@ -769,11 +1080,8 @@ export async function createCore({
             ["kill-session", "-t", "=" + s.backendName],
             sessionSocket(s),
           );
-          s.status = "exited";
-          put("sessions", s);
-          const a = get("attempts", s.attemptId);
-          a.status = "exited";
-          put("attempts", a);
+          s.activity = undefined;
+          recordStatus(s, "exited");
           changed();
           return { ok: true };
         }
@@ -918,8 +1226,22 @@ export async function createCore({
       return v;
     }
     function recordStatus(s: Session, status: Session["status"]) {
-      s.status = status;
-      put("sessions", s);
+      // Another observer (reconcile, attach, launch) may have written this
+      // record since `s` was read; merge into the latest so its exit status
+      // and saved screen are never dropped.
+      let latest: Session;
+      try {
+        latest = get("sessions", s.id);
+      } catch {
+        latest = s;
+      }
+      latest.status = status;
+      if (s.exitCode !== undefined) latest.exitCode = s.exitCode;
+      if (s.transcript) latest.transcript = true;
+      if (status === "exited" || !s.activity) delete latest.activity;
+      else latest.activity = s.activity;
+      Object.assign(s, latest);
+      put("sessions", latest);
       if (s.attemptId) {
         const a = get("attempts", s.attemptId);
         a.status = status;
@@ -934,25 +1256,40 @@ export async function createCore({
         (s) => s.status !== "exited" && !activeLaunches.has(s.id),
       );
       if (!candidates.length || closed) return;
-      const namesBySocket = new Map<string, Set<string> | undefined>();
+      const panesBySocket = new Map<
+        string,
+        Map<string, PaneState> | undefined
+      >();
       await Promise.all(
         [...new Set(candidates.map(sessionSocket))].map(async (target) =>
-          namesBySocket.set(target, await socketSessions(target)),
+          panesBySocket.set(target, await socketSessions(target)),
         ),
       );
       if (closed) return;
       let updated = false;
       for (const s of candidates) {
         if (activeLaunches.has(s.id)) continue;
-        const current = get("sessions", s.id);
+        const current = get("sessions", s.id) as Session;
         if (current.status === "exited") continue;
-        const names = namesBySocket.get(sessionSocket(s));
-        const observed = names
-          ? names.has(s.backendName)
+        const panes = panesBySocket.get(sessionSocket(s));
+        const pane = panes?.get(s.backendName);
+        if (pane?.dead) await finalize(current, pane.exitCode);
+        if (closed) return;
+        const observed = panes
+          ? pane && !pane.dead
             ? "running"
             : "exited"
           : "unknown";
-        if (current.status !== observed) {
+        // Hooks write turn state into the pane; an unreachable socket keeps the last value.
+        const activity =
+          observed === "exited"
+            ? undefined
+            : observed === "running" && current.activityTracking
+              ? pane!.activity
+              : current.activity;
+        if (current.status !== observed || current.activity !== activity) {
+          current.activity = activity;
+          if (!activity) delete current.activity;
           recordStatus(current, observed);
           updated = true;
         }
@@ -974,7 +1311,7 @@ export async function createCore({
         if (!payload || typeof payload !== "object" || Array.isArray(payload))
           throw new Error("Invalid payload");
         const key =
-          command === "attempt.start"
+          command === "attempt.start" || command === "terminal.open"
             ? "launch"
             : command.startsWith("session.")
               ? "session:" + payload.sessionId

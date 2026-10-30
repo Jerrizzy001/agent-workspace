@@ -44,7 +44,7 @@ try {
     idempotencyKey: "natural",
   });
   await page
-    .locator(".task-link")
+    .locator(".session-row")
     .filter({ hasText: "Session lifecycle" })
     .click();
   await page.locator(".terminal-connection").waitFor({ state: "detached" });
@@ -56,7 +56,7 @@ try {
   await app.evaluate(({ BrowserWindow }, snapshot) => {
     BrowserWindow.getAllWindows()[0].webContents.send("workspace:event", { type: "snapshot", snapshot });
   }, unknownState);
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page.getByRole("button", { name: "Terminals", exact: true }).click();
   await page.getByText("Session state is unknown.", { exact: false }).waitFor();
   assert.equal(await page.locator(".terminal-connection").count(), 0);
   await page.getByRole("button", { name: "Reconnect", exact: true }).click();
@@ -77,53 +77,49 @@ try {
     `printf '%s%s\\n' 'FINAL_' 'OUTPUT_246'; exit`,
   );
   await page.keyboard.press("Enter");
-  await page.locator(".terminal-ended").waitFor();
+  await page.locator(".session-ended").waitFor();
   assert.equal(await page.locator(".terminal-connection").count(), 0);
   await page.getByRole("button", { name: "Board", exact: true }).click();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
-  await page.locator(".terminal-ended").waitFor();
+  await page.getByRole("button", { name: "Terminals", exact: true }).click();
+  await page.locator(".session-ended").waitFor();
+  // The ended process left its final screen; a fresh view shows it read-only.
+  await page.waitForFunction(() => document.querySelector(".xterm-screen")?.textContent?.includes("FINAL_OUTPUT_246"));
   assert.equal(await page.locator(".terminal-connection").count(), 0);
   await page.getByRole("button", { name: "Canvas", exact: true }).click();
   await page.locator(".terminal-ended").waitFor();
   assert.equal(await page.locator(".terminal-connection").count(), 0);
   checks.push(
-    "natural shell exit, focus and canvas remount show ended state without spinner",
+    "natural shell exit, terminal and canvas remount show ended state and saved final screen without spinner",
   );
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
-  await page.getByRole("button", { name: "New attempt", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Claude Installed CLI", exact: true })
-    .click();
-  assert.equal(
-    await page.getByPlaceholder("CLI default when blank").inputValue(),
-    "claude-opus-4-6",
-  );
-  await page.getByPlaceholder("CLI default when blank").fill("custom-claude");
-  await page
-    .getByRole("button", { name: "Codex Installed CLI", exact: true })
-    .click();
-  assert.equal(
-    await page.getByPlaceholder("CLI default when blank").inputValue(),
-    "gpt-6.1-sol",
-  );
-  await page.getByPlaceholder("CLI default when blank").fill("");
-  await page
-    .getByRole("button", { name: "Claude Installed CLI", exact: true })
-    .click();
-  assert.equal(
-    await page.getByPlaceholder("CLI default when blank").inputValue(),
-    "custom-claude",
-  );
-  await page
-    .getByRole("button", { name: "Codex Installed CLI", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await page.getByRole("button", { name: "Session lifecycle", exact: true }).click();
+  await page.getByRole("button", { name: "Start an attempt", exact: true }).click();
+  // Models are not assumed: blank inherits each CLI's own configured default.
+  await page.getByRole("button", { name: /^Claude/ }).last().click();
   assert.equal(
     await page.getByPlaceholder("CLI default when blank").inputValue(),
     "",
   );
+  await page.getByPlaceholder("CLI default when blank").fill("custom-claude");
+  await page.getByRole("button", { name: /^Codex/ }).last().click();
+  assert.equal(
+    await page.getByPlaceholder("CLI default when blank").inputValue(),
+    "",
+  );
+  await page.getByPlaceholder("CLI default when blank").fill("gpt-6.1-sol");
+  await page.getByRole("button", { name: /^Claude/ }).last().click();
+  assert.equal(
+    await page.getByPlaceholder("CLI default when blank").inputValue(),
+    "custom-claude",
+  );
+  await page.getByRole("button", { name: /^Codex/ }).last().click();
+  assert.equal(
+    await page.getByPlaceholder("CLI default when blank").inputValue(),
+    "gpt-6.1-sol",
+  );
   await page.screenshot({ path: path.join(fixture, "model-defaults.png") });
   checks.push(
-    "provider-specific visible model defaults; independent custom values and blank CLI inheritance",
+    "provider-specific model fields start at the CLI default; independent custom values per provider",
   );
   await page
     .getByRole("button", { name: "Shell Your local shell", exact: true })
@@ -141,10 +137,10 @@ try {
   await page.locator(".terminal-connection").waitFor({ state: "detached" });
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "End", exact: true }).click();
-  await page.locator(".terminal-ended").waitFor();
+  await page.locator(".session-ended").waitFor();
   await page.getByRole("button", { name: "Board", exact: true }).click();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
-  await page.locator(".terminal-ended").waitFor();
+  await page.getByRole("button", { name: "Terminals", exact: true }).click();
+  await page.locator(".session-ended").waitFor();
   assert.equal(await page.locator(".terminal-connection").count(), 0);
   await page.screenshot({ path: path.join(fixture, "ended.png") });
   checks.push(

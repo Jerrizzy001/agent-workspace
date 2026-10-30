@@ -124,7 +124,7 @@ try {
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await page.getByText("Connected to workspace", { exact: true }).waitFor();
   await page
-    .locator(".workspace-heading h1")
+    .locator(".topbar-title h1")
     .filter({ hasText: "phone-project" })
     .waitFor();
   assert.equal(
@@ -140,6 +140,11 @@ try {
     "pairing accepts owner secret, rejects incorrect secret; no credential localStorage",
   );
 
+  // Planning is optional; check the phone modal fits, then launch with one tap.
+  await page
+    .getByRole("navigation", { name: "Workspace navigation" })
+    .getByRole("button", { name: "Board", exact: true })
+    .click();
   await page.getByRole("button", { name: "New task", exact: true }).click();
   await page
     .getByPlaceholder("What do you want to work on?")
@@ -147,13 +152,6 @@ try {
   await page
     .getByPlaceholder("Add context, constraints, or an intended outcome.")
     .fill("Shared terminal, files and notes.");
-  await page
-    .locator(".modal")
-    .getByRole("button", { name: "Create task", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Start an attempt", exact: true })
-    .click();
   await noOverflow(page);
   const dialogBounds = await page.getByRole("dialog").boundingBox();
   assert.ok(dialogBounds.width <= 390 && dialogBounds.height <= 844);
@@ -167,21 +165,22 @@ try {
   assert.ok(landscapeDialog.width <= 844 && landscapeDialog.height <= 390);
   await noOverflow(page);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("button", { name: "Codex", exact: false }).click();
-  assert.equal(
-    await page.getByLabel("Model optional").inputValue(),
-    "gpt-6.1-sol",
-  );
-  await page.getByRole("button", { name: "Claude", exact: false }).click();
-  assert.equal(
-    await page.getByLabel("Model optional").inputValue(),
-    "claude-opus-4-6",
-  );
-  await page.getByRole("button", { name: "Shell", exact: false }).click();
   await page
     .locator(".modal")
-    .getByRole("button", { name: "Start attempt", exact: true })
+    .getByRole("button", { name: "Create task", exact: true })
     .click();
+  await page.getByRole("button", { name: "Close task details" }).click();
+  await page
+    .getByRole("navigation", { name: "Workspace navigation" })
+    .getByRole("button", { name: "Terminal", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Launch options" }).click();
+  assert.equal(await page.getByLabel("Claude model").inputValue(), "");
+  assert.equal(await page.getByLabel("Codex model").inputValue(), "");
+  const options = await page.getByRole("dialog", { name: "Launch options" }).boundingBox();
+  assert.ok(options.x >= 0 && options.x + options.width <= 390);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Open Shell here" }).click();
   await page.getByRole("button", { name: "Focus terminal keyboard" }).waitFor();
   await poll(
     () =>
@@ -203,9 +202,10 @@ try {
   const original = await page.evaluate(() =>
     window.workspace.invoke("snapshot"),
   );
-  assert.equal(original.attempts.length, 1);
+  assert.equal(original.sessions.length, 1);
+  assert.equal(original.attempts.length, 0);
   checks.push(
-    "390×844 touch layout creates task and shell; per-attempt model fields preserved; terminal input creates server file",
+    "390×844 touch layout: task modal fits portrait/landscape; launch options default to CLI models; one tap opens a shell with no task; terminal input creates server file",
   );
 
   await page.getByRole("button", { name: "Paste", exact: true }).click();
@@ -259,19 +259,19 @@ try {
 
   await page
     .getByRole("navigation", { name: "Workspace navigation" })
-    .getByRole("button", { name: "Tasks", exact: true })
+    .getByRole("button", { name: "Folders", exact: true })
     .click();
   await page
-    .locator(".sidebar .task-link")
-    .filter({ hasText: "Continue from my phone" })
+    .locator(".sidebar .session-row")
+    .filter({ hasText: "Shell" })
     .waitFor({ state: "visible" });
   await page.screenshot({
     animations: "disabled",
     path: path.join(screenshotDir, "phone-project-drawer.png"),
   });
   await page
-    .locator(".sidebar .task-link")
-    .filter({ hasText: "Continue from my phone" })
+    .locator(".sidebar .session-row")
+    .filter({ hasText: "Shell" })
     .click();
   await page
     .getByRole("navigation", { name: "Workspace navigation" })
@@ -279,7 +279,7 @@ try {
     .click();
   await page
     .locator(".panel-tabs")
-    .getByRole("button", { name: "files", exact: true })
+    .getByRole("button", { name: "Files", exact: true })
     .click();
   await page
     .getByRole("button", { name: "mobile-proof.txt", exact: true })
@@ -550,7 +550,7 @@ try {
     afterReconnect.sessions[0].generation,
     original.sessions[0].generation,
   );
-  assert.equal(afterReconnect.attempts.length, 1);
+  assert.equal(afterReconnect.sessions.length, 1);
   checks.push(
     "network loss pauses input, rejects unsent commands, reattaches same generation and never relaunches/replays",
   );
@@ -563,8 +563,8 @@ try {
   await page.goto(info.url);
   await page.getByText("Connected to workspace", { exact: true }).waitFor();
   await page
-    .locator(".task-heading h2")
-    .filter({ hasText: "Continue from my phone" })
+    .locator(".session-identity strong")
+    .filter({ hasText: "Shell" })
     .waitFor();
   await poll(
     () =>
@@ -586,13 +586,13 @@ try {
   const afterRestart = await page.evaluate(() =>
     window.workspace.invoke("snapshot"),
   );
-  assert.equal(afterRestart.attempts.length, 1);
+  assert.equal(afterRestart.sessions.length, 1);
   assert.equal(
     afterRestart.notes[0].body,
     "The same workspace note, written from a phone viewport.",
   );
   checks.push(
-    "full Chromium profile close/reopen restores cookie authentication, selected task, original process PID and note without duplicate attempt",
+    "full Chromium profile close/reopen restores cookie authentication, selected session, original process PID and note without a duplicate launch",
   );
 
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -612,11 +612,11 @@ try {
   await second.getByText("Connected to workspace", { exact: true }).waitFor();
   await second
     .getByRole("navigation", { name: "Workspace navigation" })
-    .getByRole("button", { name: "Tasks", exact: true })
+    .getByRole("button", { name: "Folders", exact: true })
     .click();
   await second
-    .locator(".sidebar .task-link")
-    .filter({ hasText: "Continue from my phone" })
+    .locator(".sidebar .session-row")
+    .filter({ hasText: "Shell" })
     .click();
   await poll(
     () =>
@@ -723,7 +723,7 @@ try {
     .click();
   await page
     .locator(".panel-tabs")
-    .getByRole("button", { name: "worktrees", exact: true })
+    .getByRole("button", { name: "Worktrees", exact: true })
     .click();
   await page
     .getByLabel("New worktree branch", { exact: true })
@@ -737,9 +737,14 @@ try {
     .waitFor();
   await page
     .getByRole("navigation", { name: "Workspace navigation" })
-    .getByRole("button", { name: "Terminal", exact: true })
+    .getByRole("button", { name: "Board", exact: true })
     .click();
-  await page.getByRole("button", { name: "New attempt", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Continue from my phone", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Start an attempt", exact: true })
+    .click();
   const worktreeOption = await page
     .getByLabel("Working directory")
     .locator("option")
@@ -761,7 +766,7 @@ try {
     .click();
   await page
     .locator(".panel-tabs")
-    .getByRole("button", { name: "files", exact: true })
+    .getByRole("button", { name: "Files", exact: true })
     .click();
   await page.getByRole("button", { name: "hello.txt", exact: true }).click();
   await page.locator(".editor-overlay").waitFor();
@@ -775,7 +780,7 @@ try {
     .first()
     .waitFor({ state: "attached" });
   await page.locator(".monaco-editor .view-lines").click();
-  await page.keyboard.press("Meta+A");
+  await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("Worktree edit from phone\n", { delay: 4 });
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await poll(
@@ -792,7 +797,7 @@ try {
   await page.getByRole("button", { name: "Close editor", exact: true }).click();
   await page
     .locator(".panel-tabs")
-    .getByRole("button", { name: "changes", exact: true })
+    .getByRole("button", { name: /^Changes/ })
     .click();
   await page
     .getByRole("button", { name: "Refresh files and git", exact: true })
@@ -854,7 +859,7 @@ try {
   );
   await page
     .locator(".panel-tabs")
-    .getByRole("button", { name: "files", exact: true })
+    .getByRole("button", { name: "Files", exact: true })
     .click();
   await page.getByRole("button", { name: "hello.txt", exact: true }).click();
   await page
@@ -862,7 +867,7 @@ try {
     .first()
     .waitFor({ state: "attached" });
   await page.locator(".monaco-editor .view-lines").click();
-  await page.keyboard.press("Meta+A");
+  await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("Unsaved editor draft", { delay: 4 });
   await poll(
     () => page.getByRole("button", { name: "Save", exact: true }).isEnabled(),
@@ -899,8 +904,7 @@ try {
     path.join(screenshotDir, "mobile-verification.json"),
     JSON.stringify(
       {
-        platform:
-          "Playwright driving installed Google Chrome (Chromium); synthetic touch phone viewports, not a physical iOS/Android device",
+        platform: `Playwright driving ${process.env.WORKSPACE_BROWSER ? "Chromium at " + process.env.WORKSPACE_BROWSER : "installed Google Chrome (Chromium)"} on ${process.platform}; synthetic touch phone viewports, not a physical iOS/Android device`,
         browserVersion: context.browser()?.version(),
         passed: checks,
         burst: burstMetrics,

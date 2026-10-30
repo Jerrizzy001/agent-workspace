@@ -1,5 +1,13 @@
 # Next agent implementation brief
 
+> **Status (0.3.0):** the folder-first journey below is implemented: in-app folder browser, one-click Claude/Codex/Shell launch with no task, blank interactive launches, saved final output when a process ends, Claude running/needs-you/done status through per-session hooks, notifications, resume, and right-click canvas creation. See [release-evidence.md](release-evidence.md) for what was and was not verified.
+>
+> **Still open from the owner's priority list:**
+> - Board cards as live sessions (the board still tracks tasks).
+> - A product name: the visual identity and icon are new, but "Agent Workspace" is a placeholder.
+> - Codex status hooks: untested, because no Codex CLI was available.
+> - macOS packaging and verification of 0.3.0.
+
 Improve the UI and everyday functionality of Agent Workspace. The current 0.2.0 build provides a working session core, local desktop app, authenticated browser gateway, and mobile web client. The next iteration should make navigating folders and opening coding agents much more direct.
 
 ## User request
