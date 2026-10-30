@@ -47,8 +47,13 @@ try {
   await browserPage.getByRole('button',{name:'Connect',exact:true}).click();await browserPage.getByText('Connected to workspace',{exact:true}).waitFor();
   const browserState=await browserPage.evaluate(()=>window.workspace.invoke('snapshot'));
   assert.ok(browserState.sessions.some(s=>s.id===local.sessionId&&s.generation===local.generation));
+  // Dictation is desktop-only: no API, no controls and no microphone in a paired browser.
+  assert.equal(await browserPage.evaluate(()=>'dictation' in window.workspace),false);
+  assert.equal(await browserPage.locator('.dictation-toggle, .dictation-indicator').count(),0);
+  assert.equal(await browserPage.getByRole('button',{name:'Voice dictation settings'}).count(),0);
+  assert.equal(await browserPage.evaluate(()=>navigator.mediaDevices?.getUserMedia({audio:true}).then(()=>'granted',e=>e.name)??'unavailable').then(v=>v==='granted'),false);
   assert.deepEqual(browserErrors,[]);
-  checks.push('desktop serves its bundled browser assets; phone-sized Chrome pairs against the same desktop core');
+  checks.push('desktop serves its bundled browser assets; phone-sized Chrome pairs against the same desktop core; no dictation API, controls or microphone there');
 
   client=new WebSocket(origin.replace('http','ws')+'/api/ws',{origin,headers:{cookie}});
   const pending=new Map();const events=[];let sequence=0;

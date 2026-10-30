@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { History, ImagePlus, Pencil, Play, Square, Zap } from "lucide-react";
 import type { Project, Session } from "../shared/contracts";
 import { TerminalView } from "./TerminalView";
 import { providerName, sessionLocation, sessionState } from "./sessions";
 import { ProviderGlyph, StatusBadge } from "./ui";
+import { DictationButton } from "./DictationControl";
+import { dictationAvailable, isDictationShortcut } from "./dictation";
 
 /** One session: identity, state and controls above its terminal. */
 export function SessionView({
@@ -25,6 +27,21 @@ export function SessionView({
 }) {
   const [viewerId, setViewerId] = useState<string | null>(null);
   const [imagePasteRequest, setImagePasteRequest] = useState(0);
+  const [dictationToggle, setDictationToggle] = useState(0);
+  // The shortcut also works while focus is outside the terminal (a focused
+  // terminal handles it itself).
+  useEffect(() => {
+    if (!dictationAvailable() || session.status !== "running") return;
+    const onKey = (event: KeyboardEvent) => {
+      if (!isDictationShortcut(event) || event.repeat) return;
+      const target = event.target as Element | null;
+      if (target?.closest?.(".xterm, input, textarea, [contenteditable]")) return;
+      event.preventDefault();
+      setDictationToggle((value) => value + 1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [session.status]);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -126,6 +143,12 @@ export function SessionView({
         <div className="session-actions">
           {session.status === "running" ? (
             <>
+              {dictationAvailable() ? (
+                <DictationButton
+                  viewerId={viewerId}
+                  onToggle={() => setDictationToggle((value) => value + 1)}
+                />
+              ) : null}
               {window.workspace.clipboardImage ? (
                 <button
                   className="button ghost small"
@@ -222,6 +245,7 @@ export function SessionView({
           onViewer={setViewerId}
           endedNotice={false}
           imagePasteRequest={imagePasteRequest}
+          dictationToggle={dictationToggle}
         />
       </div>
     </section>

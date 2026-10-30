@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, utilityProcess } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, session, utilityProcess } from "electron";
 import path from "node:path";
 import os from "node:os";
 import { readFile } from "node:fs/promises";
@@ -7,12 +7,23 @@ import { startGateway, type Gateway } from "../server/gateway";
 import { listDirectory, loginShellPath } from "./folders";
 import { discardClipboardImage, previewClipboardImage, takeClipboardImage } from "./clipboard-images";
 import { createPowerController } from "./power";
+import { createDictationService, defaultModelsDir } from "./dictation";
 import type { PowerPolicy } from "./power-policy";
 import { COMMANDS, type Command, type CoreEvent, type PowerStatus, type RemoteConfig, type RemoteStatus, type Snapshot } from "../shared/contracts";
 let window: BrowserWindow | null = null;
 let core: Electron.UtilityProcess | null = null;
 if (process.env.WORKSPACE_TEST_DATA_DIR)
   app.setPath("userData", path.resolve(process.env.WORKSPACE_TEST_DATA_DIR));
+// Test-only: Chromium's fake capture device plays a WAV file as the microphone.
+// "use-fake-ui-for-media-stream" is deliberately not set: it would grant
+// capture without consulting the permission handlers that tests verify.
+if (process.env.WORKSPACE_TEST_FAKE_MIC) {
+  app.commandLine.appendSwitch("use-fake-device-for-media-stream");
+  app.commandLine.appendSwitch(
+    "use-file-for-fake-audio-capture",
+    path.resolve(process.env.WORKSPACE_TEST_FAKE_MIC) + "%noloop",
+  );
+}
 let quitting = false;
 let ready = false;
 let shutdownComplete = false;
@@ -27,6 +38,7 @@ let coreStatus: RemoteStatus["coreStatus"] = "starting";
 const eventListeners = new Set<(event: CoreEvent) => void>();
 // Keep-awake demand is derived here from core snapshots only, never from renderer state.
 let power: PowerPolicy | null = null;
+let dictation: ReturnType<typeof createDictationService> | null = null;
 let snapshotsSeen = 0;
 let powerWrites = 0;
 function powerStatus(status: PowerStatus) {
@@ -57,6 +69,48 @@ function remoteStatus(): RemoteStatus {
     certificateName: certificatePath ? path.basename(certificatePath) : undefined,
     keyName: keyPath ? path.basename(keyPath) : undefined,
   };
+}
+/** The app window's own renderer page (file or dev server), never another origin. */
+function trustedFrame(contents: Electron.WebContents | null, url: string | undefined, mainFrame: boolean) {
+  if (!window || window.isDestroyed() || contents !== window.webContents || !mainFrame || !url) return false;
+  const dev = process.env.WORKSPACE_DEV_URL;
+  try {
+    const parsed = new URL(url);
+    if (dev) return parsed.origin === new URL(dev).origin;
+    return parsed.protocol === "file:";
+  } catch {
+    return false;
+  }
+}
+/**
+ * Permissions: the app window's main frame may capture audio (dictation),
+ * show notifications and write the clipboard. Video, screen capture, other
+ * frames, other windows and every other permission are denied.
+ */
+function installPermissionPolicy() {
+  const allowed = (
+    contents: Electron.WebContents | null,
+    permission: string,
+    url: string | undefined,
+    mainFrame: boolean,
+    mediaTypes: string[] | undefined,
+  ) => {
+    if (!trustedFrame(contents, url, mainFrame)) return false;
+    if (permission === "media")
+      return !!mediaTypes?.length && mediaTypes.every((type) => type === "audio");
+    return permission === "notifications" || permission === "clipboard-sanitized-write";
+  };
+  session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    const media = permission === "media" ? (details as Electron.MediaAccessPermissionRequest).mediaTypes : undefined;
+    callback(allowed(contents, permission, details.requestingUrl, details.isMainFrame, media));
+  });
+  session.defaultSession.setPermissionCheckHandler((contents, permission, origin, details) => {
+    const media =
+      permission === "media"
+        ? [details.mediaType === "audio" ? "audio" : details.mediaType || "unknown"]
+        : undefined;
+    return allowed(contents, permission, details.requestingUrl || origin, details.isMainFrame, media);
+  });
 }
 function assertOwner(ev: Electron.IpcMainInvokeEvent) {
   if (ev.sender !== window?.webContents || ev.senderFrame !== window?.webContents.mainFrame)
@@ -314,6 +368,48 @@ else {
       const png = takeClipboardImage(v.token);
       return coreRequest({ type: "attachment", sessionId: v.sessionId, generation: v.generation, data: png });
     });
+    installPermissionPolicy();
+    dictation = createDictationService({
+      modelsDir: defaultModelsDir(app.getPath("userData")),
+      engine: process.env.WORKSPACE_TEST_DICTATION_TEXT !== undefined ? "fixture" : "sherpa-onnx",
+      fork: () =>
+        utilityProcess.fork(path.join(__dirname, "dictation-worker.mjs"), [], {
+          serviceName: "Agent Workspace Dictation",
+          // Only what the worker needs: no core paths or provider settings.
+          env: {
+            PATH: process.env.PATH || "",
+            ...(process.env.WORKSPACE_TEST_DICTATION_TEXT !== undefined
+              ? { WORKSPACE_TEST_DICTATION_TEXT: process.env.WORKSPACE_TEST_DICTATION_TEXT }
+              : {}),
+            ...(process.env.WORKSPACE_TEST_DICTATION_ARCHIVE
+              ? { WORKSPACE_TEST_DICTATION_ARCHIVE: process.env.WORKSPACE_TEST_DICTATION_ARCHIVE }
+              : {}),
+          },
+        }),
+      readModel: async () =>
+        ((await invokeCore("settings.read", { key: "dictationModel" })) as { value: unknown }).value,
+      emit: (status) => {
+        if (window && !window.isDestroyed()) window.webContents.send("workspace:dictation", status);
+      },
+    });
+    ipcMain.handle("workspace:dictation", async (ev, action: unknown, value: unknown) => {
+      // Owner window only: microphone audio never crosses the gateway, and
+      // speech-to-text runs in a local utility process.
+      assertOwner(ev);
+      if (!dictation) throw new Error("Dictation is unavailable");
+      const fields = (keys: string[]) => {
+        const v = value as Record<string, unknown>;
+        if (!v || typeof v !== "object" || Array.isArray(v) || Object.keys(v).some((k) => !keys.includes(k)))
+          throw new Error("Invalid dictation request");
+        return v;
+      };
+      if (action === "status") return dictation.status();
+      if (action === "downloadModel") return dictation.downloadModel(fields(["modelId"]).modelId);
+      if (action === "start") return dictation.start();
+      if (action === "phrase") return dictation.phrase(value);
+      if (action === "stop") return dictation.stop(fields(["recordingId"]).recordingId);
+      throw new Error("Unsupported dictation action");
+    });
     power = createPowerController(powerStatus);
     ipcMain.handle("workspace:power", async (ev, action: unknown, value: unknown) => {
       assertOwner(ev);
@@ -417,6 +513,7 @@ else {
   app.on("will-quit", (ev) => {
     // Quitting releases the blocker even though tmux sessions keep running.
     power?.dispose();
+    dictation?.dispose();
     if ((core || gateway) && !shutdownComplete) {
       ev.preventDefault();
       if (!shutdownStarted) {

@@ -227,6 +227,8 @@ export interface ClipboardImageAPI {
 /** Owner preferences stored by the core; never exposed through the remote gateway. */
 export interface OwnerSettings {
   keepAwake: boolean;
+  /** English Whisper model used for local dictation (see DICTATION_MODEL_IDS). */
+  dictationModel: string;
 }
 export interface PowerStatus {
   enabled: boolean;
@@ -239,6 +241,56 @@ export interface DesktopPowerAPI {
   status(): Promise<PowerStatus>;
   setEnabled(enabled: boolean): Promise<PowerStatus>;
   onStatus(listener: (status: PowerStatus) => void): () => void;
+}
+export interface DictationModelInfo {
+  id: string;
+  label: string;
+  description: string;
+  /** Bytes fetched by the download (compressed archive). */
+  downloadBytes: number;
+  /** Bytes kept on disk after unpacking. */
+  diskBytes: number;
+  installed: boolean;
+  /** Archive address, publisher and license shown before consent. */
+  source: string;
+  provenance: string;
+  license: string;
+  sha256: string;
+}
+export interface DictationDownload {
+  modelId: string;
+  phase: "downloading" | "verifying" | "unpacking" | "done" | "failed";
+  received: number;
+  total: number;
+  error?: string;
+}
+export interface DictationStatus {
+  models: DictationModelInfo[];
+  /** The owner's chosen model (settings key `dictationModel`). */
+  selected: string;
+  download: DictationDownload | null;
+  /** "sherpa-onnx" for real local inference; "fixture" only in tests. */
+  engine: string;
+  engineError?: string;
+  recording: boolean;
+}
+/**
+ * Desktop owner only: local speech-to-text. Audio stays in memory and is
+ * transcribed on this computer; no route exists through the remote gateway.
+ */
+export interface DesktopDictationAPI {
+  status(): Promise<DictationStatus>;
+  /** Explicit, consented download of one model from its pinned address. */
+  downloadModel(modelId: string): Promise<DictationStatus>;
+  start(): Promise<{ recordingId: string; modelId: string }>;
+  /** One phrase of 16 kHz mono 16-bit PCM; resolves with its cleaned text. */
+  phrase(input: {
+    recordingId: string;
+    sequence: number;
+    pcm: Int16Array;
+  }): Promise<{ text: string }>;
+  stop(recordingId: string): Promise<void>;
+  onStatus(listener: (status: DictationStatus) => void): () => void;
 }
 export interface WorkspaceAPI {
   invoke<T = unknown>(
@@ -253,6 +305,8 @@ export interface WorkspaceAPI {
   clipboardImage?: ClipboardImageAPI;
   /** Desktop owner only: keep the computer awake while local agents work. */
   power?: DesktopPowerAPI;
+  /** Desktop owner only: local voice dictation into a terminal. */
+  dictation?: DesktopDictationAPI;
 }
 declare global {
   interface Window {

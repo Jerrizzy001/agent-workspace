@@ -2822,3 +2822,206 @@ kbd {
     transition: none !important;
   }
 }
+
+/* Local voice dictation (desktop owner only) */
+.canvas-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: default;
+}
+.canvas-card-actions .dictation-toggle {
+  width: 24px;
+  height: 24px;
+}
+.dictation-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 3px 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--danger-soft);
+  border: 1px solid rgba(242, 119, 127, 0.45);
+  white-space: nowrap;
+}
+.dictation-indicator.compact {
+  height: 24px;
+  gap: 5px;
+  padding: 0 2px 0 7px;
+  font-size: 11.5px;
+}
+.dictation-dot {
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  color: var(--danger);
+  background: var(--danger);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.dictation-indicator[data-phase="starting"] .dictation-dot,
+.dictation-indicator[data-phase="finishing"] .dictation-dot {
+  color: var(--text-3);
+  background: var(--text-3);
+}
+.dictation-label {
+  font-weight: 600;
+}
+.dictation-time {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+.dictation-stop {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffd9db;
+  background: rgba(242, 119, 127, 0.22);
+}
+.dictation-indicator.compact .dictation-stop {
+  height: 18px;
+  padding: 0 5px;
+}
+.dictation-stop:hover:not(:disabled) {
+  background: rgba(242, 119, 127, 0.34);
+}
+.dictation-notices {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 75;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(460px, calc(100vw - 32px));
+}
+.dictation-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 10px 11px 14px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow);
+  animation: rise 0.18s ease-out;
+}
+.dictation-notice > div:first-child {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dictation-notice p {
+  margin: 0;
+  font-size: 12.5px;
+}
+.dictation-notice-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.dictation-leftover {
+  margin: 4px 0 0;
+  padding: 7px 10px;
+  max-height: 140px;
+  overflow-y: auto;
+  border-radius: 8px;
+  background: var(--surface);
+  border-left: 3px solid var(--needs);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  user-select: text;
+}
+.dictation-settings p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.dictation-settings kbd {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+}
+.dictation-callout {
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--accent-soft);
+}
+.dictation-models {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.dictation-models legend {
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  font-weight: 560;
+  color: var(--text-2);
+}
+.modal .dictation-model {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.dictation-model > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dictation-model strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+.dictation-installed {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--done);
+}
+.dictation-consent {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.dictation-consent code {
+  word-break: break-all;
+  font-size: 11.5px;
+}
+.dictation-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.dictation-progress progress {
+  width: 100%;
+  accent-color: var(--accent);
+}

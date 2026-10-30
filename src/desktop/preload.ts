@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { Command, CoreEvent, PowerStatus, WorkspaceAPI } from "../shared/contracts";
+import type { Command, CoreEvent, DictationStatus, PowerStatus, WorkspaceAPI } from "../shared/contracts";
 const api: WorkspaceAPI = {
   invoke: <T>(command: Command, payload: Record<string, unknown> = {}) =>
     ipcRenderer.invoke("workspace:invoke", command, payload) as Promise<T>,
@@ -30,6 +30,18 @@ const api: WorkspaceAPI = {
       const handler = (_event: unknown, value: PowerStatus) => listener(value);
       ipcRenderer.on("workspace:power", handler);
       return () => ipcRenderer.removeListener("workspace:power", handler);
+    },
+  },
+  dictation: {
+    status: () => ipcRenderer.invoke("workspace:dictation", "status"),
+    downloadModel: (modelId: string) => ipcRenderer.invoke("workspace:dictation", "downloadModel", { modelId }),
+    start: () => ipcRenderer.invoke("workspace:dictation", "start"),
+    phrase: (input) => ipcRenderer.invoke("workspace:dictation", "phrase", input),
+    stop: (recordingId: string) => ipcRenderer.invoke("workspace:dictation", "stop", { recordingId }),
+    onStatus: (listener) => {
+      const handler = (_event: unknown, value: DictationStatus) => listener(value);
+      ipcRenderer.on("workspace:dictation", handler);
+      return () => ipcRenderer.removeListener("workspace:dictation", handler);
     },
   },
 };

@@ -10,6 +10,7 @@ import {
   FolderPlus,
   LayoutGrid,
   Menu,
+  Mic,
   Network,
   PanelRight,
   PanelRightClose,
@@ -36,6 +37,8 @@ import { LaunchBar, savedModels, type LaunchChoices } from "./LaunchBar";
 import { SessionView } from "./SessionView";
 import { AttemptModal, Board, TaskModal, statusLabel } from "./Board";
 import { isRemoteBrowser } from "./remote";
+import { DictationNotices, DictationSettings } from "./DictationControl";
+import { dictationAvailable, openDictationSettings } from "./dictation";
 import { registerLeaveGuard } from "./leaveWorkspace";
 import { mergeSnapshot } from "./snapshot";
 import {
@@ -807,6 +810,16 @@ export default function App() {
               </span>
             </label>
           ) : null}
+          {dictationAvailable() && !isRemoteBrowser ? (
+            <button
+              className="foot-button"
+              aria-label="Voice dictation settings"
+              onClick={() => openDictationSettings()}
+            >
+              <Mic size={14} />
+              Voice dictation
+            </button>
+          ) : null}
           {window.workspace.remote ? (
             <button
               className="foot-button"
@@ -1255,6 +1268,12 @@ export default function App() {
             </div>
           ))}
         </div>
+      ) : null}
+      {dictationAvailable() && !isRemoteBrowser ? (
+        <>
+          <DictationSettings />
+          <DictationNotices />
+        </>
       ) : null}
       {remotePanel ? (
         <RemoteAccessPanel onClose={() => setRemotePanel(false)} />

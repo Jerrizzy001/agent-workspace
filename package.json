@@ -20,6 +20,7 @@
     "verify:keep-awake": "node scripts/verify-keep-awake.mjs",
     "verify:terminal": "node scripts/verify-terminal-modes.mjs",
     "verify:image-paste": "node scripts/verify-image-paste.mjs",
+    "verify:dictation": "node scripts/verify-dictation.mjs",
     "verify:providers": "node scripts/verify-providers.mjs",
     "build:server": "vite build && node scripts/build-desktop.mjs",
     "start:server": "node dist/server/headless.mjs",
@@ -43,6 +44,8 @@
     "node-pty": "1.1.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
+    "sherpa-onnx-node": "2.0.1",
+    "unbzip2-stream": "1.4.3",
     "ws": "8.22.0",
     "zustand": "5.0.12"
   },
@@ -72,11 +75,17 @@
       "package.json"
     ],
     "asarUnpack": [
-      "node_modules/node-pty/**/*"
+      "node_modules/node-pty/**/*",
+      "node_modules/sherpa-onnx-*/**/*"
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
       "identity": null,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Agent Workspace uses the microphone only while you dictate into a terminal. Speech is transcribed on this Mac; the audio is not saved or sent anywhere."
+      },
       "target": [
         "dir",
         "zip"

@@ -378,6 +378,15 @@ const timer = setInterval(() => {
     );
     await call("settings.write", { key: "keepAwake", value: true });
     assert.equal((await call("settings.read", { key: "keepAwake" })).value, true);
+    // Dictation model: an English model ID from the fixed catalog only.
+    assert.equal((await call("settings.read", { key: "dictationModel" })).value, "base.en");
+    for (const value of ["large-v3", "../models", "", 1])
+      await assert.rejects(
+        call("settings.write", { key: "dictationModel", value }),
+        /Unknown dictation model|Invalid setting value/,
+      );
+    await call("settings.write", { key: "dictationModel", value: "tiny.en" });
+    assert.equal((await call("settings.read", { key: "dictationModel" })).value, "tiny.en");
   } finally {
     process.env.PATH = oldPath;
     await core.close();

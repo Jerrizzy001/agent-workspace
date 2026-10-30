@@ -19,6 +19,8 @@ import type {
   Session,
 } from "../shared/contracts";
 import { TerminalView } from "./TerminalView";
+import { DictationButton } from "./DictationControl";
+import { dictationAvailable } from "./dictation";
 import { registerLeaveGuard } from "./leaveWorkspace";
 import { providerName, providers } from "./sessions";
 import { ProviderGlyph, StatusBadge } from "./ui";
@@ -130,6 +132,8 @@ function CanvasNote({
   );
 }
 function WorkspaceNode({ data }: NodeProps<Node<CanvasData>>) {
+  const [viewerId, setViewerId] = useState<string | null>(null);
+  const [dictationToggle, setDictationToggle] = useState(0);
   return (
     <div
       className={
@@ -148,14 +152,27 @@ function WorkspaceNode({ data }: NodeProps<Node<CanvasData>>) {
           )}
         </span>
         {data.session ? (
-          <StatusBadge session={data.session} />
+          <span className="canvas-card-actions nodrag">
+            {dictationAvailable() && data.session.status === "running" ? (
+              <DictationButton
+                compact
+                viewerId={viewerId}
+                onToggle={() => setDictationToggle((value) => value + 1)}
+              />
+            ) : null}
+            <StatusBadge session={data.session} />
+          </span>
         ) : (
           <span className="muted">NOTE</span>
         )}
       </header>
       {data.session ? (
         <div className="nodrag nowheel terminal-in-node">
-          <TerminalView session={data.session} />
+          <TerminalView
+            session={data.session}
+            onViewer={setViewerId}
+            dictationToggle={dictationToggle}
+          />
         </div>
       ) : data.note && data.saveNote ? (
         <CanvasNote note={data.note} saveNote={data.saveNote} />

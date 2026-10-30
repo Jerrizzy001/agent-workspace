@@ -20,6 +20,7 @@ import {
   type AttachmentRecord,
 } from "./attachments.js";
 import { run, executable, probe } from "./process.js";
+import { DICTATION_MODEL_IDS, isDictationModelId } from "../shared/dictation.js";
 import * as pty from "node-pty";
 import type {
   Activity,
@@ -1286,6 +1287,8 @@ export async function createCore({
             throw new Error("Unexpected settings field");
           if (typeof p.value !== typeof ownerDefaults[key])
             throw new Error("Invalid setting value");
+          if (key === "dictationModel" && !isDictationModelId(p.value))
+            throw new Error("Unknown dictation model");
           put("ownerSettings", { id: key, value: p.value, updatedAt: now() });
           return { key, value: p.value };
         }
@@ -1317,7 +1320,10 @@ export async function createCore({
       }
     }
     // Owner preferences: an allowlist of keys, each with a typed default.
-    const ownerDefaults: OwnerSettings = { keepAwake: false };
+    const ownerDefaults: OwnerSettings = {
+      keepAwake: false,
+      dictationModel: DICTATION_MODEL_IDS[0],
+    };
     function settingKey(v: unknown): keyof OwnerSettings {
       if (typeof v !== "string" || !Object.hasOwn(ownerDefaults, v))
         throw new Error("Unknown setting");

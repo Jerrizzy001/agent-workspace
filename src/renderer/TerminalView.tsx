@@ -5,6 +5,14 @@ import { FitAddon } from "@xterm/addon-fit";
 import type { ClipboardImagePreview, Session } from "../shared/contracts";
 import { shellEscapePath } from "../shared/terminal-paste";
 import { ImagePastePreview } from "./ImagePastePreview";
+import {
+  dictationActiveFor,
+  dictationAvailable,
+  dictationTargetLost,
+  isDictationShortcut,
+  startDictation,
+  stopDictation,
+} from "./dictation";
 import "@xterm/xterm/css/xterm.css";
 
 export function TerminalView({
@@ -12,6 +20,7 @@ export function TerminalView({
   onViewer,
   endedNotice = true,
   imagePasteRequest = 0,
+  dictationToggle = 0,
 }: {
   session: Session;
   onViewer?: (id: string | null) => void;
@@ -19,6 +28,8 @@ export function TerminalView({
   endedNotice?: boolean;
   /** Incremented by the host's "Paste image" action (desktop owner only). */
   imagePasteRequest?: number;
+  /** Incremented by the host's microphone button (desktop owner only). */
+  dictationToggle?: number;
 }) {
   const host = useRef<HTMLDivElement>(null);
   // The attached viewer, or null; image paste rechecks it before typing.
@@ -26,9 +37,44 @@ export function TerminalView({
   const onViewerRef = useRef(onViewer);
   onViewerRef.current = onViewer;
   const viewerCallback = useRef((id: string | null) => {
+    const previous = viewerRef.current;
     viewerRef.current = id;
+    // Dictation is bound to one attached viewer; any change ends it.
+    if (previous && previous !== id) dictationTargetLost(previous);
     onViewerRef.current?.(id);
   });
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const toggleDictation = useRef(() => {});
+  toggleDictation.current = () => {
+    if (!dictationAvailable()) return;
+    const viewer = viewerRef.current;
+    if (dictationActiveFor(viewer)) {
+      void stopDictation();
+      return;
+    }
+    if (!viewer || !terminalRef.current) return;
+    // The destination is fixed now: this session, generation and viewer.
+    const fixed = { sessionId: session.id, generation: session.generation, viewerId: viewer };
+    void startDictation({
+      ...fixed,
+      current: () =>
+        terminalRef.current && viewerRef.current
+          ? {
+              sessionId: sessionRef.current.id,
+              generation: sessionRef.current.generation,
+              viewerId: viewerRef.current,
+            }
+          : null,
+      paste: (text) => {
+        // Bracketed-paste aware, no Enter: text only reaches the prompt.
+        if (viewerRef.current === fixed.viewerId) terminalRef.current?.paste(text);
+      },
+    });
+  };
+  useEffect(() => {
+    if (dictationToggle) toggleDictation.current();
+  }, [dictationToggle]);
   const [imagePaste, setImagePaste] = useState<{
     preview: ClipboardImagePreview;
     viewerId: string;
@@ -180,6 +226,13 @@ export function TerminalView({
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(host.current);
+    // The dictation shortcut is the only key combination taken from the terminal.
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (!dictationAvailable() || !isDictationShortcut(event)) return true;
+      event.preventDefault();
+      if (event.type === "keydown" && !event.repeat) toggleDictation.current();
+      return false;
+    });
     // A paste that carries only an image becomes the image-path flow; text
     // pastes are left to the terminal untouched.
     const element = host.current;

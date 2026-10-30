@@ -264,6 +264,8 @@ test("gateway authenticates real sockets, scopes commands, targets streams and r
       ["settings.read", { key: "keepAwake" }],
       ["settings.write", { key: "keepAwake", value: true }],
       ["settings.write", { projectId: "p", key: "keepAwake", value: true }],
+      ["settings.read", { key: "dictationModel" }],
+      ["settings.write", { key: "dictationModel", value: "tiny.en" }],
     ] as const)
       assert.equal(
         (await a.rpc(command, payload)).error,
