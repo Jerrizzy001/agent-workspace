@@ -116,6 +116,11 @@ try {
   checks.push(
     "WebKit phone viewport pairs over HTTPS with Secure HttpOnly SameSite cookie and same-origin WSS under CSP",
   );
+  await page
+    .getByRole("navigation", { name: "Workspace navigation" })
+    .getByRole("button", { name: "Board", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await page.getByRole("button", { name: "New task", exact: true }).click();
   await page
     .getByPlaceholder("What do you want to work on?")
@@ -201,7 +206,7 @@ try {
   );
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await page.getByLabel("Pairing code", { exact: true }).waitFor();
-  assert.equal(await page.locator(".task-heading").count(), 0);
+  assert.equal(await page.locator(".app-shell").count(), 0);
   assert.equal(
     (await (await page.request.get(info.url + "/api/status")).json())
       .authenticated,
