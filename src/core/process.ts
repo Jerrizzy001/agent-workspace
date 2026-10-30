@@ -7,6 +7,7 @@ export async function run(
   bin: string,
   args: string[],
   cwd?: string,
+  env?: NodeJS.ProcessEnv,
 ): Promise<string> {
   if (active >= 4) await new Promise<void>((resolve) => waiting.push(resolve));
   else active++;
@@ -15,7 +16,13 @@ export async function run(
       execFile(
         bin,
         args,
-        { cwd, encoding: "utf8", maxBuffer: 4 * 1024 * 1024, timeout: 15000 },
+        {
+          cwd,
+          env,
+          encoding: "utf8",
+          maxBuffer: 4 * 1024 * 1024,
+          timeout: 15000,
+        },
         (error, stdout, stderr) => {
           if (error) {
             Object.assign(error, { stderr, stdout });

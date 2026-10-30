@@ -32,6 +32,11 @@ const api: WorkspaceAPI = {
       return () => ipcRenderer.removeListener("workspace:power", handler);
     },
   },
+  agentControl: {
+    list: (target) => ipcRenderer.invoke("workspace:agent-control", "list", target),
+    grant: (request) => ipcRenderer.invoke("workspace:agent-control", "grant", request),
+    revoke: (target) => ipcRenderer.invoke("workspace:agent-control", "revoke", target),
+  },
   dictation: {
     status: () => ipcRenderer.invoke("workspace:dictation", "status"),
     downloadModel: (modelId: string) => ipcRenderer.invoke("workspace:dictation", "downloadModel", { modelId }),

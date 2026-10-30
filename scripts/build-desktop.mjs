@@ -35,6 +35,16 @@ await build({
   },
 });
 
+// awctl: the agent-control CLI. Node built-ins only; it never opens SQLite.
+await build({
+  entryPoints: ["src/cli/workspace.ts"],
+  bundle: true,
+  platform: "node",
+  target: "node22",
+  format: "esm",
+  outfile: "dist/cli/awctl.mjs",
+});
+
 // The browser host uses Node's native ABI and the same renderer build.
 await build({
   entryPoints: ["src/server/headless.ts"],

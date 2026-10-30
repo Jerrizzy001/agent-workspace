@@ -140,8 +140,26 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       sessions: s.sessions
         .filter((s) => allowed.has(s.projectId))
         .map(publicSession),
-      notes: s.notes.filter((n) => allowed.has(n.projectId)),
-      layouts: s.layouts.filter((l) => allowed.has(l.projectId)),
+      // Explicit projections: only these note and layout fields reach a browser.
+      notes: s.notes
+        .filter((n) => allowed.has(n.projectId))
+        .map((n) => ({
+          id: n.id,
+          projectId: n.projectId,
+          title: n.title,
+          body: n.body,
+          createdAt: n.createdAt,
+          updatedAt: n.updatedAt,
+          revision: n.revision ?? 1,
+          ...(n.source === "agent" ? { source: "agent" as const } : {}),
+        })),
+      layouts: s.layouts
+        .filter((l) => allowed.has(l.projectId))
+        .map((l) => ({
+          projectId: l.projectId,
+          positions: l.positions,
+          revision: l.revision ?? 1,
+        })),
       boardLanes: (s.boardLanes || []).filter((b) => allowed.has(b.projectId)),
     };
   }

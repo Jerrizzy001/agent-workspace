@@ -53,6 +53,17 @@ export const MIGRATIONS: readonly Migration[] = [
     name: "board_lanes",
     up: () => {},
   },
+  {
+    // v5: agent control (roadmap section 4). Optional note and layout
+    // `revision` (an absent one reads as 1; nothing is rewritten), note
+    // `source: "agent"`, a "controllerAudit" record kind and namespaced
+    // "ctl:<session>:<verb>:<request>" mutation receipts in the existing
+    // receipts table. Capabilities are never stored. Older builds refuse the
+    // store because their note and layout writes would drop revisions.
+    version: 5,
+    name: "roadmap_04_controller",
+    up: () => {},
+  },
 ];
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
 MIGRATIONS.forEach((m, index) => {

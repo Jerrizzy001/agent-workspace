@@ -13,6 +13,7 @@ import {
 } from "./providers.js";
 import { TerminalStream } from "./stream.js";
 import { migrate } from "./migrations.js";
+import { createAgentControl, type AgentControl } from "./agent-control.js";
 import {
   ATTACHMENT_GRACE_MS,
   removeAttachmentFile,
@@ -137,16 +138,26 @@ export async function createCore({
       { mode: 0o600 },
     );
     const activeLaunches = new Set<string>();
+    let controller: AgentControl = undefined!;
     let socket = path.join(
       os.tmpdir(),
       `aw-${hash(dataDir).slice(0, 20)}.sock`,
     );
-    const tx = async (args: string[], targetSocket = socket) => {
+    const tx = async (
+      args: string[],
+      targetSocket = socket,
+      env?: NodeJS.ProcessEnv,
+    ) => {
       if (!tmux)
         throw new Error(
           "tmux is unavailable. Install tmux and restart the workspace.",
         );
-      return await run(tmux, ["-f", tmuxConfig, "-S", targetSocket, ...args]);
+      return await run(
+        tmux,
+        ["-f", tmuxConfig, "-S", targetSocket, ...args],
+        undefined,
+        env,
+      );
     };
     const list = (kind: string): any[] =>
       (
@@ -479,8 +490,11 @@ export async function createCore({
       tasks: list("tasks"),
       attempts: list("attempts"),
       sessions: list("sessions"),
-      notes: list("notes"),
-      layouts: list("layouts"),
+      notes: list("notes").map((n) => ({ ...n, revision: n.revision ?? 1 })),
+      layouts: list("layouts").map((l) => ({
+        ...l,
+        revision: l.revision ?? 1,
+      })),
       boardLanes: list("boardLanes"),
       capabilities: capabilities(),
     });
@@ -982,6 +996,9 @@ export async function createCore({
                 cwd,
                 executable: bin,
                 arguments: providerArgs,
+                ...(Object.keys(controller.launchEnvironment(sid)).length
+                  ? { control: true }
+                  : {}),
               }),
             );
             db.exec("COMMIT");
@@ -990,13 +1007,24 @@ export async function createCore({
             throw e;
           }
           activeLaunches.add(sid);
+          // Per-session environment only (never tmux's global one): where this
+          // session's agent-control grant file would be, and the awctl
+          // launcher. tmux gives a new session the PATH of the client that
+          // creates it (`-e PATH=` is ignored), so PATH goes to that client.
+          const { PATH: controlPath, ...controlVars } =
+            controller.launchEnvironment(sid);
+          const controlEnv = Object.entries(controlVars).flatMap(([k, v]) => [
+            "-e",
+            `${k}=${v}`,
+          ]);
           try {
             // A server started by an older build lacks remain-on-exit from the
             // config file; without it a fast-exiting CLI loses its error output.
             await tx(["set-option", "-g", "remain-on-exit", "on"]).catch(
               () => {},
             );
-            await tx([
+            await tx(
+              [
               "new-session",
               "-d",
               "-s",
@@ -1007,9 +1035,13 @@ export async function createCore({
               "100",
               "-y",
               "30",
-              bin,
-              ...providerArgs,
-            ]);
+                ...controlEnv,
+                bin,
+                ...providerArgs,
+              ],
+              socket,
+              controlPath ? { ...process.env, PATH: controlPath } : undefined,
+            );
             await tx([
               "set-option",
               "-t",
@@ -1305,7 +1337,19 @@ export async function createCore({
           for (const v of Object.values(p.positions) as any[])
             if (!v || !Number.isFinite(v.x) || !Number.isFinite(v.y))
               throw new Error("Invalid position");
-          put("layouts", { projectId: p.projectId, positions: p.positions });
+          // Revisions let agent control refuse to move nodes over an owner's
+          // newer layout; the owner's own saves stay last-writer-wins.
+          const current = list("layouts").find(
+            (l) => l.projectId === p.projectId,
+          );
+          const revision = current ? (current.revision ?? 1) : 0;
+          if (p.revision !== undefined && p.revision !== revision)
+            throw new Error("Stale layout revision");
+          put("layouts", {
+            projectId: p.projectId,
+            positions: p.positions,
+            revision: revision + 1,
+          });
           return changed();
         }
         case "lane.rename":
@@ -1373,6 +1417,7 @@ export async function createCore({
             projectId: p.projectId,
             title: str(p.title, "title"),
             body: text(p.body, "body"),
+            revision: 1,
             createdAt: now(),
             updatedAt: now(),
           };
@@ -1382,8 +1427,11 @@ export async function createCore({
         }
         case "note.update": {
           const n = get("notes", p.noteId);
+          if (p.revision !== undefined && p.revision !== (n.revision ?? 1))
+            throw new Error("Stale note revision");
           if (p.title !== undefined) n.title = str(p.title, "title");
           if (p.body !== undefined) n.body = text(p.body, "body");
+          n.revision = (n.revision ?? 1) + 1;
           n.updatedAt = now();
           put("notes", n);
           changed();
@@ -1566,23 +1614,62 @@ export async function createCore({
           });
     }, 2000);
     reconciliationTimer.unref();
+    function enqueue<T>(key: string, fn: () => Promise<T> | T): Promise<T> {
+      const previous = queues.get(key) || Promise.resolve();
+      const next = previous.catch(() => {}).then(fn);
+      queues.set(key, next);
+      return next;
+    }
+    function invoke(command: Command, payload: Record<string, unknown>) {
+      const key =
+        command === "attempt.start" || command === "terminal.open"
+          ? "launch"
+          : command.startsWith("session.")
+            ? "session:" + payload.sessionId
+            : "mutations";
+      return enqueue(key, () => execute(command, payload));
+    }
+    controller = createAgentControl({
+      dataDir,
+      db,
+      list,
+      put,
+      changed,
+      serialize: (fn) => enqueue("mutations", fn),
+      invoke: (command, payload) => {
+        if (closed) throw new Error("Core is closed");
+        return invoke(command, payload);
+      },
+      projectRoot: (projectId) => {
+        const project = get("projects", projectId);
+        const canonical = fs.realpathSync(project.path);
+        if (canonical !== project.path)
+          throw new Error("Project path changed; register its current location");
+        return canonical;
+      },
+      launchedWithControl: (sessionId) => {
+        const row = db
+          .prepare(
+            "SELECT r.request FROM launch_intents i JOIN launch_requests r ON r.key=i.key WHERE i.sessionId=?",
+          )
+          .get(sessionId) as { request: string } | undefined;
+        try {
+          return !!row && JSON.parse(row.request).control === true;
+        } catch {
+          return false;
+        }
+      },
+    });
     return {
       async invoke(command, payload = {}) {
         if (closed) throw new Error("Core is closed");
         if (!payload || typeof payload !== "object" || Array.isArray(payload))
           throw new Error("Invalid payload");
-        const key =
-          command === "attempt.start" || command === "terminal.open"
-            ? "launch"
-            : command.startsWith("session.")
-              ? "session:" + payload.sessionId
-              : "mutations";
-        const previous = queues.get(key) || Promise.resolve();
-        const next = previous
-          .catch(() => {})
-          .then(() => execute(command, payload));
-        queues.set(key, next);
-        return next;
+        return invoke(command, payload);
+      },
+      async agentControl(action, payload) {
+        if (closed) throw new Error("Core is closed");
+        return controller.owner(action, payload);
       },
       async createAttachment(input) {
         if (closed) throw new Error("Core is closed");
@@ -1602,6 +1689,7 @@ export async function createCore({
         clearInterval(reconciliationTimer);
         clearInterval(cleanupTimer);
         closing = (async () => {
+          await controller.close().catch(() => {});
           await reconciling;
           await Promise.allSettled([...queues.values()]);
           await Promise.allSettled([...exitChecks]);

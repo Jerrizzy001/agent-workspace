@@ -6,6 +6,7 @@ import { providerName, sessionLocation, sessionState } from "./sessions";
 import { ProviderGlyph, StatusBadge } from "./ui";
 import { DictationButton } from "./DictationControl";
 import { dictationAvailable, isDictationShortcut } from "./dictation";
+import { AgentControlButton } from "./AgentControl";
 
 /** One session: identity, state and controls above its terminal. */
 export function SessionView({
@@ -143,6 +144,7 @@ export function SessionView({
         <div className="session-actions">
           {session.status === "running" ? (
             <>
+              <AgentControlButton session={session} report={report} />
               {dictationAvailable() ? (
                 <DictationButton
                   viewerId={viewerId}

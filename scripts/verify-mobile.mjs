@@ -206,6 +206,9 @@ try {
   );
   assert.equal(original.sessions.length, 1);
   assert.equal(original.attempts.length, 0);
+  // Agent control is granted only from the desktop window.
+  assert.equal(await page.evaluate(() => "agentControl" in window.workspace), false);
+  assert.equal(await page.getByRole("button", { name: /Agent control/ }).count(), 0);
   checks.push(
     "390×844 touch layout: task modal fits portrait/landscape; launch options default to CLI models; one tap opens a shell with no task; terminal input creates server file",
   );

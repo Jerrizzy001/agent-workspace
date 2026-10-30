@@ -220,6 +220,12 @@ function startCore() {
       ...process.env,
       PATH: corePath,
       WORKSPACE_DATA_DIR: app.getPath("userData"),
+      // awctl for agent control, run by this app's own binary as Node. A
+      // packaged app keeps the script outside the asar archive.
+      WORKSPACE_AWCTL: path
+        .join(__dirname, "../cli/awctl.mjs")
+        .replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`),
+      WORKSPACE_AWCTL_NODE: process.execPath,
     },
     serviceName: "Agent Workspace Core",
   });
@@ -367,6 +373,16 @@ else {
         throw new Error("Invalid image save request");
       const png = takeClipboardImage(v.token);
       return coreRequest({ type: "attachment", sessionId: v.sessionId, generation: v.generation, data: png });
+    });
+    ipcMain.handle("workspace:agent-control", async (ev, action: unknown, value: unknown) => {
+      // Owner window only: neither the remote gateway nor an agent's awctl
+      // capability can reach this, so neither can mint or widen a grant.
+      assertOwner(ev);
+      if (action !== "grant" && action !== "revoke" && action !== "list")
+        throw new Error("Unsupported agent control action");
+      if (!value || typeof value !== "object" || Array.isArray(value) || JSON.stringify(value).length > 4096)
+        throw new Error("Invalid agent control request");
+      return coreRequest({ type: "agentControl", action, payload: value });
     });
     installPermissionPolicy();
     dictation = createDictationService({

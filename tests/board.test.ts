@@ -7,6 +7,7 @@ import crypto from "node:crypto";
 import { once } from "node:events";
 import { execFileSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
+import { SCHEMA_VERSION } from "../src/core/migrations.js";
 import { WebSocket } from "ws";
 import { createCore } from "../src/core/index.js";
 import { startGateway } from "../src/server/gateway.js";
@@ -251,7 +252,7 @@ test("a v3 store upgrades to board_lanes with its records unchanged", async () =
       await core.close();
     }
     const upgraded = new DatabaseSync(file);
-    assert.equal((upgraded.prepare("PRAGMA user_version").get() as any).user_version, 4);
+    assert.equal((upgraded.prepare("PRAGMA user_version").get() as any).user_version, SCHEMA_VERSION);
     upgraded.close();
     const backups = fs.readdirSync(path.join(temp, "backups"));
     assert.equal(backups.length, 1);

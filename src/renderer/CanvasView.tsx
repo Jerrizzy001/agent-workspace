@@ -163,7 +163,9 @@ function WorkspaceNode({ data }: NodeProps<Node<CanvasData>>) {
             <StatusBadge session={data.session} />
           </span>
         ) : (
-          <span className="muted">NOTE</span>
+          <span className="muted">
+            {data.note?.source === "agent" ? "AGENT NOTE" : "NOTE"}
+          </span>
         )}
       </header>
       {data.session ? (
@@ -220,7 +222,10 @@ export function CanvasView({
   const [historyVersion, setHistoryVersion] = useState(0);
   const positions = () =>
     Object.fromEntries(nodes.map((n) => [n.id, n.position]));
+  // This view's recent saves: their echoes are not someone else's move.
+  const sent = useRef<Record<string, { x: number; y: number }>[]>([]);
   function save(positions: Record<string, { x: number; y: number }>) {
+    sent.current = [...sent.current.slice(-9), positions];
     void window.workspace
       .invoke("layout.save", { projectId, positions })
       .catch(report);
@@ -253,7 +258,22 @@ export function CanvasView({
     },
     [projectId, report],
   );
+  // The last layout this view applied. A newer revision that moves a node
+  // (for example `awctl canvas place`) is adopted unless that node is being
+  // dragged; the owner's own saves echo back the positions already shown.
+  const appliedLayout = useRef<Layout | undefined>(undefined);
   useEffect(() => {
+    const before = appliedLayout.current;
+    const external = (id: string) => {
+      const next = layout?.positions[id];
+      if (!next || !layout || (layout.revision ?? 1) <= (before?.revision ?? 0))
+        return undefined;
+      const old = before?.positions[id];
+      if (sent.current.some((m) => m[id]?.x === next.x && m[id]?.y === next.y))
+        return undefined;
+      return !old || old.x !== next.x || old.y !== next.y ? next : undefined;
+    };
+    appliedLayout.current = layout;
     setNodes((previous) => {
       // Task attempts keep their attempt-keyed layout; folder sessions use the session id.
       // Ended folder sessions leave the canvas; their history stays in the sidebar.
@@ -288,13 +308,19 @@ export function CanvasView({
           data: { note, saveNote },
         }),
       );
-      return items.map((node) => ({
-        ...node,
-        position:
-          placed.current[node.id] ||
-          previous.find((n) => n.id === node.id)?.position ||
-          node.position,
-      }));
+      return items.map((node) => {
+        const shown = previous.find((n) => n.id === node.id);
+        const moved = shown?.dragging ? undefined : external(node.id);
+        if (moved) delete placed.current[node.id];
+        return {
+          ...node,
+          position:
+            moved ||
+            placed.current[node.id] ||
+            shown?.position ||
+            node.position,
+        };
+      });
     });
   }, [attempts, sessions, notes, layout, saveNote]);
   async function create(kind: Provider | "note") {

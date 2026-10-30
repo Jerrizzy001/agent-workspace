@@ -8,6 +8,7 @@ import { once } from "node:events";
 import { pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { createCore } from "../src/core/index.js";
+import { SCHEMA_VERSION } from "../src/core/migrations.js";
 const git = (cwd: string, args: string[]) =>
   execFileSync("git", args, {
     cwd,
@@ -250,11 +251,11 @@ test("failed database startup releases owner lock and stale owner recovery prese
     await core.close();
     assert.equal(fs.existsSync(path.join(temp, "owner.lock")), false);
     const newer = new DatabaseSync(path.join(temp, "workspace.sqlite"));
-    newer.exec("PRAGMA user_version=5");
+    newer.exec(`PRAGMA user_version=${SCHEMA_VERSION + 1}`);
     newer.close();
     await assert.rejects(createCore({ dataDir: temp, emit: () => {} }), /newer app version/);
     const preserved = new DatabaseSync(path.join(temp, "workspace.sqlite"));
-    assert.equal((preserved.prepare("PRAGMA user_version").get() as any).user_version, 5);
+    assert.equal((preserved.prepare("PRAGMA user_version").get() as any).user_version, SCHEMA_VERSION + 1);
     preserved.close();
     assert.equal(fs.existsSync(path.join(temp, "owner.lock")), false);
   } finally {

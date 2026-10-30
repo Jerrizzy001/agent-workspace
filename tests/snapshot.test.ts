@@ -50,6 +50,19 @@ test("snapshot delivery keeps newer present notes and authoritative incoming fie
   assert.deepEqual(mergeSnapshot(snapshot([older]), snapshot([newer])).notes, [newer]);
 });
 
+test("snapshot delivery orders notes and layouts by revision (schema v5)", () => {
+  // An agent edit can carry an older clock than the owner's; the revision decides.
+  const agent = { ...older, body: "Agent edit", revision: 3 };
+  const stale = { ...newer, revision: 2 };
+  assert.deepEqual(mergeSnapshot(snapshot([agent]), snapshot([stale])).notes, [agent]);
+  assert.deepEqual(mergeSnapshot(snapshot([stale]), snapshot([agent])).notes, [agent]);
+  const placed = { projectId: project.id, positions: { note: { x: 1, y: 2 } }, revision: 4 };
+  const earlier = { projectId: project.id, positions: {}, revision: 3 };
+  const withLayout = (layout: Snapshot["layouts"][number]) => ({ ...snapshot([]), layouts: [layout] });
+  assert.deepEqual(mergeSnapshot(withLayout(placed), withLayout(earlier)).layouts, [placed]);
+  assert.deepEqual(mergeSnapshot(withLayout(earlier), withLayout(placed)).layouts, [placed]);
+});
+
 test("snapshot delivery never restores removed notes or carries versions across scope clears", () => {
   const removed = mergeSnapshot(snapshot([newer]), snapshot([]));
   assert.deepEqual(removed.notes, []);

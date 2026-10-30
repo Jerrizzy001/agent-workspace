@@ -1,3 +1,4 @@
+import type { AgentControlState, DesktopAgentControlAPI } from "./controller-contracts.js";
 export type TaskStatus =
   "backlog" | "ready" | "in_progress" | "review" | "done";
 export type Provider = "shell" | "claude" | "codex";
@@ -83,10 +84,16 @@ export interface Note {
   body: string;
   createdAt: string;
   updatedAt: string;
+  /** Incremented on every change (schema v5); absent in older records means 1. */
+  revision?: number;
+  /** "agent" when created through agent control (`awctl note create`). */
+  source?: "agent";
 }
 export interface Layout {
   projectId: string;
   positions: Record<string, { x: number; y: number }>;
+  /** Incremented on every save (schema v5); absent in older records means 1. */
+  revision?: number;
   [key: string]: unknown;
 }
 export interface Capability {
@@ -329,6 +336,8 @@ export interface WorkspaceAPI {
   power?: DesktopPowerAPI;
   /** Desktop owner only: local voice dictation into a terminal. */
   dictation?: DesktopDictationAPI;
+  /** Desktop owner only: grant a session's agent the `awctl` CLI. */
+  agentControl?: DesktopAgentControlAPI;
 }
 declare global {
   interface Window {
@@ -347,5 +356,7 @@ export interface Core {
     generation: number;
     data: Uint8Array;
   }): Promise<SavedAttachment>;
+  /** Trusted desktop broker only: grant, revoke and list agent control. */
+  agentControl(action: unknown, payload: unknown): Promise<AgentControlState>;
   close(): void | Promise<void>;
 }

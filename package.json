@@ -18,6 +18,7 @@
     "verify:workflows": "node scripts/verify-workflows.mjs",
     "verify:lifecycle": "node scripts/verify-lifecycle-ui.mjs",
     "verify:board": "node scripts/verify-board.mjs",
+    "verify:agent-control": "node scripts/verify-agent-control.mjs",
     "verify:keep-awake": "node scripts/verify-keep-awake.mjs",
     "verify:terminal": "node scripts/verify-terminal-modes.mjs",
     "verify:image-paste": "node scripts/verify-image-paste.mjs",
@@ -77,7 +78,8 @@
     ],
     "asarUnpack": [
       "node_modules/node-pty/**/*",
-      "node_modules/sherpa-onnx-*/**/*"
+      "node_modules/sherpa-onnx-*/**/*",
+      "dist/cli/**/*"
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
