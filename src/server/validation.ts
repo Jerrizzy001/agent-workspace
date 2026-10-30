@@ -42,6 +42,16 @@ const fields: Record<string, string[]> = {
   "note.create": ["projectId", "title", "body"],
   "note.update": ["noteId", "projectId", "title", "body"],
   "session.rename": ["sessionId", "generation", "title", "titleRevision"],
+  "session.place": [
+    "sessionId",
+    "generation",
+    "lane",
+    "order",
+    "placementRevision",
+  ],
+  "lane.rename": ["projectId", "laneId", "name", "revision"],
+  "lane.add": ["projectId", "name", "revision"],
+  "lane.remove": ["projectId", "laneId", "revision"],
 };
 for (const name of [
   "attach",
@@ -80,6 +90,10 @@ const required: Record<string, string[]> = {
   "git.commit": ["projectId", "message"],
   "worktree.create": ["projectId", "branch"],
   "session.rename": ["title", "titleRevision"],
+  "session.place": ["lane", "placementRevision"],
+  "lane.rename": ["projectId", "laneId", "name", "revision"],
+  "lane.add": ["projectId", "name", "revision"],
+  "lane.remove": ["projectId", "laneId", "revision"],
 };
 export function validateCommand(
   command: unknown,
@@ -119,15 +133,26 @@ export function validateCommand(
   }
   for (const [k, v] of Object.entries(p)) {
     if (v === undefined) continue;
-    if (["generation", "revision", "titleRevision", "sequence", "cols", "rows"].includes(
-        k,
-      )) {
+    if (
+      [
+        "generation",
+        "revision",
+        "titleRevision",
+        "placementRevision",
+        "sequence",
+        "cols",
+        "rows",
+      ].includes(k)
+    ) {
       if (
         !Number.isSafeInteger(v) ||
         Number(v) < 0 ||
         (["cols", "rows"].includes(k) && (Number(v) < 2 || Number(v) > 500))
       )
         throw new Error("Invalid " + k);
+    } else if (k === "order") {
+      if (typeof v !== "number" || !Number.isFinite(v) || Math.abs(v) > 1e12)
+        throw new Error("Invalid order");
     } else if (k === "positions") {
       if (
         !v ||

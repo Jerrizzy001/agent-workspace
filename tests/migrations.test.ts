@@ -25,16 +25,17 @@ function v2Store(file: string) {
   return db;
 }
 
-test("migration registry is ordered, uniquely named and ends at roadmap_01", () => {
+test("migration registry is ordered, uniquely named and ends at board_lanes", () => {
   assert.deepEqual(
     MIGRATIONS.map((m) => [m.version, m.name]),
     [
       [1, "records_receipts_events"],
       [2, "folder_sessions"],
       [3, "roadmap_01_owner_utilities"],
+      [4, "board_lanes"],
     ],
   );
-  assert.equal(SCHEMA_VERSION, 3);
+  assert.equal(SCHEMA_VERSION, 4);
 });
 
 test("a fresh store is created at the current version without a backup", async () => {
@@ -148,13 +149,13 @@ test("a newer store is rejected before anything is written", async () => {
   try {
     const db = v2Store(file);
     db.prepare("INSERT INTO records VALUES ('sessions','s','{\"id\":\"s\"}')").run();
-    db.exec("PRAGMA user_version=4; PRAGMA journal_mode=DELETE;");
+    db.exec("PRAGMA user_version=5; PRAGMA journal_mode=DELETE;");
     db.close();
     const digest = () => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
     const before = digest();
     await assert.rejects(createCore({ dataDir: temp, emit: () => {} }), /newer app version/);
     assert.equal(digest(), before);
-    assert.equal(version(file), 4);
+    assert.equal(version(file), 5);
     assert.equal(fs.existsSync(path.join(temp, "backups")), false);
     assert.equal(fs.existsSync(path.join(temp, "owner.lock")), false);
   } finally {

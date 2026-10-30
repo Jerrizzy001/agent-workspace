@@ -124,6 +124,11 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       ...(s.transcript ? { transcript: true } : {}),
       ...(s.title ? { title: s.title } : {}),
       ...(s.titleRevision ? { titleRevision: s.titleRevision } : {}),
+      ...(typeof s.lane === "string" ? { lane: s.lane } : {}),
+      ...(typeof s.laneOrder === "number" ? { laneOrder: s.laneOrder } : {}),
+      ...(s.placementRevision
+        ? { placementRevision: s.placementRevision }
+        : {}),
     };
   }
   function filtered(s: Snapshot): Snapshot {
@@ -137,6 +142,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
         .map(publicSession),
       notes: s.notes.filter((n) => allowed.has(n.projectId)),
       layouts: s.layouts.filter((l) => allowed.has(l.projectId)),
+      boardLanes: (s.boardLanes || []).filter((b) => allowed.has(b.projectId)),
     };
   }
   const sessions = new Map<string, { expires: number; secure: boolean }>();
@@ -582,7 +588,8 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
                         ...(raw as any),
                         session: publicSession((raw as any).session),
                       }
-                    : command === "session.rename"
+                    : command === "session.rename" ||
+                        command === "session.place"
                       ? publicSession(raw as Snapshot["sessions"][number])
                       : raw;
               send(c, { type: "result", id: m.id, result });

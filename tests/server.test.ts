@@ -21,6 +21,7 @@ function fixture() {
     attempts: [],
     notes: [],
     layouts: [],
+    boardLanes: [],
     capabilities: [],
     sessions: [
       {

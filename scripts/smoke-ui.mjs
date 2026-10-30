@@ -69,6 +69,7 @@ try {
       ?.textContent?.includes("CORE_RECONNECTED_789"),
   );
   await page.getByRole("button", { name: "Board", exact: true }).click();
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await page.getByRole("button", { name: "New task", exact: true }).click();
   await page
     .getByPlaceholder("What do you want to work on?")

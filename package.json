@@ -17,6 +17,7 @@
     "verify:desktop": "node scripts/verify-desktop.mjs",
     "verify:workflows": "node scripts/verify-workflows.mjs",
     "verify:lifecycle": "node scripts/verify-lifecycle-ui.mjs",
+    "verify:board": "node scripts/verify-board.mjs",
     "verify:keep-awake": "node scripts/verify-keep-awake.mjs",
     "verify:terminal": "node scripts/verify-terminal-modes.mjs",
     "verify:image-paste": "node scripts/verify-image-paste.mjs",

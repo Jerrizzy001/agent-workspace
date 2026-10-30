@@ -36,6 +36,7 @@ import { FolderBrowser } from "./FolderBrowser";
 import { LaunchBar, savedModels, type LaunchChoices } from "./LaunchBar";
 import { SessionView } from "./SessionView";
 import { AttemptModal, Board, TaskModal, statusLabel } from "./Board";
+import { SessionBoard } from "./SessionBoard";
 import { isRemoteBrowser } from "./remote";
 import { DictationNotices, DictationSettings } from "./DictationControl";
 import { dictationAvailable, openDictationSettings } from "./dictation";
@@ -62,6 +63,7 @@ const initial: Snapshot = {
   sessions: [],
   notes: [],
   layouts: [],
+  boardLanes: [],
   capabilities: [],
 };
 const isMac = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent);
@@ -81,6 +83,7 @@ function store(key: string, value: string) {
   }
 }
 type View = "terminals" | "board" | "canvas";
+type BoardMode = "sessions" | "tasks";
 type LaunchProblem = {
   provider: Provider;
   message: string;
@@ -108,6 +111,9 @@ export default function App() {
   const [taskId, setTaskId] = useState("");
   const [modalTask, setModalTask] = useState<Task | undefined>();
   const [view, setView] = useState<View>("terminals");
+  const [boardMode, setBoardMode] = useState<BoardMode>(() =>
+    stored("board") === "tasks" ? "tasks" : "sessions",
+  );
   const [browsing, setBrowsing] = useState(false);
   const [targets, setTargets] = useState<Record<string, string>>({});
   const [choices, setChoices] = useState<LaunchChoices>(() => ({
@@ -202,6 +208,7 @@ export default function App() {
   useEffect(() => store("project", projectId), [projectId]);
   useEffect(() => store("session", sessionId), [sessionId]);
   useEffect(() => store("files", filesOpen ? "1" : "0"), [filesOpen]);
+  useEffect(() => store("board", boardMode), [boardMode]);
 
   const project = projects.find((p) => p.id === projectId);
   const session = snapshot.sessions.find(
@@ -478,14 +485,20 @@ export default function App() {
       stay,
     );
   }
-  function resume(s: Session) {
-    void invokeLaunch(s.provider, createId(), {
-      projectId: s.projectId,
-      provider: s.provider,
-      resumeSessionId: s.id,
-    });
+  /** `stay` keeps the current view (the session board files the new card itself). */
+  function resume(s: Session, stay = false) {
+    return invokeLaunch(
+      s.provider,
+      createId(),
+      {
+        projectId: s.projectId,
+        provider: s.provider,
+        resumeSessionId: s.id,
+      },
+      stay,
+    );
   }
-  function restart(s: Session) {
+  function restart(s: Session, stay = false) {
     const sessionProject = snapshot.projects.find((p) => p.id === s.projectId);
     const relative =
       sessionProject && s.cwd.startsWith(sessionProject.path + "/")
@@ -494,16 +507,21 @@ export default function App() {
     const tree = s.attemptId
       ? snapshot.attempts.find((a) => a.id === s.attemptId)?.worktreePath
       : undefined;
-    void invokeLaunch(s.provider, createId(), {
-      projectId: s.projectId,
-      provider: s.provider,
-      ...(tree && sessionProject && tree !== sessionProject.path
-        ? { worktreePath: tree }
-        : relative
-          ? { path: relative }
-          : {}),
-      ...(s.model ? { model: s.model } : {}),
-    });
+    return invokeLaunch(
+      s.provider,
+      createId(),
+      {
+        projectId: s.projectId,
+        provider: s.provider,
+        ...(tree && sessionProject && tree !== sessionProject.path
+          ? { worktreePath: tree }
+          : relative
+            ? { path: relative }
+            : {}),
+        ...(s.model ? { model: s.model } : {}),
+      },
+      stay,
+    );
   }
   async function addNote() {
     if (!project) return undefined;
@@ -578,6 +596,20 @@ export default function App() {
       window.removeEventListener("beforeunload", preventUnsavedClose);
   }, [editorDirty]);
 
+  const boardSwitch = (
+    <div className="board-mode" role="group" aria-label="Board shows">
+      {(["sessions", "tasks"] as const).map((mode) => (
+        <button
+          key={mode}
+          className={boardMode === mode ? "active" : ""}
+          aria-pressed={boardMode === mode}
+          onClick={() => setBoardMode(mode)}
+        >
+          {mode === "sessions" ? "Sessions" : "Tasks"}
+        </button>
+      ))}
+    </div>
+  );
   const showBrowser =
     !isRemoteBrowser &&
     !!window.workspace.browseDirectory &&
@@ -1083,8 +1115,8 @@ export default function App() {
                         session={session}
                         project={project}
                         title={titleOf(session)}
-                        onResume={resume}
-                        onRestart={restart}
+                        onResume={(s) => void resume(s)}
+                        onRestart={(s) => void restart(s)}
                         onEnded={(s) => endedByUser.current.add(s.id)}
                         report={report}
                       />
@@ -1099,13 +1131,32 @@ export default function App() {
                         recent={folderSessions.filter((s) => !isOpen(s)).slice(0, 4)}
                         titleOf={titleOf}
                         onOpen={openSession}
-                        onResume={resume}
+                        onResume={(s) => void resume(s)}
                       />
                     )}
                   </>
                 ) : null}
-                {view === "board" ? (
+                {view === "board" && boardMode === "sessions" ? (
+                  <SessionBoard
+                    key={projectId}
+                    project={project}
+                    sessions={folderSessions}
+                    boards={snapshot.boardLanes || []}
+                    capabilities={snapshot.capabilities}
+                    disabledReason={disabledReason}
+                    launching={launching}
+                    titleOf={titleOf}
+                    onLaunch={(provider) => launch(provider, true)}
+                    onResume={(s) => resume(s, true)}
+                    onRestart={(s) => restart(s, true)}
+                    onEnded={(s) => endedByUser.current.add(s.id)}
+                    report={report}
+                    modeSwitch={boardSwitch}
+                  />
+                ) : null}
+                {view === "board" && boardMode === "tasks" ? (
                   <Board
+                    modeSwitch={boardSwitch}
                     tasks={tasks}
                     attempts={attempts}
                     sessions={snapshot.sessions}
@@ -1286,6 +1337,7 @@ export default function App() {
           created={(id) => {
             setTaskId(id);
             setView("board");
+            setBoardMode("tasks");
             setModal(null);
           }}
           report={report}
@@ -1362,6 +1414,7 @@ export default function App() {
               hint: statusLabel(t.status) || "Task",
               run: () => {
                 setTaskId(t.id);
+                setBoardMode("tasks");
                 switchView("board");
               },
             })),

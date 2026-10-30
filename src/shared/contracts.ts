@@ -58,6 +58,23 @@ export interface Session {
   title?: string;
   /** Incremented on every rename; `session.rename` must name the current one. */
   titleRevision?: number;
+  /** Session-board lane chosen by the owner; absent shows a default lane. */
+  lane?: string;
+  /** Position within the lane (ascending); absent sorts after placed cards. */
+  laneOrder?: number;
+  /** Incremented on every placement; `session.place` must name the current one. */
+  placementRevision?: number;
+}
+export interface BoardLane {
+  id: string;
+  name: string;
+}
+/** Per-folder session-board lanes. Absent until the owner first changes them. */
+export interface BoardLanes {
+  projectId: string;
+  lanes: BoardLane[];
+  /** Incremented on every lane change; lane commands must name the current one. */
+  revision: number;
 }
 export interface Note {
   id: string;
@@ -84,6 +101,7 @@ export interface Snapshot {
   sessions: Session[];
   notes: Note[];
   layouts: Layout[];
+  boardLanes: BoardLanes[];
   capabilities: Capability[];
 }
 export interface FileEntry {
@@ -154,6 +172,10 @@ export const COMMANDS = [
   "session.capture",
   "session.ack",
   "session.rename",
+  "session.place",
+  "lane.rename",
+  "lane.add",
+  "lane.remove",
   "files.list",
   "files.read",
   "files.write",

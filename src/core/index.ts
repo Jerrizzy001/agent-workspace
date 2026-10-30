@@ -21,9 +21,11 @@ import {
 } from "./attachments.js";
 import { run, executable, probe } from "./process.js";
 import { DICTATION_MODEL_IDS, isDictationModelId } from "../shared/dictation.js";
+import { MAX_LANES, laneNameText, laneOf, lanesFor } from "../shared/board.js";
 import * as pty from "node-pty";
 import type {
   Activity,
+  BoardLanes,
   Core,
   CoreOptions,
   Command,
@@ -479,6 +481,7 @@ export async function createCore({
       sessions: list("sessions"),
       notes: list("notes"),
       layouts: list("layouts"),
+      boardLanes: list("boardLanes"),
       capabilities: capabilities(),
     });
     // Optional Claude flags are used only when this installed version lists them.
@@ -1142,6 +1145,42 @@ export async function createCore({
           changed();
           return s;
         }
+        case "session.place": {
+          // Metadata only: the process, its viewers and its input are untouched.
+          const s = session(p);
+          if (p.generation !== s.generation)
+            throw new Error("Session generation required");
+          if (p.placementRevision !== (s.placementRevision ?? 0))
+            throw new Error("Stale session placement");
+          const board = lanesFor(list("boardLanes"), s.projectId);
+          if (typeof p.lane !== "string" || !board.lanes.some((l) => l.id === p.lane))
+            throw new Error("Unknown lane");
+          let order: number;
+          if (p.order === undefined) {
+            const placed = (list("sessions") as Session[])
+              .filter(
+                (o) =>
+                  o.id !== s.id &&
+                  o.projectId === s.projectId &&
+                  o.lane === p.lane &&
+                  typeof o.laneOrder === "number",
+              )
+              .map((o) => o.laneOrder!);
+            order = placed.length ? Math.max(...placed) + 1 : 1;
+          } else if (
+            typeof p.order !== "number" ||
+            !Number.isFinite(p.order) ||
+            Math.abs(p.order) > 1e12
+          )
+            throw new Error("Invalid lane order");
+          else order = p.order;
+          s.lane = p.lane;
+          s.laneOrder = order;
+          s.placementRevision = (s.placementRevision ?? 0) + 1;
+          put("sessions", s);
+          changed();
+          return s;
+        }
         case "session.input": {
           const s = ownedSession(p);
           if (typeof p.data !== "string" || p.data.length > 65536)
@@ -1268,6 +1307,41 @@ export async function createCore({
               throw new Error("Invalid position");
           put("layouts", { projectId: p.projectId, positions: p.positions });
           return changed();
+        }
+        case "lane.rename":
+        case "lane.add":
+        case "lane.remove": {
+          const project = get("projects", p.projectId);
+          const board = lanesFor(list("boardLanes"), project.id);
+          if (p.revision !== board.revision) throw new Error("Stale board lanes");
+          const lanes = board.lanes.map((l) => ({ ...l }));
+          if (command === "lane.add") {
+            if (lanes.length >= MAX_LANES)
+              throw new Error(`A board has at most ${MAX_LANES} lanes`);
+            lanes.push({ id: "lane-" + id().slice(0, 8), name: laneNameText(p.name) });
+          } else {
+            const index = lanes.findIndex((l) => l.id === p.laneId);
+            if (index < 0) throw new Error("Unknown lane");
+            if (command === "lane.rename") lanes[index]!.name = laneNameText(p.name);
+            else {
+              if (lanes.length <= 1) throw new Error("A board needs at least one lane");
+              const occupied = (list("sessions") as Session[]).some(
+                (s) =>
+                  s.projectId === project.id && laneOf(s, board.lanes) === p.laneId,
+              );
+              if (occupied)
+                throw new Error("Move this lane's cards to another lane before removing it");
+              lanes.splice(index, 1);
+            }
+          }
+          const next: BoardLanes = {
+            projectId: project.id,
+            lanes,
+            revision: board.revision + 1,
+          };
+          put("boardLanes", next);
+          changed();
+          return next;
         }
         case "settings.read": {
           if (Object.keys(p).some((k) => k !== "key"))

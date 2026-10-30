@@ -48,6 +48,8 @@ try {
   // Tasks are optional planning on the board; the folder itself needs none.
   await page.getByRole("button", { name: "Open Shell here" }).waitFor();
   await page.getByRole("button", { name: "Board", exact: true }).click();
+  // The board opens on live sessions; tasks are the second mode.
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await page.getByRole("button", { name: "New task", exact: true }).click();
   await page
     .getByPlaceholder("What do you want to work on?")

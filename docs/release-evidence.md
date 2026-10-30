@@ -243,3 +243,46 @@ Not verified:
 - **Performance.** base.en latency on low-end CPUs, and speech recognition keeping up during long continuous speech.
 - **Packaged builds.** Neither `electron-builder` packaging with the new `asarUnpack` entry nor packaged-app dictation was run.
 - **Third-party notices.** The sherpa-onnx npm packages ship no LICENSE or NOTICE file. A packaged release still needs the Apache-2.0 and ONNX Runtime MIT notice texts added.
+
+## Live session board (after phase 2a)
+
+Built in an isolated worktree on the phase 2a tree and checked in the same Linux container. Designed only from this repository.
+
+**What it is.** **Board** now opens on **Sessions** (a **Sessions | Tasks** switch; Tasks is the unchanged task board). Each session in the folder is a card in one of the folder's lanes. Lanes default to Up next, Working, Review and Done. The owner and a paired browser can rename them, add up to six, and remove a lane only when no card shows in it. A session without a placement is shown, not written, in Working while open and in Done once ended (falling back to the first or last lane when those were removed). Cards show provider, name, the existing status badge, folder-relative location, model and relative last activity. Needs you cards are highlighted. Ended cards are dimmed with **Resume** (Claude with a conversation ID and no nonzero exit) and **New here**; both reuse the existing App resume/restart launch, then file the new session in the ended card's lane and open its live card. Ended cards beyond the 20 most recent per lane wait behind **Show more**.
+
+**Commands.**
+
+- `session.place {sessionId, generation, lane, order?, placementRevision}`: generation and the current `placementRevision` are required; the lane must exist; ended sessions can be placed. An omitted order appends after the lane's last card. It writes only `lane`, `laneOrder` and `placementRevision` on the session record and emits a snapshot. It never attaches, detaches, resizes, sends input or restarts.
+- `lane.rename`, `lane.add`, `lane.remove {projectId, …, revision}`: a per-folder `boardLanes` record `{projectId, lanes, revision}` with plain one-line names of at most 40 characters.
+- All four are `remote` in `COMMAND_POLICY` with exact gateway field lists. `publicSession` projects `lane`, `laneOrder` and `placementRevision`; gateway snapshots carry only shared folders' `boardLanes`. Owner-only commands are unchanged.
+
+**Interaction.** HTML5 drag between lanes on desktop, plus a **Move to…** menu on every card for keyboard and touch. **+** on a lane starts Claude, Codex or a shell through the existing `terminal.open` launch path, then places the returned session. Clicking a card opens a live card: the existing `SessionView` (real `TerminalView` attached as an ordinary viewer, rename, Interrupt/End with the existing confirmation, Resume/New) plus a lane picker. Closing it, or Esc outside the terminal, unmounts the view, which detaches only that viewer. Esc inside the terminal still goes to the program. At 900px and below the lanes scroll horizontally with snap and the live card is full-screen.
+
+**Schema.** Migration v4 `board_lanes` is additive: no table or row changes, the same backup and newer-version rejection. A v3 store upgrades with records unchanged and a `workspace-v3-*` backup. The roadmap reserved v4 for `roadmap_02_conversations`; that and later reservations move to the next unused number, as the roadmap's migration rule requires.
+
+Results:
+
+- `npm run typecheck` passed.
+- `npm test`: 70 tests, 69 passed, 1 opt-in skipped. New `tests/board.test.ts` (5 tests):
+  - shared lane defaults, fallback lanes and lane-name cleaning;
+  - placement in a real tmux shell: revision, stale revision, missing or wrong generation, unknown lane, invalid order, explicit and appended order; the shell's own `$$` and the tmux pane PID are unchanged and the same attached viewer still types into it; lane rename/add (six maximum)/remove-only-when-empty, including a lane occupied only by an unplaced open session; ended sessions can be placed; placements and lanes persist across a core restart with the same PID;
+  - v3 to v4 migration keeps a titled Claude session, project and owner setting unchanged and backs up v3;
+  - remote validation of the four commands' fields;
+  - a real gateway in front of a real core: a paired browser places and renames lanes in the shared folder, gets the projected session (no `backendSocket`), is refused with "Project access denied" for the unshared folder's session and lanes, sees no other folder's lane names, and is still refused `project.add`, `project.hide` and `settings.write`.
+
+  The registry test and both newer-version rejection tests now use version 5 as "newer".
+- `verify:board` (new, Electron under Xvfb with a fixture Claude CLI that reports needs-you through its per-session hook) passed 10 checks: two shells started from the folder; Sessions is the default mode with four lanes and nothing written for unplaced cards; dragging a card to Review keeps the tmux pane PID, the shell's own PID and generation, and the terminal still accepts input; Move to…; inline lane rename; live card typing reaches the same shell, rename and lane picker work, closing by button or Esc leaves the same process running; **+** in a lane starts a shell placed there; a Claude started in Up next shows a highlighted Needs you card; after End, the dimmed card offers Resume and New here, Resume keeps the lane and opens the new live card, and an ended shell offers only New here; the Tasks switch still shows the task board.
+- `verify:mobile` passed 15 checks (one new) on 390×844 touch Chromium against the headless host: lanes scroll horizontally with snap and the body does not overflow; **Move to…** by tap places the card through the gateway; a tap opens a full-screen live card with the terminal command bar; closing keeps the same running session (the script's later same-PID check after a host restart still passes).
+- Re-run and passed after updating only the board-mode selector where a script opened the task board (`smoke:ui`, `verify:workflows`, `verify:lifecycle`, `verify:mobile`):
+
+  | Check | Result |
+  | --- | --- |
+  | `smoke:ui` | 9 checks passed |
+  | `verify:workflows` | 15 checks passed |
+  | `verify:lifecycle` | 6 checks passed |
+  | `verify:terminal` | 7 checks passed |
+  | `verify:remote-desktop` | 7 checks passed |
+
+- Screenshots, each inspected: `screenshots/desktop/board-sessions.png`, `board-live-card.png` and `board-phone.png`. `screenshots/remote/phone-board.png` and `mobile-verification.json` were regenerated because the board header changed.
+
+Not verified: macOS, a physical phone or touch drag (phones use Move to…; HTML5 drag is desktop only), a real Claude or Codex CLI on the board (a fixture Claude was used), Codex resume from a card (Codex has no card Resume; the live card keeps SessionView's existing Codex **Resume…**), card reordering within a lane by drag (drops append; `order` is accepted by the command and tested in core), and `verify:mobile-webkit` (not run; WebKit is not installed here, and its **New task** step may need the same **Tasks** selector).

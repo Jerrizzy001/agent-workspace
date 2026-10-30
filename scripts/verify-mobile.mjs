@@ -145,6 +145,8 @@ try {
     .getByRole("navigation", { name: "Workspace navigation" })
     .getByRole("button", { name: "Board", exact: true })
     .click();
+  // The board opens on live sessions; tasks are its second mode.
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await page.getByRole("button", { name: "New task", exact: true }).click();
   await page
     .getByPlaceholder("What do you want to work on?")
@@ -301,6 +303,61 @@ try {
     .getByRole("navigation", { name: "Workspace navigation" })
     .getByRole("button", { name: "Board", exact: true })
     .click();
+  // Live session board by touch: lanes scroll with snap, Move to… files the
+  // card through the gateway, and a tap opens the full-screen live card.
+  await page.getByRole("button", { name: "Sessions", exact: true }).click();
+  await page.locator(".lanes").waitFor();
+  assert.equal(
+    await page
+      .locator(".lanes")
+      .evaluate(
+        (element) =>
+          element.scrollWidth > element.clientWidth &&
+          getComputedStyle(element).scrollSnapType.startsWith("x"),
+      ),
+    true,
+  );
+  await noOverflow(page);
+  const phoneCard = page.locator(".session-card").filter({ hasText: "Shell" });
+  await phoneCard.getByRole("button", { name: /^Move to… \(/ }).tap();
+  await phoneCard.getByRole("menuitem", { name: "Review" }).tap();
+  await poll(
+    async () =>
+      (await page.evaluate(() => window.workspace.invoke("snapshot")))
+        .sessions[0].lane === "review",
+    "phone Move to Review",
+  );
+  await page
+    .locator('.lane[data-lane="review"] .session-card')
+    .filter({ hasText: "Shell" })
+    .waitFor();
+  await page
+    .locator('.lane[data-lane="review"]')
+    .evaluate((element) => element.scrollIntoView({ inline: "start" }));
+  await noOverflow(page);
+  await page.screenshot({
+    animations: "disabled",
+    path: path.resolve("docs/screenshots/desktop/board-phone.png"),
+  });
+  await page.locator('.lane[data-lane="review"] .session-card-open').tap();
+  const phoneLive = page.getByRole("dialog", { name: /^Live card/ });
+  await phoneLive.waitFor();
+  await page.getByRole("button", { name: "Focus terminal keyboard" }).waitFor();
+  const liveBounds = await phoneLive.boundingBox();
+  assert.ok(liveBounds.x <= 1 && liveBounds.width >= 389, "live card is full-screen");
+  await noOverflow(page);
+  await page.getByRole("button", { name: "Close live card" }).tap();
+  await phoneLive.waitFor({ state: "detached" });
+  const placedPhone = (
+    await page.evaluate(() => window.workspace.invoke("snapshot"))
+  ).sessions[0];
+  assert.equal(placedPhone.status, "running");
+  assert.equal(placedPhone.generation, original.sessions[0].generation);
+  assert.equal(placedPhone.placementRevision, 1);
+  checks.push(
+    "phone session board: lanes scroll with snap; Move to… by touch places the card remotely; tap opens a full-screen live card; closing keeps the same running session",
+  );
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   assert.equal(
     await page
       .locator(".board")

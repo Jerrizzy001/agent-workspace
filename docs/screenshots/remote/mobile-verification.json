@@ -5,6 +5,7 @@
     "pairing accepts owner secret, rejects incorrect secret; no credential localStorage",
     "390×844 touch layout: task modal fits portrait/landscape; launch options default to CLI models; one tap opens a shell with no task; terminal input creates server file",
     "touch keyboard focus, Enter and Ctrl C work; bracketed multiline paste waits for Enter; arrow keys honor application and normal cursor modes",
+    "phone session board: lanes scroll with snap; Move to… by touch places the card remotely; tap opens a full-screen live card; closing keeps the same running session",
     "delayed note acknowledgements, canceled unload, stale event/reload snapshots and canvas remounts preserve exact visible/durable text; removed notes stay removed",
     "manual sign out flushes the latest pending canvas note before revoking access",
     "touch project/task drawer, files editor, horizontally scrolling board and persistent canvas note",

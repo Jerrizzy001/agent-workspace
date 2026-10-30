@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowUpRight, Plus, X } from "lucide-react";
 import type {
   Attempt,
@@ -36,7 +36,9 @@ export function Board({
   onStartAttempt,
   onOpenSession,
   report,
+  modeSwitch,
 }: {
+  modeSwitch?: ReactNode;
   tasks: Task[];
   attempts: Attempt[];
   sessions: Session[];
@@ -67,7 +69,10 @@ export function Board({
     <div className={"board-view" + (selected ? " has-sheet" : "")}>
       <header className="view-head">
         <div>
-          <h2>Board</h2>
+          <div className="board-title">
+            <h2>Board</h2>
+            {modeSwitch}
+          </div>
           <p>
             Optional planning. Sessions opened from a folder don't need a task;
             use tasks when you want to track work and its attempts.

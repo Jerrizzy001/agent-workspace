@@ -92,6 +92,7 @@ try {
     "natural shell exit, terminal and canvas remount show ended state and saved final screen without spinner",
   );
   await page.getByRole("button", { name: "Board", exact: true }).click();
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await page.getByRole("button", { name: "Session lifecycle", exact: true }).click();
   await page.getByRole("button", { name: "Start an attempt", exact: true }).click();
   // Models are not assumed: blank inherits each CLI's own configured default.

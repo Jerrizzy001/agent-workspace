@@ -30,6 +30,7 @@ function snapshot(notes: Note[]): Snapshot {
     sessions: [],
     notes,
     layouts: [],
+    boardLanes: [],
     capabilities: [],
   };
 }

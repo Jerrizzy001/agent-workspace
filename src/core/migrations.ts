@@ -43,6 +43,16 @@ export const MIGRATIONS: readonly Migration[] = [
     name: "roadmap_01_owner_utilities",
     up: () => {},
   },
+  {
+    // v4: the live session board. A new per-folder "boardLanes" record kind
+    // ({projectId, lanes, revision}) and optional session lane/laneOrder/
+    // placementRevision. Nothing is rewritten: a session without a lane is
+    // shown in a default lane. Older builds refuse the store because a
+    // rewrite of a session record there would drop its placement.
+    version: 4,
+    name: "board_lanes",
+    up: () => {},
+  },
 ];
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
 MIGRATIONS.forEach((m, index) => {

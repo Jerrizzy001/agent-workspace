@@ -1,6 +1,6 @@
 # Agent Workspace feature roadmap
 
-> **Progress:** Phase 0 (command policy and migration registry, but not the macOS packaging gate), 1a (session naming, safe paste, local screenshot paste), 1b (keep-awake) and 2a (local English dictation) are implemented and verified on Linux. See `docs/release-evidence.md`. Section 1 below is the original plan. The owner later chose English only and "type as I talk" with no preview step, and the engine became sherpa-onnx instead of whisper.cpp. The release evidence explains both changes.
+> **Progress:** Phase 0 (command policy and migration registry, but not the macOS packaging gate), 1a (session naming, safe paste, local screenshot paste), 1b (keep-awake) and 2a (local English dictation) are implemented and verified on Linux. A live session board (board cards are the running sessions; owner-requested, outside the numbered phases) is also implemented and verified on Linux; it consumed schema v4 as `board_lanes`, so each reserved migration below moves to the next unused number. See `docs/release-evidence.md`. Section 1 below is the original plan. The owner later chose English only and "type as I talk" with no preview step, and the engine became sherpa-onnx instead of whisper.cpp. The release evidence explains both changes.
 
 Baseline: `jerrizzy001/agent-workspace`, `claude/jolly-clarke-oo3rm5`, commit `7b7ec9627c7df7ad71a78db2a09dc8cde8e85a88`, version 0.3.0. Research date: 2026-10-30. This document specifies future implementation; it does not claim that the proposed features have shipped or passed verification.
 
@@ -32,6 +32,7 @@ In this plan **D** means desktop owner only, **R** means an authenticated owner 
 | `workspace:clipboardImage` actions `preview`, `save`, `discard` | D; local clipboard broker and executing-host attachment service | Read one image after a user gesture; no general clipboard/filesystem endpoint |
 | `attachment.create`, `attachment.release` | D trusted broker to core; SSH stdio broker when applicable; initially deny R/A | Bounded image bytes, generated destination and session identity, never caller-selected paths |
 | `session.rename` | D/R on project host | Plain text label with revision check; no provider invocation; A denied initially |
+| `session.place`, `lane.rename`, `lane.add`, `lane.remove` (implemented) | D/R on project host | Session-board lane and placement metadata with revision checks; never restarts, detaches or types into a process; A denied |
 | `workspace:power` actions `status`, `setPolicy`, `setTemporaryOverride`, `clearOverride` | D local main process | No browser or agent acquisition of power inhibitors |
 | `workspace:profiles` actions `list`, `create`, `setup`, `check`, `remove` | D; selected executing host | CLI-owned authentication and private profile management never cross public gateway |
 | `terminal.open` optional `profileId`; `conversation.fork` | D initially; receiving host validates profile/session binding | Gateway rejects profile fields/fork until a later explicit sharing policy; existing default-profile launch remains |
