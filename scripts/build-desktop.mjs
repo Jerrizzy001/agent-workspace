@@ -56,6 +56,19 @@ await build({
   external: ["node-pty", "ws"],
 });
 
+// Self-hosted team service (roadmap section 9): one Node file with no native
+// dependencies (openid-client and jose are bundled). server.mjs is the
+// command-line entry; service.mjs exposes the API for verify-team.
+await build({
+  entryPoints: { server: "src/team/server.ts", service: "src/team/service.ts" },
+  bundle: true,
+  platform: "node",
+  target: "node24",
+  format: "esm",
+  outdir: "dist/team",
+  outExtension: { ".js": ".mjs" },
+});
+
 // SSH helper: the fixed stdio entrypoint run on execution hosts (shipped in
 // the standalone server archive with bin/aw-ssh-helper).
 await build({

@@ -25,9 +25,12 @@ function v2Store(file: string) {
   return db;
 }
 
-test("migration registry is ordered, uniquely named and ends at roadmap_03_execution_hosts", () => {
+// Concurrent roadmap work adds named migrations and the owner renumbers them
+// at merge, so these checks use names and order rather than fixed numbers.
+const at = (name: string) => MIGRATIONS.find((m) => m.name === name)!.version;
+test("migration registry is ordered, uniquely named and keeps the shipped prefix", () => {
   assert.deepEqual(
-    MIGRATIONS.map((m) => [m.version, m.name]),
+    MIGRATIONS.slice(0, 6).map((m) => [m.version, m.name]),
     [
       [1, "records_receipts_events"],
       [2, "folder_sessions"],
@@ -37,7 +40,10 @@ test("migration registry is ordered, uniquely named and ends at roadmap_03_execu
       [6, "roadmap_03_execution_hosts"],
     ],
   );
-  assert.equal(SCHEMA_VERSION, 6);
+  MIGRATIONS.forEach((m, i) => assert.equal(m.version, i + 1));
+  assert.equal(new Set(MIGRATIONS.map((m) => m.name)).size, MIGRATIONS.length);
+  assert.ok(at("roadmap_05_team_metadata") > at("roadmap_03_execution_hosts"));
+  assert.equal(SCHEMA_VERSION, MIGRATIONS[MIGRATIONS.length - 1]!.version);
 });
 
 test("a fresh store is created at the current version without a backup", async () => {
@@ -190,7 +196,7 @@ test("v6 adds SSH host records without touching a v5 store's records", async () 
     await assert.rejects(core.hostRecords("drop", { id: "0a1b2c3d" }), /Unsupported/);
     await assert.rejects(core.invoke("hostRecords" as any, {}), /Unsupported command/);
     await core.close();
-    assert.equal(version(file), 6);
+    assert.equal(version(file), SCHEMA_VERSION);
     assert.ok(fs.readdirSync(path.join(temp, "backups")).some((n) => n.startsWith("workspace-v5-")));
     core = await createCore({ dataDir: temp, emit: () => {} });
     const stored: any = await core.hostRecords("list");
@@ -201,6 +207,31 @@ test("v6 adds SSH host records without touching a v5 store's records", async () 
     await core.hostRecords("removeHost", { id: "0a1b2c3d" });
     assert.deepEqual(await core.hostRecords("list"), { hosts: [], projectRefs: [] });
     await core.close();
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test("roadmap_05_team_metadata adds team tables only; tasks and other records are unchanged", async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "workspace-migrate-"));
+  const file = path.join(temp, "workspace.sqlite");
+  try {
+    const db = v2Store(file);
+    const before = at("roadmap_05_team_metadata") - 1;
+    const task = { id: "t1", projectId: "p1", title: "Keep me", description: "local", status: "ready", revision: 4, createdAt: "x", updatedAt: "x" };
+    db.prepare("INSERT INTO records VALUES (?,?,?)").run("projects", "p1", JSON.stringify({ id: "p1", name: "app", path: temp, createdAt: "x" }));
+    db.prepare("INSERT INTO records VALUES (?,?,?)").run("tasks", "t1", JSON.stringify(task));
+    db.exec(`PRAGMA user_version=${before};`);
+    const rows = () => db.prepare("SELECT kind, id, value FROM records ORDER BY kind, id").all().map((r: any) => ({ ...r }));
+    const original = rows();
+    const result = await migrate(db, temp);
+    assert.equal(result.from, before);
+    assert.equal(version(file), SCHEMA_VERSION);
+    assert.deepEqual(rows(), original);
+    for (const table of ["team_link", "team_projects_local", "team_task_map", "team_cache", "team_outbox"])
+      assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table), table);
+    assert.ok(result.backup && fs.existsSync(result.backup));
+    db.close();
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

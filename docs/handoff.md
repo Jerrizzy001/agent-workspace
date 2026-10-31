@@ -14,7 +14,7 @@ Branch `claude/jolly-clarke-oo3rm5`. Read this first, then `README.md`, `docs/pl
   1. ~~SSH projects (roadmap §2)~~ — done on Linux against a disposable sshd (see below and `docs/release-evidence.md`).
   2. Mac signing and notarization, auto-update, Windows client, Homebrew (§8).
   3. Multiple Claude accounts with conversation branching and transcript links (§3).
-  4. Team features: members, comments, assignments (§9).
+  4. ~~Team features: members, comments, assignments (§9)~~: built provider- and host-neutral, and verified on Linux against a local fake OIDC issuer (see below). The owner still has to choose hosting, identity provider and region before production use.
 
 ## What exists now
 
@@ -28,11 +28,12 @@ Branch `claude/jolly-clarke-oo3rm5`. Read this first, then `README.md`, `docs/pl
 | AI suggestions (§5) | Opt-in commit message and session-name drafts through a locked-down CLI runner; Claude verified against `--help`, Codex built but unverified |
 | SSH projects (§2) | **SSH hosts** panel; system `ssh -T` to a fixed helper (`bin/aw-ssh-helper` in the server archive, `src/server/stdio-host.ts`) speaking framed JSON (`src/shared/host-protocol.ts`); host router in the desktop utility (`src/core/host-router.ts`, transport in `src/core/ssh.ts`) with `ssh-<host>-<id>` IDs; remote shell/Claude/Codex, Files, Git, notes, canvas, tasks and lanes; auto-reconnect reattaches the same remote tmux session; image paste, agent control and AI suggestions refused for SSH sessions; SSH folders never shared with browsers |
 | Owner utilities | Screenshot paste, keep-awake, local English dictation (sherpa-onnx, model downloaded on demand) |
+| Team (§9) | Self-hosted team service in `src/team/` (Node + its own SQLite and migration registry, any OIDC issuer via `openid-client`/`jose`, invite-only); **Team** panel; publish preview; comments; assignee; board card team state; owner-only `workspace:team`; session only in main-process `safeStorage`, failing closed; [docs/team-service.md](team-service.md) |
 | Remote | Paired HTTPS browser gateway, phone layout, PWA; owner-only features are hidden and refused remotely |
-| Data | Migration registry `src/core/migrations.ts`, schema **v6** (`roadmap_03_execution_hosts`), backups before upgrade |
+| Data | Migration registry `src/core/migrations.ts`, schema **v7** (`roadmap_05_team_metadata`, tables only), backups before upgrade |
 | Policy | `src/shared/command-policy.ts` classifies every command as owner-only or remote, with a test enforcing it. Agent-control verbs are in `CONTROLLER_WRAPS`. The SSH helper accepts only the gateway's remote-allowed commands (`validateCommand`) plus `browse`, `register` and `hide`; `workspace:ssh` is owner-only IPC |
 
-The roadmap reserved migration names. v4 became `board_lanes`, v5 `roadmap_04_controller` and v6 `roadmap_03_execution_hosts`. When `roadmap_02_conversations` and `roadmap_05_team_metadata` land, each takes the next unused number (v7 next).
+The roadmap reserved migration names. v4 became `board_lanes`, v5 `roadmap_04_controller`, v6 `roadmap_03_execution_hosts` and v7 `roadmap_05_team_metadata`. `roadmap_02_conversations` takes the next unused number. If both branches are merged, renumber so the versions stay 1..n in registry order; the tests use names and `SCHEMA_VERSION`, not fixed numbers.
 
 ## Running checks in a Linux cloud container (how this was verified)
 
@@ -52,7 +53,8 @@ The roadmap reserved migration names. v4 became `board_lanes`, v5 `roadmap_04_co
 
   | Check | Result |
   | --- | --- |
-  | `npm test` | 89 pass, 2 opt-in skipped (91 tests) |
+  | `npm test` | 111 pass, 2 opt-in skipped (113 tests); the SSH fixture tests occasionally fail with `write EPIPE` and pass on rerun |
+  | `verify:team` | 8 (two Electron identities, fake OIDC issuer) |
   | `smoke` | 8 |
   | `smoke:ui` | 9 |
   | `verify:agent-control` | 10 |
@@ -94,6 +96,31 @@ Done on Linux, all four slices; details and exact results in `docs/release-evide
 - Not built: image attachments over SSH (pasting into an SSH session is refused with a message; the roadmap's bounded attachment frame is future work), browser sharing of SSH folders (off by design), app-managed known_hosts enrollment (the owner trusts keys with their own `ssh`).
 - The helper must be installed by the owner from the server archive (`~/agent-workspace-server` by default, then `npm ci`); there is no auto-provisioning or helper update. A protocol bump needs a matching helper on every host.
 - Reconnect is automatic after an unexpected loss (1, 2, 4, 8, 15 s); a host the owner left connected reconnects at app start. In-flight requests are reported as unknown and never resent.
+
+## Team members, comments and assignments (roadmap §9): state
+
+Built and verified on Linux; details and exact results are in `docs/release-evidence.md` ("Roadmap section 9"), and setup is in `docs/team-service.md`. Gaps to keep in mind:
+
+- **Not tried for real:**
+  - a real identity provider; only `scripts/fake-oidc.mjs` over loopback HTTP was used;
+  - a TLS deployment of the service;
+  - the production secret stores (Keychain, DPAPI, Secret Service);
+  - the real system browser (tests fetch the authorize URL);
+  - restart persistence of the team session. The test-only Linux basic store uses an in-memory key, so it does not survive a restart.
+- **Test switches**, honoured only with `WORKSPACE_TEST_DATA_DIR`:
+  - `WORKSPACE_TEST_TEAM_BASIC_SECRET_STORE=1`: Electron's basic store, for headless Linux;
+  - `WORKSPACE_TEST_TEAM_AUTOBROWSER=1` and `WORKSPACE_TEST_TEAM_LOGIN_HINT`: fetch the authorize URL instead of opening a browser;
+  - `WORKSPACE_TEST_TEAM_SYNC_MS`: the sync interval.
+- **Core boundary:** the core gained no command. Team state goes through `Core.team()` from main only, like `hostRecords`.
+- **Service actions** are `TEAM_ACTIONS` in `src/shared/team-contracts.ts`; shared-task actions are named `sharedTask.*`.
+- **Run it:** `npm run build` produces `dist/team/server.mjs` (run it with `npm run start:team -- --config <file>`) and `dist/team/service.mjs` (used by `verify:team`). It is not in the server archive yet.
+- **Owner decisions still open:** hosting, identity provider, region, invitation and retention policy, backup schedule.
+- **Not built:**
+  - email invitations;
+  - team-level invite and ownership transfer in the UI (the API supports team-level invites);
+  - team deletion;
+  - live push (the app polls every 15 s);
+  - an audit log viewer in the app.
 
 ## Next step: Mac signing and notarization, auto-update, Windows client, Homebrew (roadmap §8)
 

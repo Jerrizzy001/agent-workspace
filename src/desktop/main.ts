@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain, session, utilityProcess } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, session, shell, utilityProcess } from "electron";
+import { createTeamDesktop, electronSecretStore } from "./team";
 import path from "node:path";
 import os from "node:os";
 import { readFile } from "node:fs/promises";
@@ -25,6 +26,13 @@ if (process.env.WORKSPACE_TEST_FAKE_MIC) {
     path.resolve(process.env.WORKSPACE_TEST_FAKE_MIC) + "%noloop",
   );
 }
+// Test-only: Electron's unencrypted "basic" secret store for team sign-in,
+// because headless Linux test machines have no unlocked keyring. Production
+// refuses that store (team sign-in fails closed).
+const teamTestBasicStore =
+  !!process.env.WORKSPACE_TEST_DATA_DIR && process.env.WORKSPACE_TEST_TEAM_BASIC_SECRET_STORE === "1";
+if (teamTestBasicStore) app.commandLine.appendSwitch("password-store", "basic");
+let team: ReturnType<typeof createTeamDesktop> | null = null;
 let quitting = false;
 let ready = false;
 let shutdownComplete = false;
@@ -406,6 +414,32 @@ else {
         throw new Error("Invalid agent control request");
       return coreRequest({ type: "agentControl", action, payload: value });
     });
+    team = createTeamDesktop({
+      store: (action, payload = {}) => coreRequest({ type: "team", action, payload }) as Promise<any>,
+      secrets: electronSecretStore(safeStorage, path.join(app.getPath("userData"), "team-session.bin"), teamTestBasicStore),
+      openUrl: async (url) => {
+        // Test-only: fetch the issuer's auto-approving page instead of a browser.
+        if (process.env.WORKSPACE_TEST_DATA_DIR && process.env.WORKSPACE_TEST_TEAM_AUTOBROWSER === "1") {
+          const u = new URL(url);
+          if (process.env.WORKSPACE_TEST_TEAM_LOGIN_HINT) u.searchParams.set("login_hint", process.env.WORKSPACE_TEST_TEAM_LOGIN_HINT);
+          await fetch(u);
+          return;
+        }
+        // The system browser: the app never shows an identity provider's form itself.
+        await shell.openExternal(url);
+      },
+      emit: () => {
+        if (window && !window.isDestroyed()) window.webContents.send("workspace:team", { type: "changed" });
+      },
+      syncIntervalMs: Number(process.env.WORKSPACE_TEST_TEAM_SYNC_MS) || undefined,
+    });
+    ipcMain.handle("workspace:team", async (ev, action: unknown, value: unknown) => {
+      // Owner window only. Team tokens live in this process and go only to the
+      // team service; the gateway, paired browsers and agents have no route here.
+      assertOwner(ev);
+      if (!team) throw new Error("Team features are unavailable");
+      return team.handle(action, value);
+    });
     installPermissionPolicy();
     dictation = createDictationService({
       modelsDir: defaultModelsDir(app.getPath("userData")),
@@ -554,6 +588,7 @@ else {
     // Quitting releases the blocker even though tmux sessions keep running.
     power?.dispose();
     dictation?.dispose();
+    team?.dispose();
     if ((core || gateway) && !shutdownComplete) {
       ev.preventDefault();
       if (!shutdownStarted) {

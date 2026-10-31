@@ -36,16 +36,20 @@
     "verify:linux-server": "node scripts/verify-linux-server.mjs",
     "verify:mobile": "node scripts/verify-mobile.mjs",
     "verify:remote-provider": "node scripts/verify-remote-provider.mjs",
-    "verify:mobile-webkit": "node scripts/verify-mobile-webkit.mjs"
+    "verify:mobile-webkit": "node scripts/verify-mobile-webkit.mjs",
+    "start:team": "node dist/team/server.mjs",
+    "verify:team": "node scripts/verify-team.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "4.7.0",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",
     "@xyflow/react": "12.12.0",
+    "jose": "6.2.14",
     "lucide-react": "0.577.0",
     "monaco-editor": "0.57.0",
     "node-pty": "1.1.0",
+    "openid-client": "6.8.8",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "sherpa-onnx-node": "2.0.1",

@@ -60,6 +60,34 @@ const api: WorkspaceAPI = {
     registerProject: (hostId, path) => ipcRenderer.invoke("workspace:ssh", "registerProject", { hostId, path }),
     remove: (hostId) => ipcRenderer.invoke("workspace:ssh", "remove", { hostId }),
   },
+  team: {
+    status: () => ipcRenderer.invoke("workspace:team", "status"),
+    connect: (input) => ipcRenderer.invoke("workspace:team", "connect", input),
+    disconnect: () => ipcRenderer.invoke("workspace:team", "disconnect"),
+    publishProject: (input) => ipcRenderer.invoke("workspace:team", "publishProject", input),
+    revokeProject: (input) => ipcRenderer.invoke("workspace:team", "revokeProject", input),
+    previewTask: (input) => ipcRenderer.invoke("workspace:team", "previewTask", input),
+    publishTask: (input) => ipcRenderer.invoke("workspace:team", "publishTask", input),
+    unpublishTask: (input) => ipcRenderer.invoke("workspace:team", "unpublishTask", input),
+    sync: () => ipcRenderer.invoke("workspace:team", "sync"),
+    boardInfo: (input) => ipcRenderer.invoke("workspace:team", "boardInfo", input),
+    sharedTasks: (input) => ipcRenderer.invoke("workspace:team", "sharedTasks", input),
+    taskDetail: (input) => ipcRenderer.invoke("workspace:team", "taskDetail", input),
+    members: (input) => ipcRenderer.invoke("workspace:team", "members", input),
+    invite: (input) => ipcRenderer.invoke("workspace:team", "invite", input),
+    setRole: (input) => ipcRenderer.invoke("workspace:team", "setRole", input),
+    removeMember: (input) => ipcRenderer.invoke("workspace:team", "removeMember", input),
+    addComment: (input) => ipcRenderer.invoke("workspace:team", "addComment", input),
+    editComment: (input) => ipcRenderer.invoke("workspace:team", "editComment", input),
+    deleteComment: (input) => ipcRenderer.invoke("workspace:team", "deleteComment", input),
+    assign: (input) => ipcRenderer.invoke("workspace:team", "assign", input),
+    resolve: (input) => ipcRenderer.invoke("workspace:team", "resolve", input),
+    onChange: (listener) => {
+      const handler = () => listener();
+      ipcRenderer.on("workspace:team", handler);
+      return () => ipcRenderer.removeListener("workspace:team", handler);
+    },
+  },
   assist: {
     status: () => ipcRenderer.invoke("workspace:assist", "status"),
     configure: (input) => ipcRenderer.invoke("workspace:assist", "configure", input),

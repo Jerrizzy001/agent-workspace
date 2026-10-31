@@ -1,6 +1,7 @@
 import { backup, type DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
+import { TEAM_METADATA_SQL } from "./team-cache.js";
 
 /**
  * Ordered, named schema migrations. `PRAGMA user_version` is the applied
@@ -77,6 +78,18 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 6,
     name: "roadmap_03_execution_hosts",
     up: () => {},
+  },
+  {
+    // Team metadata (roadmap section 9), the next unused number: new tables
+    // only. The link to a team service (never its tokens, which stay in the
+    // desktop's OS-backed secret storage), team-project and task mappings, a
+    // bounded nonauthoritative cache of shared tasks, comments, assignments
+    // and members, an ordered sync cursor per project and a bounded outbox.
+    // Existing records, including local tasks, are not touched. Older builds
+    // refuse the store so they cannot ignore a queued outbox.
+    version: 7,
+    name: "roadmap_05_team_metadata",
+    up: (db) => db.exec(TEAM_METADATA_SQL),
   },
 ];
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

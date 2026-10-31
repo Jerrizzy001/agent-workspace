@@ -13,6 +13,7 @@ import {
 } from "./providers.js";
 import { TerminalStream } from "./stream.js";
 import { migrate } from "./migrations.js";
+import { createTeamCache } from "./team-cache.js";
 import { createAgentControl, type AgentControl } from "./agent-control.js";
 import {
   ATTACHMENT_GRACE_MS,
@@ -1949,6 +1950,19 @@ export async function createCore({
         }
       },
     });
+    // Team metadata cache (schema roadmap_05_team_metadata): desktop main only.
+    const teamCache = createTeamCache({
+      db,
+      task: (taskId) => {
+        const row = db.prepare("SELECT value FROM records WHERE kind='tasks' AND id=?").get(taskId) as any;
+        return row ? JSON.parse(row.value) : null;
+      },
+      tasks: (projectId) => list("tasks").filter((t) => t.projectId === projectId),
+      project: (projectId) => {
+        const row = db.prepare("SELECT value FROM records WHERE kind='projects' AND id=?").get(projectId) as any;
+        return row ? JSON.parse(row.value) : null;
+      },
+    });
     return {
       async invoke(command, payload = {}) {
         if (closed) throw new Error("Core is closed");
@@ -1963,6 +1977,10 @@ export async function createCore({
       async hostRecords(action, payload) {
         if (closed) throw new Error("Core is closed");
         return enqueue("mutations", () => hostRecords(action, payload));
+      },
+      async team(action, payload) {
+        if (closed) throw new Error("Core is closed");
+        return enqueue("mutations", () => teamCache(action, payload));
       },
       async createAttachment(input) {
         if (closed) throw new Error("Core is closed");

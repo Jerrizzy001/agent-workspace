@@ -13,6 +13,7 @@ import { createId } from "./id";
 import { savedModels } from "./LaunchBar";
 import { capability, providerName } from "./sessions";
 import { ProviderGlyph, StatusBadge } from "./ui";
+import { TaskTeamSection, TeamCardMeta, useTeamBoard } from "./TaskTeam";
 
 export const columns: { id: TaskStatus; label: string }[] = [
   { id: "backlog", label: "Backlog" },
@@ -37,8 +38,11 @@ export function Board({
   onOpenSession,
   report,
   modeSwitch,
+  projectId,
 }: {
   modeSwitch?: ReactNode;
+  /** The open folder; team metadata (assignee, comments, sync) is shown for its published tasks. */
+  projectId?: string;
   tasks: Task[];
   attempts: Attempt[];
   sessions: Session[];
@@ -62,6 +66,8 @@ export function Board({
     }
   }
   const selected = tasks.find((t) => t.id === selectedTaskId);
+  const team = useTeamBoard(projectId, tasks);
+  const teamOffline = !!team.status?.connected && !team.status.online;
   const taskAttempts = selected
     ? attempts.filter((a) => a.taskId === selected.id)
     : [];
@@ -128,6 +134,7 @@ export function Board({
                         {t.title}
                       </button>
                       {t.description ? <p>{t.description}</p> : null}
+                      <TeamCardMeta entry={team.entries[t.id]} offline={teamOffline} />
                       <footer>
                         <span>
                           {count} {count === 1 ? "attempt" : "attempts"}
@@ -223,6 +230,13 @@ export function Board({
               <Plus size={14} />
               Start an attempt
             </button>
+            <TaskTeamSection
+              task={selected}
+              entry={team.entries[selected.id]}
+              status={team.status}
+              reload={team.reload}
+              report={report}
+            />
           </aside>
         ) : null}
       </div>
