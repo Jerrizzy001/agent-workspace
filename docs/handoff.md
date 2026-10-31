@@ -11,7 +11,7 @@ Branch `claude/jolly-clarke-oo3rm5`. Read this first, then `README.md`, `docs/pl
   - Never change global CLI authentication or configuration.
   - Default tests must not spend model usage.
 - **Remaining work, in the owner's order:**
-  1. SSH projects (roadmap §2).
+  1. ~~SSH projects (roadmap §2)~~ — done on Linux against a disposable sshd (see below and `docs/release-evidence.md`).
   2. Mac signing and notarization, auto-update, Windows client, Homebrew (§8).
   3. Multiple Claude accounts with conversation branching and transcript links (§3).
   4. Team features: members, comments, assignments (§9).
@@ -26,12 +26,13 @@ Branch `claude/jolly-clarke-oo3rm5`. Read this first, then `README.md`, `docs/pl
 | Canvas | Sessions and notes as nodes, right-click to add, revisions |
 | Agent control (§4) | `awctl` CLI over a Unix socket with owner-granted, expiring, per-session capabilities |
 | AI suggestions (§5) | Opt-in commit message and session-name drafts through a locked-down CLI runner; Claude verified against `--help`, Codex built but unverified |
+| SSH projects (§2) | **SSH hosts** panel; system `ssh -T` to a fixed helper (`bin/aw-ssh-helper` in the server archive, `src/server/stdio-host.ts`) speaking framed JSON (`src/shared/host-protocol.ts`); host router in the desktop utility (`src/core/host-router.ts`, transport in `src/core/ssh.ts`) with `ssh-<host>-<id>` IDs; remote shell/Claude/Codex, Files, Git, notes, canvas, tasks and lanes; auto-reconnect reattaches the same remote tmux session; image paste, agent control and AI suggestions refused for SSH sessions; SSH folders never shared with browsers |
 | Owner utilities | Screenshot paste, keep-awake, local English dictation (sherpa-onnx, model downloaded on demand) |
 | Remote | Paired HTTPS browser gateway, phone layout, PWA; owner-only features are hidden and refused remotely |
-| Data | Migration registry `src/core/migrations.ts`, schema **v5** (`roadmap_04_controller`), backups before upgrade |
-| Policy | `src/shared/command-policy.ts` classifies every command as owner-only or remote, with a test enforcing it. Agent-control verbs are in `CONTROLLER_WRAPS` |
+| Data | Migration registry `src/core/migrations.ts`, schema **v6** (`roadmap_03_execution_hosts`), backups before upgrade |
+| Policy | `src/shared/command-policy.ts` classifies every command as owner-only or remote, with a test enforcing it. Agent-control verbs are in `CONTROLLER_WRAPS`. The SSH helper accepts only the gateway's remote-allowed commands (`validateCommand`) plus `browse`, `register` and `hide`; `workspace:ssh` is owner-only IPC |
 
-The roadmap reserved migration names. v4 became `board_lanes` and v5 `roadmap_04_controller`. When `roadmap_02_conversations`, `roadmap_03_execution_hosts` and `roadmap_05_team_metadata` land, each takes the next unused number.
+The roadmap reserved migration names. v4 became `board_lanes`, v5 `roadmap_04_controller` and v6 `roadmap_03_execution_hosts`. When `roadmap_02_conversations` and `roadmap_05_team_metadata` land, each takes the next unused number (v7 next).
 
 ## Running checks in a Linux cloud container (how this was verified)
 
@@ -51,7 +52,7 @@ The roadmap reserved migration names. v4 became `board_lanes` and v5 `roadmap_04
 
   | Check | Result |
   | --- | --- |
-  | `npm test` | 79 pass, 2 opt-in skipped |
+  | `npm test` | 89 pass, 2 opt-in skipped (91 tests) |
   | `smoke` | 8 |
   | `smoke:ui` | 9 |
   | `verify:agent-control` | 10 |
@@ -66,7 +67,10 @@ The roadmap reserved migration names. v4 became `board_lanes` and v5 `roadmap_04
   | `verify:desktop` | 4 |
   | `verify:remote-desktop` | 7 |
   | `verify:mobile` | 15 |
+  | `verify:ssh` | 10 (disposable sshd; also once from the extracted archive with `npm ci`) |
+  | `verify:server-release` | 3 |
 - `verify:terminal` once timed out under back-to-back load and then passed 3 of 3 standalone.
+- SSH checks need OpenSSH: `apt-get install -y openssh-server openssh-client`. The fixtures run their own `sshd -D -f <temp config>` on a free loopback port with throwaway keys and their own known_hosts and client config (passed to the app as `WORKSPACE_SSH_CONFIG`, which adds `-F`); sshd needs its empty `/run/sshd` directory, which the fixture creates if missing. `tests/ssh*.test.ts` and `tests/host-router.test.ts` skip when sshd is absent. The container's `/usr/local/bin/node` is Node 22, so `verify:ssh`'s sshd sets `AW_NODE` with `SetEnv`; the tests' helper launcher runs this checkout's `src/server/stdio-host.ts` through tsx with Node 24.
 - Only kill tmux servers your own fixtures created. A broad `/tmp/aw-*.sock` sweep is refused by the session's permission policy.
 - Parallel sub-agents in git worktrees worked well. Symlink the main `node_modules` into each worktree, and reset each worktree to the branch tip first, because worktrees started from an older commit.
 
@@ -82,13 +86,15 @@ The roadmap reserved migration names. v4 became `board_lanes` and v5 `roadmap_04
 - **Leftover stash:** a stash named `dict-lock-tmp-aa90` is left on the repository (an old copy of the package files). It's safe to drop if the owner agrees.
 - The repository has no LICENSE file yet. The owner must choose one before any public release.
 
-## Next step: SSH projects (roadmap §2)
+## SSH projects (roadmap §2): state
 
-Follow §2 as written:
-- system OpenSSH with `ssh -T` and framed stdio to a fixed, versioned helper entrypoint built from the standalone server;
-- a host router so the remote core stays authoritative;
-- no arbitrary `-o` options, agent forwarding or auto-provisioning;
-- strict host-key handling;
-- migration `roadmap_03_execution_hosts` at the next free schema number.
+Done on Linux, all four slices; details and exact results in `docs/release-evidence.md` ("Roadmap section 2"). Gaps to keep in mind:
 
-Split it into: read-only host probe, then shell lifecycle across disconnect/reconnect, then remote Files/Git, then providers and attachments. Test against a local disposable `sshd` with a throwaway key, without using model usage.
+- Never tried against a real remote machine, macOS (as desktop or host), Windows OpenSSH, ProxyJump hosts or non-root users. Only a fixture `claude` ran on the host.
+- Not built: image attachments over SSH (pasting into an SSH session is refused with a message; the roadmap's bounded attachment frame is future work), browser sharing of SSH folders (off by design), app-managed known_hosts enrollment (the owner trusts keys with their own `ssh`).
+- The helper must be installed by the owner from the server archive (`~/agent-workspace-server` by default, then `npm ci`); there is no auto-provisioning or helper update. A protocol bump needs a matching helper on every host.
+- Reconnect is automatic after an unexpected loss (1, 2, 4, 8, 15 s); a host the owner left connected reconnects at app start. In-flight requests are reported as unknown and never resent.
+
+## Next step: Mac signing and notarization, auto-update, Windows client, Homebrew (roadmap §8)
+
+Follow §8 as written. Before that, re-run the SSH checks on a Mac if one becomes available (`npm run verify:ssh` needs `sshd`; on macOS use a non-system sshd binary or Remote Login with a throwaway user).

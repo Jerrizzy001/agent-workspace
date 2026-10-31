@@ -49,6 +49,17 @@ const api: WorkspaceAPI = {
       return () => ipcRenderer.removeListener("workspace:dictation", handler);
     },
   },
+  ssh: {
+    list: () => ipcRenderer.invoke("workspace:ssh", "list"),
+    add: (input) => ipcRenderer.invoke("workspace:ssh", "add", input),
+    probe: (hostId) => ipcRenderer.invoke("workspace:ssh", "probe", { hostId }),
+    connect: (hostId, options) =>
+      ipcRenderer.invoke("workspace:ssh", "connect", { hostId, ...(options?.approveUpgrade ? { approveUpgrade: true } : {}) }),
+    disconnect: (hostId) => ipcRenderer.invoke("workspace:ssh", "disconnect", { hostId }),
+    browse: (hostId, path) => ipcRenderer.invoke("workspace:ssh", "browse", path === undefined ? { hostId } : { hostId, path }),
+    registerProject: (hostId, path) => ipcRenderer.invoke("workspace:ssh", "registerProject", { hostId, path }),
+    remove: (hostId) => ipcRenderer.invoke("workspace:ssh", "remove", { hostId }),
+  },
   assist: {
     status: () => ipcRenderer.invoke("workspace:assist", "status"),
     configure: (input) => ipcRenderer.invoke("workspace:assist", "configure", input),

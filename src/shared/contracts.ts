@@ -9,6 +9,8 @@ export interface Project {
   createdAt: string;
   /** Removed from the folder list; files and history are untouched. */
   hidden?: boolean;
+  /** Set for a folder on an SSH execution host; `path` is then a path on that host. */
+  hostId?: string;
 }
 export interface Task {
   id: string;
@@ -65,6 +67,8 @@ export interface Session {
   laneOrder?: number;
   /** Incremented on every placement; `session.place` must name the current one. */
   placementRevision?: number;
+  /** Set for a session running on an SSH execution host. */
+  hostId?: string;
 }
 export interface BoardLane {
   id: string;
@@ -110,6 +114,77 @@ export interface Snapshot {
   layouts: Layout[];
   boardLanes: BoardLanes[];
   capabilities: Capability[];
+  /** SSH execution hosts known to this desktop (desktop owner only). */
+  hosts?: ExecutionHostView[];
+}
+export type HostConnectionState =
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "reconnecting";
+/** Why a host could not be used, with what the owner can do about it. */
+export interface HostProblem {
+  code:
+    | "host-key-unknown"
+    | "host-key-changed"
+    | "auth-failed"
+    | "unreachable"
+    | "helper-missing"
+    | "node-missing"
+    | "protocol-mismatch"
+    | "upgrade-required"
+    | "data-in-use"
+    | "protocol-error"
+    | "connection-lost"
+    | "failed";
+  message: string;
+  /** Host key fingerprints offered by the server, for out-of-band checking. */
+  fingerprints?: string[];
+}
+export interface ExecutionHostView {
+  id: string;
+  /** OpenSSH host alias from the owner's configuration. */
+  alias: string;
+  label: string;
+  user?: string;
+  port?: number;
+  /** Helper install folder on the host. */
+  helperPath: string;
+  /** Optional dedicated helper data folder on the host. */
+  dataDir?: string;
+  state: HostConnectionState;
+  problem?: HostProblem;
+  /** Last successful probe or connection. */
+  helperVersion?: string;
+  platform?: string;
+  protocol?: number;
+  remoteHostId?: string;
+  tools?: { name: string; available: boolean; detail: string }[];
+  probedAt?: string;
+  /** Remote tool availability reported by the connected host's core. */
+  capabilities?: Capability[];
+}
+export interface HostProbeResult {
+  ok: boolean;
+  host: ExecutionHostView;
+  problem?: HostProblem;
+}
+export interface DesktopSSHAPI {
+  list(): Promise<ExecutionHostView[]>;
+  add(input: {
+    alias: string;
+    label?: string;
+    user?: string;
+    port?: number;
+    helperPath?: string;
+    dataDir?: string;
+  }): Promise<ExecutionHostView>;
+  probe(hostId: string): Promise<HostProbeResult>;
+  connect(hostId: string, options?: { approveUpgrade?: boolean }): Promise<ExecutionHostView>;
+  disconnect(hostId: string): Promise<ExecutionHostView>;
+  browse(hostId: string, path?: string): Promise<DirectoryListing>;
+  registerProject(hostId: string, path: string): Promise<Project>;
+  remove(hostId: string): Promise<void>;
 }
 export interface FileEntry {
   name: string;
@@ -450,6 +525,8 @@ export interface WorkspaceAPI {
   agentControl?: DesktopAgentControlAPI;
   /** Desktop owner only: opt-in AI commit messages and session names. */
   assist?: DesktopAssistAPI;
+  /** Desktop owner only: SSH execution hosts and their folders. */
+  ssh?: DesktopSSHAPI;
 }
 declare global {
   interface Window {
@@ -470,5 +547,15 @@ export interface Core {
   }): Promise<SavedAttachment>;
   /** Trusted desktop broker only: grant, revoke and list agent control. */
   agentControl(action: unknown, payload: unknown): Promise<AgentControlState>;
+  /** Trusted desktop host router only: stored SSH hosts and remote folder references. */
+  hostRecords(action: unknown, payload?: unknown): Promise<unknown>;
   close(): void | Promise<void>;
+}
+/**
+ * Where project commands execute. The local core and each connected SSH host
+ * implement it; the host router picks one per command from opaque IDs.
+ */
+export interface ExecutionHost {
+  readonly id: string;
+  invoke(command: Command, payload: Record<string, unknown>): Promise<unknown>;
 }

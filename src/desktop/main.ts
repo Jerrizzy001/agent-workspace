@@ -55,7 +55,7 @@ async function syncPower() {
     ]);
     if (!power || !core || !ready) return;
     if (writes === powerWrites) power.setEnabled(setting.value === true);
-    if (seen === snapshotsSeen) power.setSessions(snapshot.sessions);
+    if (seen === snapshotsSeen) power.setSessions(snapshot.sessions.filter((s) => !s.hostId));
   } catch {
     /* A later snapshot event or reconnect will resynchronize. */
   }
@@ -185,7 +185,8 @@ function event(value: CoreEvent) {
   if (value.type === "core.status") coreStatus = value.status;
   if (value.type === "snapshot") {
     snapshotsSeen++;
-    power?.setSessions(value.snapshot.sessions);
+    // Only local sessions keep this computer awake; SSH hosts are not covered.
+    power?.setSessions(value.snapshot.sessions.filter((s) => !s.hostId));
   }
   for (const listener of eventListeners) {
     try { listener(value); } catch { /* A detached browser must not disrupt the core. */ }
@@ -384,6 +385,17 @@ else {
       const png = takeClipboardImage(v.token);
       return coreRequest({ type: "attachment", sessionId: v.sessionId, generation: v.generation, data: png });
     });
+    ipcMain.handle("workspace:ssh", async (ev, action: unknown, value: unknown) => {
+      // Owner window only: SSH hosts, host keys and remote folder registration
+      // never reach the gateway, a paired browser or an agent.
+      assertOwner(ev);
+      if (!["list", "add", "probe", "connect", "disconnect", "browse", "registerProject", "remove"].includes(action as string))
+        throw new Error("Unsupported SSH action");
+      if (value === undefined) value = {};
+      if (!value || typeof value !== "object" || Array.isArray(value) || JSON.stringify(value).length > 8192)
+        throw new Error("Invalid SSH request");
+      return coreRequest({ type: "ssh", action, payload: value }, 120000);
+    });
     ipcMain.handle("workspace:agent-control", async (ev, action: unknown, value: unknown) => {
       // Owner window only: neither the remote gateway nor an agent's awctl
       // capability can reach this, so neither can mint or widen a grant.
@@ -508,10 +520,12 @@ else {
         }
         await waitForCore();
         const sharing = await invokeCore("snapshot") as import("../shared/contracts").Snapshot;
-        if (!sharing.projects.length) throw new Error("Open a project before enabling remote access");
+        // SSH folders are never shared with browsers by default.
+        const shared = sharing.projects.filter(p => !p.hostId);
+        if (!shared.length) throw new Error("Open a project before enabling remote access");
         const started = await startGateway({
           dataDir: app.getPath("userData"), invoke: invokeCore,
-          allowedProjectIds: sharing.projects.map(p => p.id),
+          allowedProjectIds: shared.map(p => p.id),
           subscribe: listener => { eventListeners.add(listener); return () => { eventListeners.delete(listener); }; },
           host: config.host, port: config.port, tls,
           publicOrigin: config.publicOrigin,
@@ -519,7 +533,7 @@ else {
         });
         if (quitting) { await started.stop(); throw new Error("Workspace is shutting down"); }
         remoteConfig = config;
-        sharedProjects = sharing.projects.map(p => ({ id: p.id, name: p.name }));
+        sharedProjects = shared.map(p => ({ id: p.id, name: p.name }));
         gateway = started;
         return remoteStatus();
       } finally { gatewayMutation = false; }

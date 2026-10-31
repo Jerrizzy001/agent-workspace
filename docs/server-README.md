@@ -44,3 +44,7 @@ Keep the host awake and the server process running under a process supervisor yo
 The built-in shell, files, Git, tasks, notes, worktrees, and agent CLI controls share the same host core. These provider terminals do not implement provider-specific structured approvals, usage accounting, or conversation resume. The host account retains its normal privileges.
 
 Run `npm start -- --help` for all CLI options. Environment alternatives are `DATA_DIR`, `HOST`, `PORT`, `TLS_CERT`, `TLS_KEY`, `PUBLIC_ORIGIN`, and `STATIC_DIR`. Serve this bundled `dist/renderer` directory; its assets work outside the original source checkout.
+
+## Use this host from the desktop app over SSH
+
+This archive is also the SSH helper for the desktop app's **SSH hosts**. After `npm ci`, keep the folder (the desktop's default helper folder is `~/agent-workspace-server`). The desktop runs `bin/aw-ssh-helper` over `ssh -T` with your own OpenSSH keys or agent; it speaks a framed protocol on stdin/stdout, runs its own core with data in `~/.agent-workspace-ssh` (or the `--data-dir` the desktop owner chose), and exits when the connection closes. tmux sessions it started keep running. It does not listen on any port and needs no pairing code. Do not point it at the data directory of a running browser host; the owner lock refuses a second core on the same data. If `node` on the non-interactive PATH is older than 24, set `AW_NODE` to a Node 24+ executable (for example with sshd's `SetEnv`) or edit `bin/aw-ssh-helper`. `bin/aw-ssh-helper --version` prints the helper and protocol versions.

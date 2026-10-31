@@ -18,6 +18,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Server,
   Smartphone,
   SquareTerminal,
   X,
@@ -33,6 +34,7 @@ import type {
 import { ReviewPanel, type ReviewSummary } from "./ReviewPanel";
 import { CanvasView } from "./CanvasView";
 import { RemoteAccessPanel } from "./RemoteAccessPanel";
+import { SSHProjectsPanel, hostStateLabel } from "./SSHProjectsPanel";
 import { FolderBrowser } from "./FolderBrowser";
 import { LaunchBar, savedModels, type LaunchChoices } from "./LaunchBar";
 import { SessionView } from "./SessionView";
@@ -135,6 +137,7 @@ export default function App() {
     "task" | "edit-task" | "attempt" | "palette" | null
   >(null);
   const [remotePanel, setRemotePanel] = useState(false);
+  const [sshPanel, setSSHPanel] = useState(false);
   const [folderMenu, setFolderMenu] = useState(false);
   const [showEnded, setShowEnded] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -213,6 +216,14 @@ export default function App() {
   useEffect(() => store("board", boardMode), [boardMode]);
 
   const project = projects.find((p) => p.id === projectId);
+  const hosts = snapshot.hosts || [];
+  const hostOf = (p?: Project) =>
+    p?.hostId ? hosts.find((h) => h.id === p.hostId) : undefined;
+  // An SSH folder's tools are the ones its host reported, never this computer's.
+  const projectHost = hostOf(project);
+  const projectCapabilities = project?.hostId
+    ? projectHost?.capabilities || []
+    : snapshot.capabilities;
   const session = snapshot.sessions.find(
     (s) => s.id === sessionId && s.projectId === projectId,
   );
@@ -254,12 +265,17 @@ export default function App() {
     snapshot.projects.find((p) => p.id === id)?.name || "Folder";
   const titleOf = (s: Session) =>
     sessionTitle(s, snapshot.attempts, snapshot.tasks);
-  const disabledReason =
+  const coreReason =
     core === "ready" || (core === "starting" && snapshot.projects.length)
       ? ""
       : core === "failed"
         ? "The workspace core stopped. Reopen the app."
         : "Reconnecting to the workspace…";
+  const disabledReason =
+    coreReason ||
+    (project?.hostId && projectHost?.state !== "connected"
+      ? `${projectHost?.label || "This SSH host"} is not connected. Connect it from SSH hosts; its sessions keep running there.`
+      : "");
 
   // ---- Notifications: needs-you, finished turns and unexpected exits.
   const previous = useRef(new Map<string, Pick<Session, "status" | "activity">>());
@@ -449,7 +465,7 @@ export default function App() {
         message,
         kind: /not installed/.test(message)
           ? "missing"
-          : /uncertain|outcome unknown|timed out|interrupted/i.test(message)
+          : /uncertain|outcome unknown|outcome is unknown|timed out|interrupted/i.test(message)
             ? "uncertain"
             : "error",
         retry: { key, payload },
@@ -463,7 +479,7 @@ export default function App() {
     if (!project) return;
     if ("Notification" in window && Notification.permission === "default")
       void Notification.requestPermission().catch(() => {});
-    const cap = capability(snapshot.capabilities, provider);
+    const cap = capability(projectCapabilities, provider);
     if (cap && !cap.available) {
       setProblem({ provider, message: cap.detail, kind: "missing" });
       return undefined;
@@ -711,11 +727,20 @@ export default function App() {
                     "folder-row" +
                     (p.id === projectId && !showBrowser ? " selected" : "")
                   }
-                  title={p.path}
+                  title={p.hostId ? `${hostOf(p)?.label || "SSH"}:${p.path}` : p.path}
                   onClick={() => chooseProject(p.id)}
                 >
-                  <FolderOpen size={15} />
+                  {p.hostId ? <Server size={15} /> : <FolderOpen size={15} />}
                   <span>{p.name}</span>
+                  {p.hostId ? (
+                    <span
+                      className="host-badge"
+                      title={`On SSH host ${hostOf(p)?.label || "removed host"}: ${hostStateLabel(hostOf(p)?.state || "disconnected")}`}
+                    >
+                      <span className={"ssh-dot " + (hostOf(p)?.state || "disconnected")} aria-hidden="true" />
+                      {hostOf(p)?.label || "SSH"}
+                    </span>
+                  ) : null}
                   {waiting ? (
                     <span className="needs-dot" title="A session needs you" />
                   ) : null}
@@ -804,6 +829,13 @@ export default function App() {
                 : "Connected"}
             </span>
           </div>
+          {hosts.map((h) => (
+            <div key={h.id} className="host-connection" role="status" aria-label={`SSH host ${h.label}`}>
+              <span className={"ssh-dot " + h.state} aria-hidden="true" />
+              {h.label}
+              <span>{hostStateLabel(h.state)}</span>
+            </div>
+          ))}
           <div className="capabilities" aria-label="Installed tools">
             {snapshot.capabilities.map((c) => (
               <span
@@ -864,6 +896,16 @@ export default function App() {
               AI suggestions
             </button>
           ) : null}
+          {window.workspace.ssh && !isRemoteBrowser ? (
+            <button
+              className="foot-button"
+              aria-label="SSH hosts"
+              onClick={() => setSSHPanel(true)}
+            >
+              <Server size={14} />
+              SSH hosts
+            </button>
+          ) : null}
           {window.workspace.remote ? (
             <button
               className="foot-button"
@@ -893,8 +935,14 @@ export default function App() {
             ) : project ? (
               <>
                 <h1>{project.name}</h1>
+                {projectHost ? (
+                  <span className="host-badge" title={`Runs on ${projectHost.label} (${projectHost.alias})`}>
+                    <span className={"ssh-dot " + projectHost.state} aria-hidden="true" />
+                    {projectHost.label}
+                  </span>
+                ) : null}
                 <span className="topbar-path" title={project.path}>
-                  {shortPath(project.path)}
+                  {project.hostId ? project.path : shortPath(project.path)}
                 </span>
               </>
             ) : (
@@ -1030,7 +1078,7 @@ export default function App() {
               onTarget={(path) =>
                 setTargets((current) => ({ ...current, [project.id]: path }))
               }
-              capabilities={snapshot.capabilities}
+              capabilities={projectCapabilities}
               choices={choices}
               onChoices={(next) => {
                 setChoices(next);
@@ -1048,6 +1096,7 @@ export default function App() {
             />
             {problem ? (
               <LaunchNotice
+                hostLabel={projectHost?.label}
                 problem={problem}
                 target={target}
                 onDismiss={() => setProblem(null)}
@@ -1066,7 +1115,8 @@ export default function App() {
                   const fresh = await window.workspace
                     .invoke<Snapshot>("snapshot")
                     .catch(() => null);
-                  const cap = fresh?.capabilities.find(
+                  const freshHost = fresh?.hosts?.find((h) => h.id === project.hostId);
+                  const cap = (project.hostId ? freshHost?.capabilities : fresh?.capabilities)?.find(
                     (c) => c.name === problem.provider,
                   );
                   if (cap && !cap.available)
@@ -1136,7 +1186,7 @@ export default function App() {
                       <Launchpad
                         project={project}
                         target={target}
-                        capabilities={snapshot.capabilities}
+                        capabilities={projectCapabilities}
                         launching={launching}
                         disabledReason={disabledReason}
                         onLaunch={(provider) => void launch(provider)}
@@ -1154,7 +1204,7 @@ export default function App() {
                     project={project}
                     sessions={folderSessions}
                     boards={snapshot.boardLanes || []}
-                    capabilities={snapshot.capabilities}
+                    capabilities={projectCapabilities}
                     disabledReason={disabledReason}
                     launching={launching}
                     titleOf={titleOf}
@@ -1342,6 +1392,23 @@ export default function App() {
       {remotePanel ? (
         <RemoteAccessPanel onClose={() => setRemotePanel(false)} />
       ) : null}
+      {sshPanel && window.workspace.ssh ? (
+        <SSHProjectsPanel
+          hosts={hosts}
+          onClose={() => setSSHPanel(false)}
+          onOpenProject={(added) => {
+            setSSHPanel(false);
+            setBrowsing(false);
+            setProjectId(added.id);
+            setTaskId("");
+            setGit(null);
+            setView("terminals");
+            setMobilePane("terminal");
+            setSessionId("");
+            void reload();
+          }}
+        />
+      ) : null}
       {(modal === "task" || modal === "edit-task") && project ? (
         <TaskModal
           existing={modal === "edit-task" ? modalTask : undefined}
@@ -1359,7 +1426,7 @@ export default function App() {
       {modal === "attempt" && modalTask ? (
         <AttemptModal
           task={modalTask}
-          capabilities={snapshot.capabilities}
+          capabilities={projectCapabilities}
           close={() => setModal(null)}
           created={(result) => {
             setModal(null);
@@ -1525,6 +1592,7 @@ function Launchpad({
 }
 
 function LaunchNotice({
+  hostLabel,
   problem,
   target,
   onDismiss,
@@ -1533,6 +1601,7 @@ function LaunchNotice({
   onShell,
   onRoot,
 }: {
+  hostLabel?: string;
   problem: LaunchProblem;
   target: string;
   onDismiss: () => void;
@@ -1547,7 +1616,7 @@ function LaunchNotice({
       <div>
         <strong>
           {problem.kind === "missing"
-            ? `${name} isn't available on this host`
+            ? `${name} isn't available on ${hostLabel || "this host"}`
             : problem.kind === "uncertain"
               ? `${name} may or may not have started`
               : `${name} couldn't open`}
@@ -1555,8 +1624,8 @@ function LaunchNotice({
         <p>{problem.message}</p>
         {problem.kind === "missing" && installHints[problem.provider] ? (
           <p className="hint">
-            To install it, run <code>{installHints[problem.provider]}</code> in a
-            Shell, then run <code>{problem.provider}</code> once to sign in. If
+            To install it{hostLabel ? ` on ${hostLabel}` : ""}, run <code>{installHints[problem.provider]}</code> in a
+            Shell {hostLabel ? `on ${hostLabel} ` : ""}(the shell opens there), then run <code>{problem.provider}</code> once to sign in. If
             it's already installed, make sure your login shell's PATH includes
             it.
           </p>

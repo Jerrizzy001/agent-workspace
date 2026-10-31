@@ -850,3 +850,32 @@ test("independent gateways on one hostname keep separate browser cookie sessions
     for (const dir of dirs) fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("SSH hosts and SSH folders never reach a paired browser", async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "aw-gateway-")),
+    f = fixture();
+  f.snapshot.projects.push({ id: "ssh-0a1b2c3d-r1", name: "remote", path: "/srv/remote", createdAt: "", hostId: "0a1b2c3d" });
+  f.snapshot.hosts = [
+    { id: "0a1b2c3d", alias: "box", label: "box", helperPath: "~/aw", state: "connected", tools: [] },
+  ];
+  // Even a misconfigured allow list containing the SSH folder does not share it.
+  const gateway = await startGateway({ dataDir, ...f, port: 0, allowedProjectIds: ["p", "ssh-0a1b2c3d-r1"] });
+  const url = gateway.status().url;
+  let c: Awaited<ReturnType<typeof client>> | undefined;
+  try {
+    c = await client(url, await login(url, await gateway.pairingSecret()));
+    const snapshot = (await c.rpc("snapshot")).result;
+    assert.equal(snapshot.hosts, undefined);
+    assert.deepEqual(snapshot.projects.map((p: any) => p.id), ["p"]);
+    f.emit({ type: "snapshot", snapshot: f.snapshot });
+    await wait(50);
+    const pushed = c.messages.filter((m) => m.type === "event" && m.event.type === "snapshot").at(-1);
+    assert.ok(pushed);
+    assert.equal(pushed.event.snapshot.hosts, undefined);
+    assert.ok(!pushed.event.snapshot.projects.some((p: any) => p.hostId));
+  } finally {
+    c?.ws.terminate();
+    await gateway.stop();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});

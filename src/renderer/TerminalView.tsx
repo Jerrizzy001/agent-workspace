@@ -323,6 +323,8 @@ export function TerminalView({
         if (disposed) return;
         attached = true;
         setReady(true);
+        // A reattach after a lost connection (SSH reconnect) clears the old error.
+        setError("");
         terminal.options.disableStdin = false;
         viewerCallback.current?.(viewerId);
         pending.splice(0).forEach((event) => write(event.data, event.sequence));

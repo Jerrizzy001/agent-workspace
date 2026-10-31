@@ -34,5 +34,20 @@ try{
   const manifest=await page.request.get(status.url+'/manifest.webmanifest');assert.equal(manifest.status(),200);assert.equal((await manifest.json()).display,'standalone');
   assert.equal((await page.request.get(status.url+'/sw.js')).status(),200);assert.deepEqual(errors,[]);checks.push('fresh archive npm ci has no Electron hooks; Node24 native terminal loads independently of checkout');checks.push('bundled browser assets, mobile pairing, authenticated real shell input/capture and PWA manifest work outside checkout');
   await invoke('session.terminate',viewer);
+  // The SSH helper ships in the archive: run its fixed launcher directly (no
+  // SSH) and speak the framed protocol to it.
+  {
+    const frame=m=>{const b=Buffer.from(JSON.stringify(m));const h=Buffer.alloc(4);h.writeUInt32BE(b.length);return Buffer.concat([h,b]);};
+    const helper=spawn(path.join(serverDir,'bin','aw-ssh-helper'),['--data-dir',path.join(fixture,'helper-data')],{cwd:fixture,env:{...process.env,AW_NODE:process.execPath,NODE_PATH:''},stdio:['pipe','pipe','pipe']});
+    let buffer=Buffer.alloc(0),seen=false;const frames=[];
+    helper.stdout.on('data',b=>{buffer=Buffer.concat([buffer,b]);if(!seen){const at=buffer.indexOf('\nAW-STDIO-HOST\n');if(at<0)return;buffer=buffer.subarray(at+15);seen=true;}while(buffer.length>=4&&buffer.length>=4+buffer.readUInt32BE(0)){frames.push(JSON.parse(buffer.subarray(4,4+buffer.readUInt32BE(0)).toString()));buffer=buffer.subarray(4+buffer.readUInt32BE(0));}});
+    const next=async k=>{for(let i=0;i<300;i++){const at=frames.findIndex(f=>f.k===k);if(at>=0)return frames.splice(at,1)[0];await new Promise(r=>setTimeout(r,50));}throw new Error('helper frame '+k);};
+    const hello=await next('hello');assert.equal(hello.helperVersion,pkg.version);assert.deepEqual(hello.protocol,{min:1,max:1});assert.ok(hello.tools.find(t=>t.name==='node'&&t.available));
+    helper.stdin.write(frame({k:'start',protocol:1}));const ready=await next('ready');assert.match(ready.hostId,/^[0-9a-f]{32}$/);
+    helper.stdin.write(frame({k:'req',id:1,op:'register',path:repo}));assert.equal((await next('res')).result.path,repo);
+    helper.stdin.write(frame({k:'req',id:2,op:'invoke',command:'settings.read',payload:{key:'keepAwake'}}));assert.match((await next('res')).error,/not available remotely/);
+    helper.stdin.write(frame({k:'bye'}));assert.equal(await new Promise(r=>helper.once('exit',r)),0);
+    checks.push('archive ships bin/aw-ssh-helper: greeting, start, folder registration and owner-command refusal work outside checkout');
+  }
   console.log(JSON.stringify({passed:true,checks}));
 }finally{await browser?.close();if(child){child.kill('SIGTERM');await new Promise(resolve=>{if(child.exitCode!==null)resolve();else child.once('exit',resolve);});}await cleanupFixture(fixture);}

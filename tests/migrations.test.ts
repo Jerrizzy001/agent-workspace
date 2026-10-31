@@ -25,7 +25,7 @@ function v2Store(file: string) {
   return db;
 }
 
-test("migration registry is ordered, uniquely named and ends at roadmap_04_controller", () => {
+test("migration registry is ordered, uniquely named and ends at roadmap_03_execution_hosts", () => {
   assert.deepEqual(
     MIGRATIONS.map((m) => [m.version, m.name]),
     [
@@ -34,9 +34,10 @@ test("migration registry is ordered, uniquely named and ends at roadmap_04_contr
       [3, "roadmap_01_owner_utilities"],
       [4, "board_lanes"],
       [5, "roadmap_04_controller"],
+      [6, "roadmap_03_execution_hosts"],
     ],
   );
-  assert.equal(SCHEMA_VERSION, 5);
+  assert.equal(SCHEMA_VERSION, 6);
 });
 
 test("a fresh store is created at the current version without a backup", async () => {
@@ -159,6 +160,47 @@ test("a newer store is rejected before anything is written", async () => {
     assert.equal(version(file), SCHEMA_VERSION + 1);
     assert.equal(fs.existsSync(path.join(temp, "backups")), false);
     assert.equal(fs.existsSync(path.join(temp, "owner.lock")), false);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test("v6 adds SSH host records without touching a v5 store's records", async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "workspace-migrate-"));
+  const file = path.join(temp, "workspace.sqlite");
+  try {
+    const db = v2Store(file);
+    const project = { id: "p1", name: "app", path: temp, createdAt: "2026-01-01T00:00:00.000Z" };
+    db.prepare("INSERT INTO records VALUES (?,?,?)").run("projects", "p1", JSON.stringify(project));
+    db.prepare("INSERT INTO records VALUES (?,?,?)").run("notes", "n1", JSON.stringify({ id: "n1", projectId: "p1", title: "t", body: "b", createdAt: "x", updatedAt: "x", revision: 3 }));
+    db.exec("PRAGMA user_version=5;");
+    db.close();
+    let core = await createCore({ dataDir: temp, emit: () => {} });
+    const snapshot: any = await core.invoke("snapshot");
+    assert.deepEqual(snapshot.projects, [project]);
+    assert.equal(snapshot.notes[0].revision, 3);
+    assert.equal(snapshot.hosts, undefined, "the core itself reports no hosts; the desktop router adds them");
+    const host = { id: "0a1b2c3d", alias: "box", label: "box", helperPath: "~/aw", createdAt: "x" };
+    await core.hostRecords("putHost", host);
+    await core.hostRecords("putProjectRefs", {
+      hostId: "0a1b2c3d",
+      refs: [{ id: "ssh-0a1b2c3d-r1", hostId: "0a1b2c3d", remoteProjectId: "r1", name: "remote", path: "/srv/remote", cachedAt: "x" }],
+    });
+    await assert.rejects(core.hostRecords("putHost", { id: "../x" }), /Invalid host ID/);
+    await assert.rejects(core.hostRecords("drop", { id: "0a1b2c3d" }), /Unsupported/);
+    await assert.rejects(core.invoke("hostRecords" as any, {}), /Unsupported command/);
+    await core.close();
+    assert.equal(version(file), 6);
+    assert.ok(fs.readdirSync(path.join(temp, "backups")).some((n) => n.startsWith("workspace-v5-")));
+    core = await createCore({ dataDir: temp, emit: () => {} });
+    const stored: any = await core.hostRecords("list");
+    assert.deepEqual(stored.hosts, [host]);
+    assert.equal(stored.projectRefs.length, 1);
+    // Remote folders are not local projects.
+    assert.deepEqual(((await core.invoke("snapshot")) as any).projects, [project]);
+    await core.hostRecords("removeHost", { id: "0a1b2c3d" });
+    assert.deepEqual(await core.hostRecords("list"), { hosts: [], projectRefs: [] });
+    await core.close();
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

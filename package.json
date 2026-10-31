@@ -19,6 +19,7 @@
     "verify:lifecycle": "node scripts/verify-lifecycle-ui.mjs",
     "verify:board": "node scripts/verify-board.mjs",
     "verify:agent-control": "node scripts/verify-agent-control.mjs",
+    "verify:ssh": "node scripts/verify-ssh.mjs",
     "verify:keep-awake": "node scripts/verify-keep-awake.mjs",
     "verify:terminal": "node scripts/verify-terminal-modes.mjs",
     "verify:image-paste": "node scripts/verify-image-paste.mjs",

@@ -174,14 +174,15 @@ export function SessionView({
         <div className="session-actions">
           {session.status === "running" ? (
             <>
-              <AgentControlButton session={session} report={report} />
+              {/* Agent control and pasted images stay on this computer. */}
+              {!session.hostId ? <AgentControlButton session={session} report={report} /> : null}
               {dictationAvailable() ? (
                 <DictationButton
                   viewerId={viewerId}
                   onToggle={() => setDictationToggle((value) => value + 1)}
                 />
               ) : null}
-              {window.workspace.clipboardImage ? (
+              {window.workspace.clipboardImage && !session.hostId ? (
                 <button
                   className="button ghost small"
                   title="Save the clipboard image privately and type its path (no Enter)"

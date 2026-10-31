@@ -131,10 +131,13 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
         : {}),
     };
   }
-  function filtered(s: Snapshot): Snapshot {
+  function filtered(full: Snapshot): Snapshot {
+    // SSH host management (aliases, helper folders, host keys) is desktop
+    // owner only and never reaches a browser; SSH folders are not shared.
+    const { hosts: _hosts, ...s } = full;
     return {
       ...s,
-      projects: s.projects.filter((p) => allowed.has(p.id)),
+      projects: s.projects.filter((p) => allowed.has(p.id) && !p.hostId),
       tasks: s.tasks.filter((t) => allowed.has(t.projectId)),
       attempts: s.attempts.filter((a) => allowed.has(a.projectId)),
       sessions: s.sessions

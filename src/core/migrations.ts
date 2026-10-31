@@ -64,6 +64,20 @@ export const MIGRATIONS: readonly Migration[] = [
     name: "roadmap_04_controller",
     up: () => {},
   },
+  {
+    // v6: SSH execution hosts (roadmap section 2). New record kinds only:
+    // "executionHosts" (OpenSSH alias, label, optional user/port overrides,
+    // helper install and data folders, the pinned remote helper ID and the
+    // last probe) and "remoteProjectRefs" (a nonauthoritative cache of each
+    // host's folders so the sidebar can list them while disconnected; the
+    // remote core stays authoritative). Existing projects and sessions have
+    // no host and stay local; no ID is rewritten. Keys and passphrases stay
+    // with OpenSSH and are never stored. Older builds refuse the store
+    // because they would show remote folders' cached paths as local ones.
+    version: 6,
+    name: "roadmap_03_execution_hosts",
+    up: () => {},
+  },
 ];
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
 MIGRATIONS.forEach((m, index) => {

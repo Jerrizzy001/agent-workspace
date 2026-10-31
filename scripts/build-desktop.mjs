@@ -55,3 +55,15 @@ await build({
   outfile: "dist/server/headless.mjs",
   external: ["node-pty", "ws"],
 });
+
+// SSH helper: the fixed stdio entrypoint run on execution hosts (shipped in
+// the standalone server archive with bin/aw-ssh-helper).
+await build({
+  entryPoints: ["src/server/stdio-host.ts"],
+  bundle: true,
+  platform: "node",
+  target: "node24",
+  format: "esm",
+  outfile: "dist/server/stdio-host.mjs",
+  external: ["node-pty", "ws"],
+});

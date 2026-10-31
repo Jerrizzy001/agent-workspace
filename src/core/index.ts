@@ -1825,6 +1825,72 @@ export async function createCore({
       }
       return { id: record.id, ...saved };
     }
+    /**
+     * SSH hosts and the cached list of their folders (schema v6). Only the
+     * desktop host router reaches this; it is not a command, so neither the
+     * renderer's generic invoke nor the gateway can call it.
+     */
+    function hostRecords(action: unknown, payload: any = {}) {
+      const plain = (v: unknown) =>
+        !!v && typeof v === "object" && !Array.isArray(v);
+      if (action === "list")
+        return {
+          hosts: list("executionHosts"),
+          projectRefs: list("remoteProjectRefs"),
+        };
+      if (!plain(payload)) throw new Error("Invalid host record");
+      const hostId = payload.id ?? payload.hostId;
+      if (typeof hostId !== "string" || !/^[0-9a-f]{8}$/.test(hostId))
+        throw new Error("Invalid host ID");
+      if (action === "putHost") {
+        if (JSON.stringify(payload).length > 64 * 1024)
+          throw new Error("Host record is too large");
+        put("executionHosts", payload);
+        return payload;
+      }
+      if (action === "removeHost") {
+        db.exec("BEGIN IMMEDIATE");
+        try {
+          db.prepare("DELETE FROM records WHERE kind='executionHosts' AND id=?").run(hostId);
+          for (const ref of list("remoteProjectRefs"))
+            if (ref.hostId === hostId)
+              db.prepare("DELETE FROM records WHERE kind='remoteProjectRefs' AND id=?").run(ref.id);
+          db.exec("COMMIT");
+        } catch (error) {
+          db.exec("ROLLBACK");
+          throw error;
+        }
+        return { ok: true };
+      }
+      if (action === "putProjectRefs") {
+        const refs = payload.refs;
+        if (!Array.isArray(refs) || refs.length > 1000)
+          throw new Error("Invalid folder references");
+        for (const ref of refs)
+          if (
+            !plain(ref) ||
+            ref.hostId !== hostId ||
+            typeof ref.id !== "string" ||
+            typeof ref.name !== "string" ||
+            typeof ref.path !== "string" ||
+            JSON.stringify(ref).length > 16 * 1024
+          )
+            throw new Error("Invalid folder reference");
+        db.exec("BEGIN IMMEDIATE");
+        try {
+          for (const ref of list("remoteProjectRefs"))
+            if (ref.hostId === hostId)
+              db.prepare("DELETE FROM records WHERE kind='remoteProjectRefs' AND id=?").run(ref.id);
+          for (const ref of refs) put("remoteProjectRefs", ref);
+          db.exec("COMMIT");
+        } catch (error) {
+          db.exec("ROLLBACK");
+          throw error;
+        }
+        return { ok: true };
+      }
+      throw new Error("Unsupported host record action");
+    }
     const reconciliationTimer = setInterval(() => {
       if (!reconciling)
         reconciling = reconcile()
@@ -1893,6 +1959,10 @@ export async function createCore({
       async agentControl(action, payload) {
         if (closed) throw new Error("Core is closed");
         return controller.owner(action, payload);
+      },
+      async hostRecords(action, payload) {
+        if (closed) throw new Error("Core is closed");
+        return enqueue("mutations", () => hostRecords(action, payload));
       },
       async createAttachment(input) {
         if (closed) throw new Error("Core is closed");
