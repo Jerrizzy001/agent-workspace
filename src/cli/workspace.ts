@@ -27,6 +27,8 @@ const USAGE = `awctl: agent control for Agent Workspace
   awctl note create --title <text> [--body <text> | --body-file <file|->] [--request-id <id>]
   awctl note update --note <id> --revision <n> [--title <text>] [--body <text> | --body-file <file|->] [--request-id <id>]
   awctl canvas place --node <id> --x <n> --y <n> --revision <layout revision> [--request-id <id>]
+  awctl transcript read                  (lists the transcript links the owner gave this session)
+  awctl transcript read --link <id> [--offset <n>] [--limit <n>]
 
 Output is one JSON object. Exit 0 done, 1 refused, 2 usage, 3 outcome unknown.
 Works only after the owner grants this session agent control in the desktop app.
@@ -130,6 +132,19 @@ function parse(argv: string[]): { verb: ControllerVerb; args: Record<string, unk
       requestId: f["request-id"] || "auto-" + crypto.randomUUID(),
     };
   }
+  if (first === "transcript" && second === "read") {
+    const f = parseFlags(rest, ["link", "offset", "limit"]);
+    if (f.link === undefined && (f.offset !== undefined || f.limit !== undefined))
+      throw new Usage("--offset and --limit need --link");
+    return {
+      verb: "transcript.read",
+      args: {
+        ...(f.link !== undefined ? { link: f.link } : {}),
+        ...(f.offset !== undefined ? { offset: number(f, "offset", true) } : {}),
+        ...(f.limit !== undefined ? { limit: number(f, "limit", true) } : {}),
+      },
+    };
+  }
   throw new Usage(first ? `Unknown command "${[first, second].filter(Boolean).join(" ")}"` : "No command given");
 }
 function grant(): { socket: string; token: string } {
@@ -230,7 +245,7 @@ async function main() {
       ...(parsed.requestId ? { requestId: parsed.requestId } : {}),
       args: parsed.args,
     },
-    parsed.verb !== "status",
+    parsed.verb !== "status" && parsed.verb !== "transcript.read",
   );
   print(response);
   process.exit(response.ok === true ? 0 : response.outcome === "unknown" ? 3 : 1);

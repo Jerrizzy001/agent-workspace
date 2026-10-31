@@ -78,6 +78,24 @@ export const MIGRATIONS: readonly Migration[] = [
     name: "roadmap_03_execution_hosts",
     up: () => {},
   },
+  {
+    // v7 (the next unused number; renumber at merge if another migration
+    // landed first): Claude profiles, conversation branches and transcript
+    // links (roadmap section 3). New record kinds only: "providerProfiles"
+    // (label and a reference to an owner-managed private config folder under
+    // the data folder; never credentials), "conversationRefs" (a session's
+    // validated SessionStart report: conversation ID and transcript file),
+    // "transcriptExports" (immutable, owner-approved, bounded exports) and
+    // "transcriptLinks" (directed, revocable grants bound to source and
+    // recipient session, generation and profile). Sessions gain optional
+    // profileId, forkedFrom and conversationState. Nothing is rewritten; an
+    // absent profileId is the default (inherited) Claude sign-in. Older
+    // builds refuse the store because resuming a profile session there would
+    // silently switch it to the default account.
+    version: 7,
+    name: "roadmap_02_conversations",
+    up: () => {},
+  },
 ];
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
 MIGRATIONS.forEach((m, index) => {

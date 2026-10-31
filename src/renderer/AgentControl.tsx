@@ -16,6 +16,10 @@ const VERB_LABELS: Record<ControllerVerb, { label: string; detail: string }> = {
   "note.update": { label: "Edit notes", detail: "awctl note update; refused if the note changed since the agent read it" },
   "canvas.place": { label: "Move canvas cards", detail: "awctl canvas place; refused if the layout changed since the agent read it" },
   open: { label: "Open sessions", detail: "awctl open: Claude, Codex or a shell here, with no first message and no control of their own" },
+  "transcript.read": {
+    label: "Read linked context",
+    detail: "awctl transcript read: only transcripts you link to this session with Link context, until you revoke them",
+  },
 };
 const EXPIRY = [15, 30, 60, 120, 240];
 const time = (iso: string) =>

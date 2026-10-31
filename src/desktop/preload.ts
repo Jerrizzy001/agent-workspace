@@ -60,6 +60,13 @@ const api: WorkspaceAPI = {
     registerProject: (hostId, path) => ipcRenderer.invoke("workspace:ssh", "registerProject", { hostId, path }),
     remove: (hostId) => ipcRenderer.invoke("workspace:ssh", "remove", { hostId }),
   },
+  profiles: {
+    list: () => ipcRenderer.invoke("workspace:profiles", "list"),
+    create: (input) => ipcRenderer.invoke("workspace:profiles", "create", input),
+    setup: (input) => ipcRenderer.invoke("workspace:profiles", "setup", input),
+    check: (input) => ipcRenderer.invoke("workspace:profiles", "check", input),
+    remove: (input) => ipcRenderer.invoke("workspace:profiles", "remove", input),
+  },
   assist: {
     status: () => ipcRenderer.invoke("workspace:assist", "status"),
     configure: (input) => ipcRenderer.invoke("workspace:assist", "configure", input),

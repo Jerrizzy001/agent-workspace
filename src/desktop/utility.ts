@@ -22,6 +22,7 @@ port.on("message", async ({ data }: any) => {
     data.type === "invoke" ||
     data.type === "attachment" ||
     data.type === "agentControl" ||
+    data.type === "profiles" ||
     data.type === "ssh"
   ) {
     try {
@@ -32,6 +33,8 @@ port.on("message", async ({ data }: any) => {
           ? await router!.ssh(data.action, data.payload)
           : data.type === "agentControl"
             ? await router!.agentControl(data.action, data.payload)
+            : data.type === "profiles"
+            ? await router!.profiles(data.action, data.payload)
             : data.type === "attachment"
               ? await router!.createAttachment({
                   sessionId: data.sessionId,

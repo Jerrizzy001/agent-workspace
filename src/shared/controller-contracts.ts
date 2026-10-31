@@ -14,6 +14,7 @@ export const CONTROLLER_VERBS = [
   "note.create",
   "note.update",
   "canvas.place",
+  "transcript.read",
 ] as const;
 export type ControllerVerb = (typeof CONTROLLER_VERBS)[number];
 export const isControllerVerb = (v: unknown): v is ControllerVerb =>
@@ -44,6 +45,8 @@ export const GRANT_LIMITS = {
   noteBodyBytes: 64 * 1024,
   coordinate: 1_000_000,
   requestBytes: 256 * 1024,
+  /** Characters one `awctl transcript read` returns at most. */
+  transcriptPage: 32 * 1024,
 };
 
 /** Options the owner chooses when granting; everything else is fixed by the core. */

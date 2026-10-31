@@ -16,11 +16,14 @@ import type {
 } from "../shared/contracts";
 import { capability, providerHint, providerName, providers } from "./sessions";
 import { ProviderGlyph } from "./ui";
+import { profilesAvailable, useProfiles } from "./ProfilesPanel";
 
 export interface LaunchChoices {
   models: { claude: string; codex: string };
   prompt: string;
   worktreePath: string;
+  /** Claude profile for new Claude sessions; "" is the default sign-in. */
+  profileId: string;
 }
 export interface GitSummary {
   branch: string;
@@ -53,6 +56,7 @@ export function LaunchBar({
   launching,
   disabledReason,
   git,
+  onManageProfiles,
 }: {
   project: Project;
   target: string;
@@ -64,7 +68,14 @@ export function LaunchBar({
   launching: Provider | null;
   disabledReason: string;
   git: GitSummary | null;
+  onManageProfiles?: () => void;
 }) {
+  const profiles = useProfiles();
+  // Profiles are desktop-owner only and local: hidden in browsers and for SSH folders.
+  const showProfiles = profilesAvailable() && !project.hostId;
+  const profile = showProfiles
+    ? profiles.profiles.find((p) => p.id === choices.profileId)
+    : undefined;
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [trees, setTrees] = useState<Worktree[] | null>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -98,7 +109,8 @@ export function LaunchBar({
     !!choices.prompt.trim() ||
     !!choices.worktreePath ||
     !!choices.models.claude.trim() ||
-    !!choices.models.codex.trim();
+    !!choices.models.codex.trim() ||
+    !!profile;
   return (
     <div className="launch-bar">
       <div className="launch-target">
@@ -158,6 +170,10 @@ export function LaunchBar({
           const missing = !!cap && !cap.available;
           const model =
             provider === "shell" ? "" : choices.models[provider].trim();
+          const chip =
+            provider === "claude" && profile
+              ? [profile.label, model].filter(Boolean).join(" · ")
+              : model;
           return (
             <button
               key={provider}
@@ -171,7 +187,7 @@ export function LaunchBar({
                 disabledReason ||
                 (missing
                   ? `${providerName(provider)} was not found on this host`
-                  : `${providerHint(provider)} in ${where}${model ? ` · ${model}` : ""}`)
+                  : `${providerHint(provider)} in ${where}${chip ? ` · ${chip}` : ""}`)
               }
               onClick={() => onLaunch(provider)}
             >
@@ -183,8 +199,8 @@ export function LaunchBar({
               <span className="launch-name">{providerName(provider)}</span>
               {missing ? (
                 <small>Not found</small>
-              ) : model ? (
-                <small>{model}</small>
+              ) : chip ? (
+                <small>{chip}</small>
               ) : null}
             </button>
           );
@@ -205,6 +221,44 @@ export function LaunchBar({
                 <strong>Launch options</strong>
                 <span>Optional. One click works without these.</span>
               </header>
+              {showProfiles ? (
+                <>
+                  <label>
+                    Claude profile
+                    <select
+                      aria-label="Claude profile"
+                      value={profile ? profile.id : ""}
+                      onChange={(event) =>
+                        onChoices({ ...choices, profileId: event.target.value })
+                      }
+                    >
+                      <option value="">Default (your usual sign-in)</option>
+                      {profiles.profiles.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.label}
+                          {p.state === "empty" ? " (not set up)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <p className="hint">
+                    Used by new Claude sessions only. Resumed conversations and
+                    branches keep their own profile.{" "}
+                    {onManageProfiles ? (
+                      <button
+                        type="button"
+                        className="link-button"
+                        onClick={() => {
+                          setOptionsOpen(false);
+                          onManageProfiles();
+                        }}
+                      >
+                        Manage profiles…
+                      </button>
+                    ) : null}
+                  </p>
+                </>
+              ) : null}
               <label>
                 Claude model
                 <input

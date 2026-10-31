@@ -45,6 +45,14 @@ export interface ControllerHost {
   projectRoot(projectId: string): string;
   /** True when this session was launched with AW_CONTROL_FILE (this version or later). */
   launchedWithControl(sessionId: string): boolean;
+  /**
+   * `transcript.read`: the owner-approved export behind a directed link to
+   * this grant's session. Failures carry `controllerCode`.
+   */
+  transcriptRead(
+    grant: { sessionId: string; generation: number },
+    args: Record<string, unknown>,
+  ): Promise<Record<string, unknown>>;
 }
 class ControllerError extends Error {
   constructor(
@@ -563,6 +571,15 @@ export function createAgentControl(host: ControllerHost) {
     requestId: string | undefined,
   ): Promise<Record<string, unknown>> {
     const projectId = grant.projectId;
+    if (verb === "transcript.read") {
+      try {
+        return await host.transcriptRead({ sessionId: grant.sessionId, generation: grant.generation }, args);
+      } catch (error: any) {
+        if (error && typeof error.controllerCode === "string")
+          throw new ControllerError(error.controllerCode, String(error.message).slice(0, 500));
+        throw error;
+      }
+    }
     const project = (host.list("projects") as { id: string; name: string }[]).find((p) => p.id === projectId);
     if (!project) throw new ControllerError("not_found", "Folder not found");
     if (verb === "status") {

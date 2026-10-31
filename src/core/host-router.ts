@@ -93,6 +93,11 @@ const REMOTE_REFUSED: Partial<Record<Command, string>> = {
   "assist.preview": "AI suggestions are not available for SSH folders yet.",
   "assist.suggest": "AI suggestions are not available for SSH folders yet.",
   "assist.cancel": "AI suggestions are not available for SSH folders yet.",
+  "conversation.fork": "Branches and linked context are only available for sessions on this computer.",
+  "transcript.preview": "Branches and linked context are only available for sessions on this computer.",
+  "transcript.link": "Branches and linked context are only available for sessions on this computer.",
+  "transcript.revoke": "Branches and linked context are only available for sessions on this computer.",
+  "transcript.list": "Branches and linked context are only available for sessions on this computer.",
 };
 const ID_KEYS = [
   "id",
@@ -103,6 +108,7 @@ const ID_KEYS = [
   "noteId",
   "resumedFrom",
   "resumeSessionId",
+  "recipientSessionId",
 ];
 const RETRYABLE = new Set<HostProblem["code"]>([
   "unreachable",
@@ -394,6 +400,8 @@ export interface HostRouter {
   invoke(command: Command, payload?: Record<string, unknown>): Promise<unknown>;
   createAttachment: Core["createAttachment"];
   agentControl(action: unknown, payload: unknown): Promise<AgentControlState>;
+  /** Desktop owner only (`workspace:profiles`): profiles on this computer. */
+  profiles(action: unknown, payload?: unknown): Promise<unknown>;
   /** Desktop owner only (`workspace:ssh`). */
   ssh(action: unknown, payload?: unknown): Promise<unknown>;
   /** Events from the local core. */
@@ -750,12 +758,20 @@ export async function createHostRouter(options: HostRouterOptions): Promise<Host
       localSnapshot = (await local.invoke("snapshot")) as Snapshot;
       return merged();
     }
+    // Branches and transcript links stay on one computer: refuse any mix.
+    if (command === "conversation.fork" || command.startsWith("transcript.")) {
+      if (ID_KEYS.some((key) => parseQualifiedId(payload[key])))
+        throw new Error(REMOTE_REFUSED[command]!);
+      return local.invoke(command, payload);
+    }
     const hostId = routeOf(payload);
     if (!hostId) return local.invoke(command, payload);
     const h = hosts.get(hostId);
     if (!h) throw new Error("That SSH host was removed from your list");
     const refused = REMOTE_REFUSED[command];
     if (refused) throw new Error(refused);
+    if (payload.profileId !== undefined)
+      throw new Error("Claude profiles are only available for folders on this computer.");
     const remotePayload = toRemote(hostId, payload);
     const key =
       typeof remotePayload.sessionId === "string" && typeof remotePayload.viewerId === "string"
@@ -813,6 +829,16 @@ export async function createHostRouter(options: HostRouterOptions): Promise<Host
       )
         throw new Error("Agent control is only available for sessions on this computer.");
       return local.agentControl(action, payload);
+    },
+    async profiles(action, payload) {
+      if (closed) throw new Error("Core is closed");
+      if (
+        payload &&
+        typeof payload === "object" &&
+        parseQualifiedId((payload as Record<string, unknown>).projectId)
+      )
+        throw new Error("Claude profiles are only available for folders on this computer.");
+      return local.profiles(action, payload);
     },
     async ssh(action, payload = {}) {
       if (closed) throw new Error("Core is closed");

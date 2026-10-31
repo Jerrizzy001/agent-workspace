@@ -31,8 +31,12 @@ export function initialPrompt(requested: unknown): string | undefined {
 export interface LaunchOptions {
   prompt?: unknown;
   model?: unknown;
-  /** Claude conversation identity: a new `--session-id`, or `--resume` of an earlier one. */
-  conversation?: { id: string; resume: boolean };
+  /**
+   * Claude conversation identity: a new `--session-id`, `--resume` of an
+   * earlier one, or `--resume <id> --fork-session` (a branch with a new ID the
+   * CLI chooses and reports through the SessionStart hook).
+   */
+  conversation?: { id: string; resume: boolean; fork?: boolean };
   /** Codex: open its own resume picker instead of a new conversation. */
   resumePicker?: boolean;
   /** Claude per-session settings JSON (status hooks); never written to global config. */
@@ -49,9 +53,11 @@ export function launchArguments(
   if (provider === "codex" && options.resumePicker) return ["resume"];
   const conversation =
     provider === "claude" && options.conversation
-      ? options.conversation.resume
-        ? ["--resume", options.conversation.id]
-        : ["--session-id", options.conversation.id]
+      ? options.conversation.fork
+        ? ["--resume", conversationIdText(options.conversation.id), "--fork-session"]
+        : options.conversation.resume
+          ? ["--resume", options.conversation.id]
+          : ["--session-id", options.conversation.id]
       : [];
   return [
     ...(model ? ["--model", model] : []),
@@ -77,6 +83,19 @@ export function providerArguments(
         : requested,
   });
 }
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** Claude conversation IDs the app passes or accepts are lowercase UUIDs, nothing else. */
+export function conversationIdText(value: unknown): string {
+  if (typeof value !== "string" || !UUID.test(value))
+    throw new Error("Invalid conversation ID");
+  return value;
+}
+export const isConversationId = (value: unknown): value is string =>
+  typeof value === "string" && UUID.test(value);
+/** Pane option where the SessionStart hook leaves the CLI's first start report. */
+export const SESSION_START_OPTION = "@aw_session_start";
+/** Bytes of hook input kept; a real SessionStart report is a few hundred bytes. */
+export const SESSION_START_LIMIT = 8192;
 const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
 /**
  * Claude hook settings that record the agent's turn state as a tmux pane option.
@@ -92,8 +111,18 @@ export function claudeActivitySettings(tmux: string): string {
       hooks: [{ type: "command", command: set(state) }],
     },
   ];
+  // SessionStart: the CLI writes a JSON report (session_id, transcript_path,
+  // source, ...) to the hook's stdin. The hook stores it, bounded and on one
+  // line, as a pane option the first time only; the core parses and validates
+  // it. Nothing in the report is interpreted by the shell.
+  const t = quote(tmux);
+  const start =
+    `r="$(head -c ${SESSION_START_LIMIT} | tr -d '\\r\\n')"; ` +
+    `[ -n "$(${t} show-options -pqv ${SESSION_START_OPTION} 2>/dev/null)" ] || ` +
+    `${t} set-option -p ${SESSION_START_OPTION} "$r" >/dev/null 2>&1 || true`;
   return JSON.stringify({
     hooks: {
+      SessionStart: [{ hooks: [{ type: "command", command: start }] }],
       UserPromptSubmit: hook("running"),
       PostToolUse: hook("running", "*"),
       Notification: hook("needs", "permission_prompt|elicitation_dialog"),

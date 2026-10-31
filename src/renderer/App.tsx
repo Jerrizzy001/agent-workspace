@@ -8,6 +8,7 @@ import {
   Files,
   FolderOpen,
   FolderPlus,
+  KeyRound,
   LayoutGrid,
   Menu,
   Mic,
@@ -38,6 +39,13 @@ import { SSHProjectsPanel, hostStateLabel } from "./SSHProjectsPanel";
 import { FolderBrowser } from "./FolderBrowser";
 import { LaunchBar, savedModels, type LaunchChoices } from "./LaunchBar";
 import { SessionView } from "./SessionView";
+import {
+  ProfilesPanel,
+  profileLabel,
+  profilesAvailable,
+  refreshProfiles,
+  useProfiles,
+} from "./ProfilesPanel";
 import { AttemptModal, Board, TaskModal, statusLabel } from "./Board";
 import { SessionBoard } from "./SessionBoard";
 import { isRemoteBrowser } from "./remote";
@@ -124,7 +132,13 @@ export default function App() {
     models: savedModels(),
     prompt: "",
     worktreePath: "",
+    profileId: "",
   }));
+  const profiles = useProfiles();
+  const [profilesPanel, setProfilesPanel] = useState(false);
+  useEffect(() => {
+    if (profilesAvailable()) void refreshProfiles();
+  }, [snapshot.sessions.length]);
   const [launching, setLaunching] = useState<Provider | null>(null);
   const [problem, setProblem] = useState<LaunchProblem | null>(null);
   const [git, setGit] = useState<ReviewSummary | null>(null);
@@ -499,6 +513,12 @@ export default function App() {
             : {}),
         ...(model ? { model } : {}),
         ...(prompt.trim() ? { prompt } : {}),
+        // A profile only for a new Claude session in a folder on this computer.
+        ...(provider === "claude" &&
+        !project.hostId &&
+        profiles.profiles.some((p) => p.id === choices.profileId)
+          ? { profileId: choices.profileId }
+          : {}),
       },
       stay,
     );
@@ -654,6 +674,7 @@ export default function App() {
             {sessionLocation(s, sessionProject) === "/"
               ? ""
               : " / " + sessionLocation(s, sessionProject)}
+            {s.profileId ? " · " + profileLabel(s.profileId, profiles) : ""}
           </small>
         </span>
         <StatusBadge session={s} compact />
@@ -896,6 +917,16 @@ export default function App() {
               AI suggestions
             </button>
           ) : null}
+          {profilesAvailable() && !isRemoteBrowser ? (
+            <button
+              className="foot-button"
+              aria-label="Claude profiles"
+              onClick={() => setProfilesPanel(true)}
+            >
+              <KeyRound size={14} />
+              Claude profiles
+            </button>
+          ) : null}
           {window.workspace.ssh && !isRemoteBrowser ? (
             <button
               className="foot-button"
@@ -1093,6 +1124,7 @@ export default function App() {
               launching={launching}
               disabledReason={disabledReason}
               git={git}
+              onManageProfiles={() => setProfilesPanel(true)}
             />
             {problem ? (
               <LaunchNotice
@@ -1181,6 +1213,9 @@ export default function App() {
                         onRestart={(s) => void restart(s)}
                         onEnded={(s) => endedByUser.current.add(s.id)}
                         report={report}
+                        sessions={snapshot.sessions}
+                        titleOf={titleOf}
+                        onOpen={(s) => openSession(s)}
                       />
                     ) : (
                       <Launchpad
@@ -1389,6 +1424,16 @@ export default function App() {
         </>
       ) : null}
       {assistAvailable() && !isRemoteBrowser ? <AssistSettings /> : null}
+      {profilesPanel ? (
+        <ProfilesPanel
+          project={project}
+          onClose={() => setProfilesPanel(false)}
+          onOpened={(s) => {
+            setSessionId(s.id);
+            setView("terminals");
+          }}
+        />
+      ) : null}
       {remotePanel ? (
         <RemoteAccessPanel onClose={() => setRemotePanel(false)} />
       ) : null}

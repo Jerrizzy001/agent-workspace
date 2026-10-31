@@ -69,6 +69,17 @@ export interface Session {
   placementRevision?: number;
   /** Set for a session running on an SSH execution host. */
   hostId?: string;
+  /** Claude profile (private config folder) this session was launched with; absent is the default sign-in. */
+  profileId?: string;
+  /** Set when this session's conversation was branched from another session's. */
+  forkedFrom?: { sessionId: string; generation: number; conversationId: string };
+  /**
+   * Branches only: "pending" until the CLI reports the new conversation ID,
+   * "known" once it did, "unknown" when the report was missing or ambiguous.
+   */
+  conversationState?: "pending" | "known" | "unknown";
+  /** Opened by "Set up" for a profile: the unmodified CLI, for the owner to sign in. */
+  profileSetup?: boolean;
 }
 export interface BoardLane {
   id: string;
@@ -277,6 +288,11 @@ export const COMMANDS = [
   "assist.preview",
   "assist.suggest",
   "assist.cancel",
+  "conversation.fork",
+  "transcript.preview",
+  "transcript.link",
+  "transcript.revoke",
+  "transcript.list",
 ] as const;
 export type Command = (typeof COMMANDS)[number];
 export interface RemoteConfig {
@@ -506,6 +522,72 @@ export interface DesktopDictationAPI {
   stop(recordingId: string): Promise<void>;
   onStatus(listener: (status: DictationStatus) => void): () => void;
 }
+/** A Claude profile as the desktop owner sees it. Never includes credentials. */
+export interface ProfileView {
+  id: string;
+  provider: "claude";
+  label: string;
+  createdAt: string;
+  /** The profile's private config folder on this computer (desktop owner only). */
+  location: string;
+  /** Sessions using it that are running or in an unknown state. */
+  openSessions: number;
+  /** "empty": never set up; "ready": the CLI has stored its own data there; "problem": see detail. */
+  state: "empty" | "ready" | "problem";
+  detail: string;
+}
+export interface ProfilesState {
+  profiles: ProfileView[];
+  /** Things that make profile separation unreliable on this computer. */
+  warnings: string[];
+}
+/** Desktop owner only: Claude profiles. No route exists through the gateway or awctl. */
+export interface DesktopProfilesAPI {
+  list(): Promise<ProfilesState>;
+  create(input: { label: string }): Promise<ProfilesState>;
+  /** Opens the unmodified CLI with this profile in a new terminal so the owner signs in there. */
+  setup(input: { profileId: string; projectId: string; idempotencyKey: string }): Promise<{ session: Session }>;
+  check(input: { profileId: string }): Promise<ProfileView>;
+  remove(input: { profileId: string; deleteData: boolean }): Promise<ProfilesState & { keptData?: string }>;
+}
+/** Provenance of one transcript export (roadmap section 3). */
+export interface TranscriptExportInfo {
+  adapter: string;
+  /** True only when the source session had ended and every record was whole. */
+  complete: boolean;
+  partialReason?: string;
+  /** Byte offset in the provider's file just after the last whole record read. */
+  watermark: number;
+  /** Source bytes read (equal to the watermark). */
+  bytes: number;
+  /** SHA-256 of those source bytes. */
+  sourceHash: string;
+  /** SHA-256 of the export text before redaction. */
+  textHash: string;
+  messages: number;
+  /** True when older messages were left out to stay within the export limit. */
+  truncated: boolean;
+  textBytes: number;
+}
+export interface TranscriptPreview extends TranscriptExportInfo {
+  sessionId: string;
+  generation: number;
+  /** Plain text with terminal controls removed. Untrusted content. */
+  text: string;
+}
+export interface TranscriptLinkView {
+  id: string;
+  exportId: string;
+  source: { sessionId: string; generation: number; profileId?: string };
+  recipient: { sessionId: string; generation: number; profileId?: string };
+  crossProfile: boolean;
+  createdAt: string;
+  revokedAt?: string;
+  reads: number;
+  lastReadAt?: string;
+  redactions: number;
+  export: TranscriptExportInfo & { createdAt: string; excerpt: string };
+}
 export interface WorkspaceAPI {
   invoke<T = unknown>(
     command: Command,
@@ -527,6 +609,8 @@ export interface WorkspaceAPI {
   assist?: DesktopAssistAPI;
   /** Desktop owner only: SSH execution hosts and their folders. */
   ssh?: DesktopSSHAPI;
+  /** Desktop owner only: Claude profiles (separate sign-ins). */
+  profiles?: DesktopProfilesAPI;
 }
 declare global {
   interface Window {
@@ -549,6 +633,8 @@ export interface Core {
   agentControl(action: unknown, payload: unknown): Promise<AgentControlState>;
   /** Trusted desktop host router only: stored SSH hosts and remote folder references. */
   hostRecords(action: unknown, payload?: unknown): Promise<unknown>;
+  /** Trusted desktop broker only (`workspace:profiles`): Claude profiles. */
+  profiles(action: unknown, payload?: unknown): Promise<unknown>;
   close(): void | Promise<void>;
 }
 /**

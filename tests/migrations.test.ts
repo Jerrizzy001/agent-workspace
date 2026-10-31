@@ -25,9 +25,10 @@ function v2Store(file: string) {
   return db;
 }
 
-test("migration registry is ordered, uniquely named and ends at roadmap_03_execution_hosts", () => {
+test("migration registry is ordered, uniquely named and includes roadmap_02_conversations", () => {
+  // Versions are positions; names identify migrations (later ones may be renumbered at merge).
   assert.deepEqual(
-    MIGRATIONS.map((m) => [m.version, m.name]),
+    MIGRATIONS.slice(0, 6).map((m) => [m.version, m.name]),
     [
       [1, "records_receipts_events"],
       [2, "folder_sessions"],
@@ -37,7 +38,10 @@ test("migration registry is ordered, uniquely named and ends at roadmap_03_execu
       [6, "roadmap_03_execution_hosts"],
     ],
   );
-  assert.equal(SCHEMA_VERSION, 6);
+  MIGRATIONS.forEach((m, index) => assert.equal(m.version, index + 1));
+  assert.equal(new Set(MIGRATIONS.map((m) => m.name)).size, MIGRATIONS.length);
+  assert.ok(MIGRATIONS.some((m) => m.name === "roadmap_02_conversations"));
+  assert.equal(SCHEMA_VERSION, MIGRATIONS.length);
 });
 
 test("a fresh store is created at the current version without a backup", async () => {
@@ -190,7 +194,7 @@ test("v6 adds SSH host records without touching a v5 store's records", async () 
     await assert.rejects(core.hostRecords("drop", { id: "0a1b2c3d" }), /Unsupported/);
     await assert.rejects(core.invoke("hostRecords" as any, {}), /Unsupported command/);
     await core.close();
-    assert.equal(version(file), 6);
+    assert.equal(version(file), SCHEMA_VERSION);
     assert.ok(fs.readdirSync(path.join(temp, "backups")).some((n) => n.startsWith("workspace-v5-")));
     core = await createCore({ dataDir: temp, emit: () => {} });
     const stored: any = await core.hostRecords("list");

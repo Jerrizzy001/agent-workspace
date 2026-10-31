@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { History, ImagePlus, Pencil, Play, Sparkles, Square, Zap } from "lucide-react";
+import { GitFork, History, ImagePlus, Link2, LoaderCircle, Pencil, Play, Sparkles, Square, Zap } from "lucide-react";
 import {
   AssistNameDialog,
   assistAvailable,
@@ -13,6 +13,9 @@ import { ProviderGlyph, StatusBadge } from "./ui";
 import { DictationButton } from "./DictationControl";
 import { dictationAvailable, isDictationShortcut } from "./dictation";
 import { AgentControlButton } from "./AgentControl";
+import { profileLabel, profilesAvailable, useProfiles } from "./ProfilesPanel";
+import { TranscriptLinksPanel } from "./TranscriptLinksPanel";
+import { createId } from "./id";
 
 /** One session: identity, state and controls above its terminal. */
 export function SessionView({
@@ -23,6 +26,9 @@ export function SessionView({
   onRestart,
   onEnded,
   report,
+  sessions = [],
+  titleOf,
+  onOpen,
 }: {
   session: Session;
   project?: Project;
@@ -31,7 +37,42 @@ export function SessionView({
   onRestart: (session: Session) => void;
   onEnded: (session: Session) => void;
   report: (error: unknown) => void;
+  /** All sessions, for branch lineage and link recipients (desktop). */
+  sessions?: Session[];
+  titleOf?: (session: Session) => string;
+  /** Shows another session, for example a new branch. */
+  onOpen?: (session: Session) => void;
 }) {
+  const profiles = useProfiles();
+  const [linksOpen, setLinksOpen] = useState(false);
+  const [branching, setBranching] = useState(false);
+  // Branches and transcript links are desktop-owner features on this computer.
+  const ownerLocal = profilesAvailable() && !session.hostId;
+  const claudeIdle =
+    session.status === "exited" ||
+    (session.status === "running" &&
+      !!session.activityTracking &&
+      (session.activity === "done" || !session.activity));
+  const canBranch =
+    ownerLocal && session.provider === "claude" && !!session.conversationId && !session.profileSetup;
+  const branch = async () => {
+    if (branching) return;
+    setBranching(true);
+    try {
+      const result = await window.workspace.invoke<{ session: Session }>("conversation.fork", {
+        sessionId: session.id,
+        generation: session.generation,
+        idempotencyKey: createId(),
+      });
+      onOpen?.(result.session);
+    } catch (error) {
+      report(error);
+    } finally {
+      setBranching(false);
+    }
+  };
+  const parent = session.forkedFrom ? sessions.find((s) => s.id === session.forkedFrom!.sessionId) : undefined;
+  const profileName = profileLabel(session.profileId, profiles);
   const [viewerId, setViewerId] = useState<string | null>(null);
   const [imagePasteRequest, setImagePasteRequest] = useState(0);
   const [dictationToggle, setDictationToggle] = useState(0);
@@ -168,10 +209,61 @@ export function SessionView({
               </code>
               {session.model ? <span>· {session.model}</span> : null}
               {session.resumedFrom ? <span>· resumed</span> : null}
+              {session.provider === "claude" && ownerLocal ? (
+                <span
+                  className="profile-chip"
+                  title={profileName ? `Claude profile: ${profileName}` : "Your usual Claude sign-in"}
+                >
+                  {session.profileSetup ? "Sign-in · " : ""}
+                  {profileName ?? "Default"}
+                </span>
+              ) : null}
+              {session.forkedFrom ? (
+                <span
+                  className={"profile-chip lineage-chip" + (session.conversationState === "unknown" ? " unknown" : "")}
+                  title={
+                    `Branch of ${parent && titleOf ? titleOf(parent) : "an earlier session"}. ` +
+                    (session.conversationState === "unknown"
+                      ? "Claude did not report this branch's conversation, so it is unknown. It cannot be resumed or branched."
+                      : session.conversationState === "pending"
+                        ? "Waiting for Claude to report this branch's conversation."
+                        : "A separate conversation copied from the original; the original is unchanged.")
+                  }
+                >
+                  <GitFork size={10} aria-hidden="true" />
+                  Branch
+                  {session.conversationState === "unknown" ? " · unknown" : session.conversationState === "pending" ? " · …" : ""}
+                </span>
+              ) : null}
             </span>
           </div>
         </div>
         <div className="session-actions">
+          {canBranch ? (
+            <button
+              className="button ghost small"
+              disabled={!claudeIdle || branching}
+              title={
+                claudeIdle
+                  ? "Branch: a new session continuing a copy of this conversation (same profile and folder). This one is not changed."
+                  : "Branch when Claude has finished its turn"
+              }
+              onClick={() => void branch()}
+            >
+              {branching ? <LoaderCircle size={13} className="spin" /> : <GitFork size={13} />}
+              Branch
+            </button>
+          ) : null}
+          {ownerLocal && titleOf ? (
+            <button
+              className="button ghost small"
+              title="Share a reviewed copy of a Claude conversation with another session, or revoke links"
+              onClick={() => setLinksOpen(true)}
+            >
+              <Link2 size={13} />
+              Link context
+            </button>
+          ) : null}
           {session.status === "running" ? (
             <>
               {/* Agent control and pasted images stay on this computer. */}
@@ -270,6 +362,14 @@ export function SessionView({
             ? "Its last screen is below — check it for an error message (for example a sign-in or model problem)."
             : "No final screen was saved for it."}
         </div>
+      ) : null}
+      {linksOpen ? (
+        <TranscriptLinksPanel
+          session={session}
+          sessions={sessions}
+          titleOf={titleOf ?? (() => title)}
+          onClose={() => setLinksOpen(false)}
+        />
       ) : null}
       {naming ? (
         <AssistNameDialog

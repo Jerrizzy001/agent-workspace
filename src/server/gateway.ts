@@ -566,6 +566,16 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
               (typeof projectId !== "string" || !allowed.has(projectId))
             )
               throw new Error("Project access denied");
+            // Claude profiles are desktop-owner only: a browser cannot continue
+            // a conversation that belongs to a profile's account.
+            if (
+              command === "terminal.open" &&
+              p.resumeSessionId !== undefined &&
+              latest.sessions.find((s) => s.id === p.resumeSessionId)?.profileId
+            )
+              throw new Error(
+                "This conversation uses a Claude profile; resume it in the desktop app",
+              );
             if (command.startsWith("session.") && p.viewerId) {
               const viewerKey = p.sessionId + "\0" + p.viewerId;
               let v = c.viewers.get(viewerKey);

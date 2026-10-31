@@ -406,6 +406,17 @@ else {
         throw new Error("Invalid agent control request");
       return coreRequest({ type: "agentControl", action, payload: value });
     });
+    ipcMain.handle("workspace:profiles", async (ev, action: unknown, value: unknown) => {
+      // Owner window only: Claude profiles (private config folders and the
+      // sign-in terminal) never reach the gateway, a browser or an agent.
+      assertOwner(ev);
+      if (!["list", "create", "setup", "check", "remove"].includes(action as string))
+        throw new Error("Unsupported profile action");
+      if (value === undefined) value = {};
+      if (!value || typeof value !== "object" || Array.isArray(value) || JSON.stringify(value).length > 4096)
+        throw new Error("Invalid profile request");
+      return coreRequest({ type: "profiles", action, payload: value });
+    });
     installPermissionPolicy();
     dictation = createDictationService({
       modelsDir: defaultModelsDir(app.getPath("userData")),

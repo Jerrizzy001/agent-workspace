@@ -47,6 +47,14 @@ export const COMMAND_POLICY: Record<Command, CommandAccess> = {
   "assist.preview": "owner",
   "assist.suggest": "owner",
   "assist.cancel": "owner",
+  // Branches and transcript links (roadmap section 3): desktop owner only
+  // until an explicit sharing policy exists. Profiles have no command at all;
+  // they go through the owner-only `workspace:profiles` channel.
+  "conversation.fork": "owner",
+  "transcript.preview": "owner",
+  "transcript.link": "owner",
+  "transcript.revoke": "owner",
+  "transcript.list": "owner",
 };
 export const remoteAllowed = (command: Command) =>
   COMMAND_POLICY[command] === "remote";
@@ -64,4 +72,6 @@ export const CONTROLLER_WRAPS: Record<ControllerVerb, Command | null> = {
   "note.create": "note.create",
   "note.update": "note.update",
   "canvas.place": "layout.save",
+  // Reads an owner-approved export through a directed link; no core command.
+  "transcript.read": null,
 };
