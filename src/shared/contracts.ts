@@ -1,4 +1,5 @@
 import type { AgentControlState, DesktopAgentControlAPI } from "./controller-contracts.js";
+import type { DesktopTeamAPI } from "./team-contracts.js";
 export type TaskStatus =
   "backlog" | "ready" | "in_progress" | "review" | "done";
 export type Provider = "shell" | "claude" | "codex";
@@ -611,6 +612,8 @@ export interface WorkspaceAPI {
   ssh?: DesktopSSHAPI;
   /** Desktop owner only: Claude profiles (separate sign-ins). */
   profiles?: DesktopProfilesAPI;
+  /** Desktop owner only: team members, comments and assignments (team service). */
+  team?: DesktopTeamAPI;
 }
 declare global {
   interface Window {
@@ -635,6 +638,8 @@ export interface Core {
   hostRecords(action: unknown, payload?: unknown): Promise<unknown>;
   /** Trusted desktop broker only (`workspace:profiles`): Claude profiles. */
   profiles(action: unknown, payload?: unknown): Promise<unknown>;
+  /** Trusted desktop main only: local team mappings, cache, cursor and outbox (never tokens). */
+  team(action: unknown, payload?: unknown): Promise<unknown>;
   close(): void | Promise<void>;
 }
 /**

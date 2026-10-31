@@ -21,6 +21,7 @@ import {
   Search,
   Server,
   Smartphone,
+  Users,
   SquareTerminal,
   X,
 } from "lucide-react";
@@ -36,6 +37,7 @@ import { ReviewPanel, type ReviewSummary } from "./ReviewPanel";
 import { CanvasView } from "./CanvasView";
 import { RemoteAccessPanel } from "./RemoteAccessPanel";
 import { SSHProjectsPanel, hostStateLabel } from "./SSHProjectsPanel";
+import { TeamPanel } from "./TeamPanel";
 import { FolderBrowser } from "./FolderBrowser";
 import { LaunchBar, savedModels, type LaunchChoices } from "./LaunchBar";
 import { SessionView } from "./SessionView";
@@ -152,6 +154,7 @@ export default function App() {
   >(null);
   const [remotePanel, setRemotePanel] = useState(false);
   const [sshPanel, setSSHPanel] = useState(false);
+  const [teamPanel, setTeamPanel] = useState(false);
   const [folderMenu, setFolderMenu] = useState(false);
   const [showEnded, setShowEnded] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -937,6 +940,16 @@ export default function App() {
               SSH hosts
             </button>
           ) : null}
+          {window.workspace.team && !isRemoteBrowser ? (
+            <button
+              className="foot-button"
+              aria-label="Team"
+              onClick={() => setTeamPanel(true)}
+            >
+              <Users size={14} />
+              Team
+            </button>
+          ) : null}
           {window.workspace.remote ? (
             <button
               className="foot-button"
@@ -1254,6 +1267,7 @@ export default function App() {
                 {view === "board" && boardMode === "tasks" ? (
                   <Board
                     modeSwitch={boardSwitch}
+                    projectId={project?.hostId ? undefined : project?.id}
                     tasks={tasks}
                     attempts={attempts}
                     sessions={snapshot.sessions}
@@ -1436,6 +1450,13 @@ export default function App() {
       ) : null}
       {remotePanel ? (
         <RemoteAccessPanel onClose={() => setRemotePanel(false)} />
+      ) : null}
+      {teamPanel && window.workspace.team ? (
+        <TeamPanel
+          projectId={project && !project.hostId ? project.id : ""}
+          projectName={project && !project.hostId ? project.name : ""}
+          onClose={() => setTeamPanel(false)}
+        />
       ) : null}
       {sshPanel && window.workspace.ssh ? (
         <SSHProjectsPanel

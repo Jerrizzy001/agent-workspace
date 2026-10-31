@@ -447,6 +447,112 @@ Built in an isolated worktree on `claude/jolly-clarke-oo3rm5` at `ae55c54` and c
 
 **Schema v7 `roadmap_02_conversations`.** Additive, no rewrite: new record kinds `providerProfiles`, `conversationRefs`, `transcriptExports`, `transcriptLinks`; optional session `profileId`, `forkedFrom`, `conversationState`, `profileSetup`. Same backup before upgrade and newer-version refusal. No credentials are stored; the gateway projects sessions explicitly, so none of the new fields reach a browser.
 
+## Roadmap section 9: team members, comments and assignments (after section 2)
+
+Built in an isolated worktree on `claude/jolly-clarke-oo3rm5` at `ae55c54` and checked in the same Linux container (Node 24.22.2, Electron 45.1.0 under Xvfb, tmux 3.4). Designed only from this repository, the roadmap, the OpenID Connect Core and Discovery specifications, RFC 7636 (PKCE), RFC 8252 (native apps), RFC 9700 and the `openid-client`, `jose` and Electron `safeStorage` documentation. No hosting, identity provider or region was chosen. Everything is provider- and host-neutral; setup is described in [team-service.md](team-service.md).
+
+**Dependencies.** Two new runtime dependencies, pinned exactly and installed from registry.npmjs.org with `--ignore-scripts`:
+
+| Package | Version | License | Notes |
+| --- | --- | --- | --- |
+| `openid-client` | 6.8.8 | MIT | Depends on `jose` and `oauth4webapi` |
+| `jose` | 6.2.14 | MIT | — |
+| `oauth4webapi` | 3.8.8 | MIT | Transitive |
+
+None has install scripts or native code. They are used only by the team service, which bundles them into `dist/team/server.mjs`. The desktop side uses Node's `fetch` and `http` only.
+
+**Team service (`src/team/`).** A single Node process with its own SQLite store (`team.sqlite`, mode 0600, in a 0700 data folder) and its own migration registry (`team_01_members_comments_assignments`). Its tables are:
+
+- `teams`, `members` (invited, active or suspended; identified by issuer + subject);
+- `invitations` (hash only, expiry, optional bound email, placeholder member);
+- `team_projects`, `project_memberships`;
+- `shared_tasks` and `comments` (both with revision and tombstone), `assignments` (revision);
+- `mutations` (idempotency per identity and mutation ID), `changes` (ordered sequence per project), `audit`;
+- `login_transactions` and `service_sessions` (hashes only).
+
+The service has its own HTTP or HTTPS listener, with the gateway's rule: a non-loopback listener requires TLS and an exact public origin. It refuses any request carrying a foreign `Origin`.
+
+**Routes.** `GET /v1/info`; `POST /v1/auth/start|finish|refresh|logout`; `POST /v1/call/<action>` for the 20 `TEAM_ACTIONS`. Shared-task actions are named `sharedTask.*` so no name overlaps a core command. There is no route to terminals, files, Git, projects, settings or the gateway.
+
+**Authentication (`src/team/auth.ts`, `src/team/client.ts`).** The flow is Authorization Code + PKCE `S256`:
+
+1. The desktop opens the system browser (`shell.openExternal`) and listens on a one-shot loopback callback (`http://127.0.0.1:<port>/<path>` as the service's `/v1/info` describes; any port, or a fixed one).
+2. The callback must match the service-issued `state` exactly before anything else is done.
+3. The service is the OIDC client. It discovers the issuer with `openid-client` and requires an exact issuer match; an `http` issuer is allowed only on loopback, and only with `allowHttpLoopbackIssuer`.
+4. It exchanges the code with the desktop's verifier, after checking the verifier against the stored challenge itself. It checks state and nonce through `openid-client`.
+5. It verifies the ID token again with `jose` against the remote JWKS:
+   - exact issuer and audience;
+   - asymmetric algorithms only;
+   - required `sub`, `iat`, `exp` and `nonce`, with 60 s of clock tolerance;
+   - every audience must be allowed, and `azp` must be present when there are several.
+
+   An unknown key ID refetches the JWKS after a cooldown (30 s by default). Keys are trusted for up to 10 minutes; both durations are configurable.
+
+Other rules:
+
+- Login transactions expire after 10 minutes and are consumed before the exchange, so a replay always fails.
+- There is no public sign-up: a sign-in must redeem a valid invitation or match an active member.
+- Service sessions are opaque random tokens stored as hashes: a 60-minute session and a 14-day refresh. Refresh rotates both atomically; reuse of a rotated refresh token revokes the family. Logout revokes.
+
+**Authorization (`src/team/authorization.ts`, `src/team/service.ts`).** Roles:
+
+- **Team owner:** admin of every project, plus team management.
+- **Project admin:** members, roles, shared tasks, assigning anyone, deleting any comment (audited).
+- **Member:** comments, editing and deleting their own comments, assigning themselves to an unassigned task or unassigning themselves.
+- **Viewer:** read only.
+
+Enforcement:
+
+- Every call re-resolves the caller's active membership and role inside the same `BEGIN IMMEDIATE` transaction as the mutation.
+- Unknown IDs, other teams' IDs, non-UUIDs and lost access all answer `no-access`.
+- Assignees must be active, non-viewer members of the same project; pending invitations and other teams' members are refused.
+- Removing a member clears their assignments and keeps comment authorship.
+- Comment text is plain text (controls and bidi overrides removed, 4,000 characters) and never enters the audit log.
+- Rate limits: comments 30/min, invitations 20/hour, calls 600/min per identity, auth 30/min per address.
+- Request bodies are capped at 64 KiB; unknown fields are refused.
+
+**Desktop (`src/desktop/team.ts`, `main.ts`, `preload.ts`).** The new owner-only IPC `workspace:team` sits behind the main-frame owner check with an action allowlist and a 16 KiB bound. Actions:
+
+- the roadmap's `status`, `connect`, `disconnect`, `publishProject` and `revokeProject`;
+- the relays the UI needs: `previewTask`, `publishTask`, `unpublishTask`, `sync`, `boardInfo`, `sharedTasks`, `taskDetail`, `members`, `invite`, `setRole`, `removeMember`, `addComment`, `editComment`, `deleteComment`, `assign`, `resolve`.
+
+The team session lives only in the main process. It is stored with Electron `safeStorage` in `team-session.bin` (mode 0600). The app fails closed when `isEncryptionAvailable()` is false, or when Linux selects the unencrypted `basic_text` backend. Only the test switch `WORKSPACE_TEST_TEAM_BASIC_SECRET_STORE=1`, honoured only together with `WORKSPACE_TEST_DATA_DIR`, overrides that: it adds `--password-store=basic` and `setUsePlainTextEncryption(true)`.
+
+Publishing a task requires the hash of the preview the owner saw. The preview is exactly `{title, description, status}`; a stale hash is refused.
+
+**Local core (migration `roadmap_05_team_metadata`).** The local core has no new core commands, so `COMMAND_POLICY` is unchanged and a test asserts that no `team*` command exists. Team state uses a trusted internal method, `Core.team(action, payload)`. It is reached only through the utility's internal `team` message from main, routed by the host router to the local core only, like `hostRecords`. The generic `invoke` and the gateway cannot reach it.
+
+The migration takes the next unused number, which is v7 in this tree. Tests reference it by name, because the owner renumbers at merge. It adds tables only:
+
+- `team_link`: service URL, identity and teams; never tokens, and unexpected fields are refused.
+- `team_projects_local`: role, local folder link, state, cursor, truncated flag.
+- `team_task_map`: local task, shared task, the local revision published and the payload hash.
+- `team_cache`: per-project tasks, comments, assignments and members, bounded to 5,000 rows with the oldest comments dropped first.
+- `team_outbox`: at most 200 entries, immutable mutation IDs, metadata actions only.
+
+Cache rules:
+
+- A page applies only when its `after` equals the stored cursor, and sequences must strictly increase.
+- Older revisions are ignored, and tombstones of tasks, comments and assignments are sticky.
+- A revoked project ignores all pages.
+- `setProjects` (run first on every sync) purges the cache, outbox and task links of projects the person lost.
+- Local tasks are never rewritten.
+
+**Sync (`src/team/sync.ts`).** Each sync runs these steps in order:
+
+1. Revalidate access (`me`, then `setProjects`).
+2. Flush the outbox in order. An offline, rate-limited or server error keeps the item with the same mutation ID; a revision conflict is marked `conflict`; a refusal is marked `failed`.
+3. Pull every active project's ordered change pages.
+
+**Apply to latest** resends against the current cached revision with a new mutation ID; **Discard** drops the change.
+
+**UI.**
+
+- The Team panel (`TeamPanel.tsx`): connect, identity and online state, Sync now, Disconnect, the unsent-changes list with resolve buttons, publish or stop publishing for this folder, and team projects with members (roles, remove), invitations (code shown once) and shared tasks with their threads.
+- Board task cards (Tasks mode only, `Board.tsx` and `TaskTeam.tsx`): a sync-state chip, the assignee and the comment count.
+- The task sheet's **Team** section: share or update after a preview, stop sharing, an **Assignee** picker (admins see active non-viewer members, members only themselves), and comments with add, edit and delete-own (admins delete any). Comments render as React text with `white-space: pre-wrap`; there is no HTML, links or mentions.
+- SessionView, LaunchBar, SessionBoard and the terminals were not touched.
+
 Results:
 
 - `npm run typecheck` passed.
@@ -466,3 +572,54 @@ Not verified:
 - `/clear` inside a session (only the first start report is kept), compaction, and very long transcripts near the limits with real data.
 - Codex branching (separate adapter, not built), cross-host or SSH links, gateway sharing of profiles, branches or links, and team access to any of it.
 - Retention beyond the newest 200 links; exports of revoked links are pruned with them, and there is no separate export cleanup UI.
+
+- `npm test`: 113 tests. One full run had 111 passed and 2 opt-in skipped (the previous 89 passes plus 22). The final full run had 110 passed and 1 failed: `tests/host-router.test.ts` hit `write EPIPE` from the disposable-sshd fixture. That file and `tests/ssh.test.ts` then passed 8 of 8 when run alone. The same EPIPE also happened at the base commit `ae55c54` when `ssh.test.ts`'s probe test ran alone, so it is an existing fixture flake, not a team regression.
+
+  The only migration-test change: the registry test no longer hard-codes the last version, and the v6 test asserts `SCHEMA_VERSION`. New:
+  - `tests/team-auth.test.ts` (7), against a local fake OIDC issuer (`scripts/fake-oidc.mjs`: discovery, auto-approving authorize by `login_hint`, PKCE-checking token endpoint, JWKS, key rotation and tampering):
+    - owner sign-in via PKCE and loopback, with issuer + subject stored;
+    - invitation reuse, no invitation, expired, revoked, wrong-email and guessed codes refused;
+    - wrong issuer, audience, nonce, expired token, an extra audience, and a token signed by an unpublished key with a known `kid` all rejected, without consuming the invitation;
+    - wrong PKCE verifier, wrong state, replayed transaction, plain PKCE and non-loopback, wrong-path, `localhost` or privileged-port redirects refused;
+    - a cross-origin request refused;
+    - a rotated key fetched; a retired key refused once the configured key lifetime passed;
+    - session expiry, refresh rotation, refresh reuse revoking the family, client auto-refresh and logout;
+    - insecure issuer, `HS256`, non-loopback redirect and non-HTTPS service URL configurations refused.
+  - `tests/team-authorization.test.ts` (6):
+    - a 10-action by 5-role matrix (owner, admin, member, viewer, other-team owner), plus task update, comment edit, delete and moderation (with audit and no text), assignment rules and role changes;
+    - viewer read-only on 7 writes; a pending invitation cannot be assigned;
+    - cross-team and guessed IDs give the same `no-access`, and extra fields are refused;
+    - a member removed after authenticating but before their transaction is refused; their assignment is cleared and authorship kept; team removal ends all access;
+    - comment and invitation rate limits;
+    - no team token reaches terminals, files or the gateway: no overlap between `TEAM_ACTIONS` and `COMMANDS`; core command names return 404 on the service; the gateway reports `authenticated: false` and refuses the WebSocket for a team token as cookie or bearer, and runs no command.
+  - `tests/team-sync.test.ts` (8), with real cores (`createCore`) plus the desktop module and in-memory secrets:
+    - the migration is named and ordered;
+    - the preview has exactly 3 fields and no paths; the service stores exactly that; local edits show `local-changes`; a stale preview hash is refused; the snapshot and core store hold no token; comments and assignment reach the owner's board;
+    - an offline comment is queued visibly and counted; a lost acknowledgement is resent with the same mutation ID and leaves one comment; the outbox bound holds; a `session.input` action cannot be queued;
+    - a stale comment edit becomes a conflict, then **Apply to latest** sends it; a refused self-assignment stays visible as failed; a republish over another admin's change is refused, then succeeds after review;
+    - 230 comments are paged into the cache with cursor equal to the last sequence; `comment.list` paginates 100/100/30; a replayed old page is ignored and an unordered page refused;
+    - a malicious comment (`<img onerror>`, `<script>`, a `javascript:` link, bidi, bell and escape characters) is stored as literal text without controls, and renders escaped through `react-dom/server`;
+    - a deleted comment is not resurrected by a replayed page; on removal the member's next sync purges the project cache and drops its queued comment unsent; stale pages for the revoked project are ignored; the owner is unaffected; disconnect clears the link, cache and session but keeps local tasks;
+    - no secure storage refuses sign-in without opening a browser; non-HTTPS addresses, unknown actions and fields, a token field in the link, and `invoke("team")` are refused.
+  - `tests/migrations.test.ts`: `roadmap_05_team_metadata` adds the five tables, leaves records byte-identical and keeps a backup.
+- `verify:team` (new) passed 8 checks, four times (the last on the committed build), with Electron under Xvfb, using two app instances with separate data folders (alice as owner, bob as member), `dist/team/service.mjs` on loopback and the fake issuer:
+  1. Secret storage reported `basic_text (test only)`.
+  2. The owner connected through the real loopback callback.
+  3. The stored session file contains no plain `tst_`/`tsr_`, and none reaches the renderer, `localStorage` or a core command.
+  4. The publish preview showed exactly the JSON the service stored.
+  5. The owner created an invitation in the panel.
+  6. The member joined with it, commented `<b>not bold</b>` (shown as text) and assigned themself.
+  7. The owner's card showed Shared, Bob Member and 2 comments, and the task sheet showed the thread.
+  8. The owner removed Bob. After his sync, his projects were revoked, his shared tasks and details were refused and his panel showed none; the owner's card returned to Unassigned and the local task was unchanged.
+- Regressions passed: `smoke:ui` (9 checks), `verify:workflows` (15), `verify:board` (10), `verify:remote-desktop` (7) and `verify:mobile` (15). `verify:mobile` timed out once in the back-to-back run at its "Reconnecting · input paused" step, then passed 15 of 15 standalone.
+- Screenshots, inspected: `screenshots/desktop/team-panel.png` (connected owner, published folder, members with role picker and remove, invitation form, shared task) and `team-comments.png` (a board card with Shared, assignee and comment count, and the task sheet's Team section with the assignee and two comments, one with literal markup). Screenshots that the regression scripts regenerated with only the new **Team** footer button were restored.
+
+Not verified:
+
+- **No real identity provider.** Only the local fake issuer was used, over loopback HTTP with `allowHttpLoopbackIssuer`. The configuration notes in `team-service.md` for hosted and self-hosted providers are untested. Some providers may require an exact redirect port, issuer quirks or the `client_secret_post` method.
+- **No real HTTPS deployment.** The TLS listener path (`certFile`/`keyFile`) and a reverse-proxy setup were not exercised.
+- **The production secret stores.** macOS Keychain, Windows DPAPI and Linux Secret Service were never tested; only the test-only basic store under Xvfb was. `setUsePlainTextEncryption` uses an in-memory key, so the test store does not survive an app restart. Restart persistence of the team session is therefore unverified on every platform.
+- **The real system browser.** `shell.openExternal` was not used; the test fetched the authorize URL instead.
+- **Scale and long runs.** Backup and restore of `team.sqlite` (the `backup` command exists and restore is documented), many teams or members, long-running sync, and service restarts during sync were not tested.
+- **Not built:** email delivery of invitations, team-level invitations and ownership transfer in the UI (team-level invites exist in the API only), team deletion, retention and purge policy (an owner decision), live push (the app polls every 15 s), and the server-archive packaging of the team service (it builds as `dist/team/server.mjs`).
+- **The opt-in staging check.** The roadmap's opt-in check with two owner-provided identities against a real deployment was not run.

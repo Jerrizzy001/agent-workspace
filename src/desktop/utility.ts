@@ -23,13 +23,16 @@ port.on("message", async ({ data }: any) => {
     data.type === "attachment" ||
     data.type === "agentControl" ||
     data.type === "profiles" ||
-    data.type === "ssh"
+    data.type === "ssh" ||
+    data.type === "team"
   ) {
     try {
       // Image bytes arrive only from the desktop clipboard broker in main;
       // agent-control grants and SSH management only from the owner window.
       const result =
-        data.type === "ssh"
+        data.type === "team"
+          ? await router!.team(data.action, data.payload)
+          : data.type === "ssh"
           ? await router!.ssh(data.action, data.payload)
           : data.type === "agentControl"
             ? await router!.agentControl(data.action, data.payload)

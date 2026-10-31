@@ -158,6 +158,7 @@ function capture(bin: string, args: string[], input?: string, timeout = 8000) {
           stderr: String(stderr || ""),
         }),
     );
+    child.stdin?.on("error", () => {});
     child.stdin?.end(input ?? "");
   });
 }
@@ -382,6 +383,9 @@ export function connectHost(spec: HostSpec, options: ConnectOptions = {}) {
         options.onLost?.(problem);
       }
     }
+    // ssh can exit while a frame is being written; the close handler then
+    // reports the lost connection, so a broken pipe must not crash the core.
+    child.stdin.on("error", () => {});
     child.on("error", (error) =>
       fail({
         code: "failed",

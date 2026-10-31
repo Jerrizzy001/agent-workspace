@@ -404,6 +404,8 @@ export interface HostRouter {
   profiles(action: unknown, payload?: unknown): Promise<unknown>;
   /** Desktop owner only (`workspace:ssh`). */
   ssh(action: unknown, payload?: unknown): Promise<unknown>;
+  /** Desktop main only: the local core's team cache. Never routed to an SSH host. */
+  team(action: unknown, payload?: unknown): Promise<unknown>;
   /** Events from the local core. */
   onLocalEvent(event: CoreEvent): void;
   /** Tests: the live connection of a host. */
@@ -839,6 +841,10 @@ export async function createHostRouter(options: HostRouterOptions): Promise<Host
       )
         throw new Error("Claude profiles are only available for folders on this computer.");
       return local.profiles(action, payload);
+    },
+    async team(action, payload) {
+      if (closed) throw new Error("Core is closed");
+      return local.team(action, payload);
     },
     async ssh(action, payload = {}) {
       if (closed) throw new Error("Core is closed");
