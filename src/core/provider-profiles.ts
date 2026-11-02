@@ -9,11 +9,18 @@
  * "Set up" opens the unmodified CLI in a terminal with the profile's folder;
  * the owner signs in there with the CLI's own flow.
  */
+import { execFile } from "node:child_process";
+import { executable } from "./process.js";
+import type { AccountStatus } from "../shared/contracts.js";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
-import type { ProfileView, ProfilesState, Session } from "../shared/contracts.js";
+import type {
+  ProfileView,
+  ProfilesState,
+  Session,
+} from "../shared/contracts.js";
 
 export interface ProfileRecord {
   id: string;
@@ -24,20 +31,26 @@ export interface ProfileRecord {
   createdAt: string;
 }
 export const MAX_PROFILES = 16;
-const PROFILE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const PROFILE_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const isProfileId = (v: unknown): v is string =>
   typeof v === "string" && PROFILE_ID.test(v);
 
 /** Plain one-line label, 1-40 characters. */
 export function profileLabelText(value: unknown) {
-  if (typeof value !== "string" || value.length > 400) throw new Error("Invalid profile name");
+  if (typeof value !== "string" || value.length > 400)
+    throw new Error("Invalid profile name");
   const label = value
     .replace(/[\p{Cc}\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
   if (!label) throw new Error("Name the profile, for example Work or Personal");
-  if ([...label].length > 40) throw new Error("Profile names are at most 40 characters");
-  if (/^default\b/i.test(label)) throw new Error('"Default" is the name of your usual sign-in; choose another name');
+  if ([...label].length > 40)
+    throw new Error("Profile names are at most 40 characters");
+  if (/^default\b/i.test(label))
+    throw new Error(
+      '"Default" is the name of your usual sign-in; choose another name',
+    );
   return label;
 }
 
@@ -84,16 +97,21 @@ export function createProfiles(options: {
   }
   /** The profile's folder, re-checked on every use: inside the root, private, ours. */
   function folder(profile: ProfileRecord) {
-    if (!/^[0-9a-f]{32}$/.test(profile.folder)) throw new Error("Invalid profile folder");
+    if (!/^[0-9a-f]{32}$/.test(profile.folder))
+      throw new Error("Invalid profile folder");
     ensureRoot();
     const dir = path.join(root, profile.folder);
     privateDir(dir, false);
-    if (fs.realpathSync(dir) !== path.join(fs.realpathSync(root), profile.folder))
+    if (
+      fs.realpathSync(dir) !== path.join(fs.realpathSync(root), profile.folder)
+    )
       throw new Error("A profile folder is not a private folder");
     return dir;
   }
   const open = (profileId: string) =>
-    options.sessions().filter((s) => s.profileId === profileId && s.status !== "exited").length;
+    options
+      .sessions()
+      .filter((s) => s.profileId === profileId && s.status !== "exited").length;
   function warnings() {
     const out: string[] = [];
     const set = OVERRIDING_ENV.filter((name) => process.env[name]);
@@ -111,7 +129,8 @@ export function createProfiles(options: {
   }
   function view(profile: ProfileRecord): ProfileView {
     let state: ProfileView["state"] = "empty";
-    let detail = "Not set up yet. Click Set up and sign in with Claude's own prompts.";
+    let detail =
+      "Not set up yet. Click Set up and sign in with Claude's own prompts.";
     let location = path.join(root, profile.folder);
     try {
       location = folder(profile);
@@ -124,7 +143,10 @@ export function createProfiles(options: {
       }
     } catch (error) {
       state = "problem";
-      detail = error instanceof Error ? error.message : "The profile folder cannot be used";
+      detail =
+        error instanceof Error
+          ? error.message
+          : "The profile folder cannot be used";
     }
     return {
       id: profile.id,
@@ -145,7 +167,8 @@ export function createProfiles(options: {
     if (!payload || typeof payload !== "object" || Array.isArray(payload))
       throw new Error("Invalid profile request");
     const v = payload as Record<string, unknown>;
-    if (Object.keys(v).some((k) => !allowed.includes(k))) throw new Error("Unexpected profile field");
+    if (Object.keys(v).some((k) => !allowed.includes(k)))
+      throw new Error("Unexpected profile field");
     return v;
   };
   return {
@@ -161,7 +184,8 @@ export function createProfiles(options: {
     storageRoot(profileId: string | undefined) {
       const base = profileId
         ? folder(record(profileId))
-        : process.env.CLAUDE_CONFIG_DIR && path.isAbsolute(process.env.CLAUDE_CONFIG_DIR)
+        : process.env.CLAUDE_CONFIG_DIR &&
+            path.isAbsolute(process.env.CLAUDE_CONFIG_DIR)
           ? process.env.CLAUDE_CONFIG_DIR
           : path.join(os.homedir(), ".claude");
       return path.join(base, "projects");
@@ -170,7 +194,8 @@ export function createProfiles(options: {
       const v = fields(payload, ["label"]);
       const label = profileLabelText(v.label);
       const existing = records();
-      if (existing.length >= MAX_PROFILES) throw new Error(`At most ${MAX_PROFILES} profiles`);
+      if (existing.length >= MAX_PROFILES)
+        throw new Error(`At most ${MAX_PROFILES} profiles`);
       if (existing.some((p) => p.label.toLowerCase() === label.toLowerCase()))
         throw new Error("A profile with that name already exists");
       ensureRoot();
@@ -185,10 +210,77 @@ export function createProfiles(options: {
       try {
         options.put("providerProfiles", profile);
       } catch (error) {
-        fs.rmSync(path.join(root, profile.folder), { recursive: true, force: true });
+        fs.rmSync(path.join(root, profile.folder), {
+          recursive: true,
+          force: true,
+        });
         throw error;
       }
       return state();
+    },
+    async account(payload: unknown): Promise<AccountStatus> {
+      const v = fields(payload, ["profileId"]);
+      const env = {
+        ...process.env,
+        NO_COLOR: "1",
+        ...(v.profileId !== undefined
+          ? { CLAUDE_CONFIG_DIR: folder(record(v.profileId)) }
+          : {}),
+      };
+      const checkedAt = new Date().toISOString();
+      const bin = executable("claude");
+      if (!bin)
+        return {
+          loggedIn: null,
+          checkedAt,
+          detail: "Claude CLI is not installed.",
+        };
+      const read = (args: string[]) =>
+        new Promise<string>((resolve) =>
+          execFile(
+            bin,
+            args,
+            { env, encoding: "utf8", timeout: 8000, maxBuffer: 65536 },
+            (_error, stdout) => resolve(stdout || ""),
+          ),
+        );
+      const help = await read(["auth", "status", "--help"]);
+      if (!/--json\b/.test(help))
+        return {
+          loggedIn: null,
+          checkedAt,
+          detail:
+            "This CLI cannot report account identity. Check /status in the terminal.",
+        };
+      try {
+        const value = JSON.parse(await read(["auth", "status", "--json"]));
+        if (typeof value.loggedIn !== "boolean")
+          throw new Error("Unsupported response");
+        const clean = (v: unknown) =>
+          typeof v === "string"
+            ? v
+                .replace(/[\p{Cc}\u202a-\u202e\u2066-\u2069]/gu, "")
+                .slice(0, 200)
+            : undefined;
+        // Allowlist identity fields only. Never return raw CLI output, tokens,
+        // config paths or other provider data; never persist this result.
+        return {
+          loggedIn: value.loggedIn,
+          email: clean(value.email),
+          method: clean(value.authMethod),
+          checkedAt,
+          detail: value.loggedIn
+            ? "Signed in according to this CLI. Model access is checked when you run a request."
+            : "Not signed in. Open Claude and follow its sign-in prompts.",
+        };
+      } catch {
+        return {
+          loggedIn: null,
+          checkedAt,
+          detail:
+            "Account status could not be verified. No sign-in settings were changed.",
+        };
+      }
     },
     check(payload: unknown) {
       const v = fields(payload, ["profileId"]);
@@ -201,7 +293,8 @@ export function createProfiles(options: {
      */
     remove(payload: unknown, launching: () => boolean) {
       const v = fields(payload, ["profileId", "deleteData"]);
-      if (typeof v.deleteData !== "boolean") throw new Error("Choose whether to delete the profile's data");
+      if (typeof v.deleteData !== "boolean")
+        throw new Error("Choose whether to delete the profile's data");
       const profile = record(v.profileId);
       const using = options
         .sessions()

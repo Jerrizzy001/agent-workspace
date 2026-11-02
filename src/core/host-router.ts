@@ -93,11 +93,16 @@ const REMOTE_REFUSED: Partial<Record<Command, string>> = {
   "assist.preview": "AI suggestions are not available for SSH folders yet.",
   "assist.suggest": "AI suggestions are not available for SSH folders yet.",
   "assist.cancel": "AI suggestions are not available for SSH folders yet.",
-  "conversation.fork": "Branches and linked context are only available for sessions on this computer.",
-  "transcript.preview": "Branches and linked context are only available for sessions on this computer.",
-  "transcript.link": "Branches and linked context are only available for sessions on this computer.",
-  "transcript.revoke": "Branches and linked context are only available for sessions on this computer.",
-  "transcript.list": "Branches and linked context are only available for sessions on this computer.",
+  "conversation.fork":
+    "Branches and linked context are only available for sessions on this computer.",
+  "transcript.preview":
+    "Branches and linked context are only available for sessions on this computer.",
+  "transcript.link":
+    "Branches and linked context are only available for sessions on this computer.",
+  "transcript.revoke":
+    "Branches and linked context are only available for sessions on this computer.",
+  "transcript.list":
+    "Branches and linked context are only available for sessions on this computer.",
 };
 const ID_KEYS = [
   "id",
@@ -131,8 +136,12 @@ type Rule =
   | "num?"
   | "bool?"
   | readonly string[];
-function pick(value: unknown, rules: Record<string, Rule>): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+function pick(
+  value: unknown,
+  rules: Record<string, Rule>,
+): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return undefined;
   const v = value as Record<string, unknown>;
   const out: Record<string, unknown> = {};
   for (const [key, rule] of Object.entries(rules)) {
@@ -165,17 +174,33 @@ function pick(value: unknown, rules: Record<string, Rule>): Record<string, unkno
   }
   return out;
 }
-const list = <T>(value: unknown, max: number, each: (v: unknown) => T | undefined) =>
+const list = <T>(
+  value: unknown,
+  max: number,
+  each: (v: unknown) => T | undefined,
+) =>
   Array.isArray(value)
-    ? value.slice(0, max).map(each).filter((v): v is T => v !== undefined)
+    ? value
+        .slice(0, max)
+        .map(each)
+        .filter((v): v is T => v !== undefined)
     : [];
 const STATUS = ["running", "exited", "unknown"] as const;
 const PROVIDER = ["shell", "claude", "codex"] as const;
 export function sanitizeSnapshot(raw: unknown): Snapshot {
-  const s = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const s = (raw && typeof raw === "object" ? raw : {}) as Record<
+    string,
+    unknown
+  >;
   return {
     projects: list(s.projects, 1000, (v) =>
-      pick(v, { id: "id", name: "str", path: "str", createdAt: "str", hidden: "bool?" }),
+      pick(v, {
+        id: "id",
+        name: "str",
+        path: "str",
+        createdAt: "str",
+        hidden: "bool?",
+      }),
     ) as unknown as Snapshot["projects"],
     tasks: list(s.tasks, 5000, (v) =>
       pick(v, {
@@ -202,85 +227,106 @@ export function sanitizeSnapshot(raw: unknown): Snapshot {
         createdAt: "str",
       }),
     ) as unknown as Snapshot["attempts"],
-    sessions: list(s.sessions, 5000, (v) =>
-      pick(v, {
-        id: "id",
-        attemptId: "id|null",
-        projectId: "id",
-        provider: PROVIDER,
-        cwd: "str",
-        backendName: "str",
-        generation: "int",
-        status: STATUS,
-        createdAt: "str",
-        model: "str?",
-        activity: ["running", "needs", "done"],
-        activityTracking: "bool?",
-        activityAt: "num?",
-        conversationId: "str?",
-        resumedFrom: "id?",
-        exitCode: "int?",
-        transcript: "bool?",
-        title: "str?",
-        titleRevision: "int?",
-        lane: "str?",
-        laneOrder: "num?",
-        placementRevision: "int?",
-      }) ??
-      // `activity` is optional; retry without it when absent.
-      pick(v, {
-        id: "id",
-        attemptId: "id|null",
-        projectId: "id",
-        provider: PROVIDER,
-        cwd: "str",
-        backendName: "str",
-        generation: "int",
-        status: STATUS,
-        createdAt: "str",
-        model: "str?",
-        activityTracking: "bool?",
-        conversationId: "str?",
-        resumedFrom: "id?",
-        exitCode: "int?",
-        transcript: "bool?",
-        title: "str?",
-        titleRevision: "int?",
-        lane: "str?",
-        laneOrder: "num?",
-        placementRevision: "int?",
-      }),
+    sessions: list(
+      s.sessions,
+      5000,
+      (v) =>
+        pick(v, {
+          id: "id",
+          attemptId: "id|null",
+          projectId: "id",
+          provider: PROVIDER,
+          cwd: "str",
+          worktreePath: "str?",
+          backendName: "str",
+          generation: "int",
+          status: STATUS,
+          createdAt: "str",
+          model: "str?",
+          activity: ["running", "needs", "done", "error", "stale"],
+          activityTracking: "bool?",
+          activityAt: "num?",
+          conversationId: "str?",
+          resumedFrom: "id?",
+          exitCode: "int?",
+          transcript: "bool?",
+          title: "str?",
+          titleRevision: "int?",
+          canvasHidden: "bool?",
+          lane: "str?",
+          laneOrder: "num?",
+          placementRevision: "int?",
+        }) ??
+        // `activity` is optional; retry without it when absent.
+        pick(v, {
+          id: "id",
+          attemptId: "id|null",
+          projectId: "id",
+          provider: PROVIDER,
+          cwd: "str",
+          worktreePath: "str?",
+          backendName: "str",
+          generation: "int",
+          status: STATUS,
+          createdAt: "str",
+          model: "str?",
+          activityTracking: "bool?",
+          conversationId: "str?",
+          resumedFrom: "id?",
+          exitCode: "int?",
+          transcript: "bool?",
+          title: "str?",
+          titleRevision: "int?",
+          canvasHidden: "bool?",
+          lane: "str?",
+          laneOrder: "num?",
+          placementRevision: "int?",
+        }),
     ) as unknown as Snapshot["sessions"],
-    notes: list(s.notes, 5000, (v) =>
-      pick(v, {
-        id: "id",
-        projectId: "id",
-        title: "text",
-        body: "text",
-        createdAt: "str",
-        updatedAt: "str",
-        revision: "int?",
-        source: ["agent"],
-      }) ??
-      pick(v, {
-        id: "id",
-        projectId: "id",
-        title: "text",
-        body: "text",
-        createdAt: "str",
-        updatedAt: "str",
-        revision: "int?",
-      }),
+    notes: list(
+      s.notes,
+      5000,
+      (v) =>
+        pick(v, {
+          id: "id",
+          projectId: "id",
+          title: "text",
+          body: "text",
+          createdAt: "str",
+          updatedAt: "str",
+          revision: "int?",
+          source: ["agent"],
+          archived: "bool?",
+        }) ??
+        pick(v, {
+          id: "id",
+          projectId: "id",
+          title: "text",
+          body: "text",
+          createdAt: "str",
+          updatedAt: "str",
+          revision: "int?",
+          archived: "bool?",
+        }),
     ) as unknown as Snapshot["notes"],
     layouts: list(s.layouts, 1000, (v) => {
       const base = pick(v, { projectId: "id", revision: "int?" });
       const positions = (v as Record<string, unknown> | undefined)?.positions;
-      if (!base || !positions || typeof positions !== "object" || Array.isArray(positions))
+      if (
+        !base ||
+        !positions ||
+        typeof positions !== "object" ||
+        Array.isArray(positions)
+      )
         return undefined;
       const entries = Object.entries(positions as Record<string, any>)
         .slice(0, 10000)
         .filter(
-          ([k, p]) => REMOTE_ID.test(k) && p && Number.isFinite(p.x) && Number.isFinite(p.y),
+          ([k, p]) =>
+            REMOTE_ID.test(k) &&
+            p &&
+            Number.isFinite(p.x) &&
+            Number.isFinite(p.y),
         )
         .map(([k, p]) => [k, { x: p.x, y: p.y }]);
       return { ...base, positions: Object.fromEntries(entries) };
@@ -290,11 +336,18 @@ export function sanitizeSnapshot(raw: unknown): Snapshot {
       if (!base) return undefined;
       const lanes = list((v as any).lanes, 12, (l) =>
         pick(l, { id: "str", name: "str" }),
-      ).filter((l) => /^[A-Za-z0-9_-]{1,64}$/.test(String(l.id)) && String(l.name).length <= 80);
+      ).filter(
+        (l) =>
+          /^[A-Za-z0-9_-]{1,64}$/.test(String(l.id)) &&
+          String(l.name).length <= 80,
+      );
       return lanes.length ? { ...base, lanes } : undefined;
     }) as unknown as Snapshot["boardLanes"],
     capabilities: list(s.capabilities, 8, (v) => {
-      const c = pick(v, { name: ["tmux", "git", "claude", "codex"], detail: "str" });
+      const c = pick(v, {
+        name: ["tmux", "git", "claude", "codex"],
+        detail: "str",
+      });
       const available = (v as any)?.available;
       return c && typeof available === "boolean"
         ? { ...c, available, detail: String(c.detail).slice(0, 300) }
@@ -314,7 +367,12 @@ function sanitizeListing(raw: unknown): DirectoryListing {
     git: r.git === true,
     truncated: r.truncated === true,
     entries: list(r.entries, 2000, (e) => {
-      const x = pick(e, { name: "str", path: "str", type: ["directory", "file"], hidden: "bool?" });
+      const x = pick(e, {
+        name: "str",
+        path: "str",
+        type: ["directory", "file"],
+        hidden: "bool?",
+      });
       return x
         ? {
             name: x.name as string,
@@ -325,18 +383,28 @@ function sanitizeListing(raw: unknown): DirectoryListing {
           }
         : undefined;
     }),
-    places: list(r.places, 20, (p) => pick(p, { name: "str", path: "str" }) as any),
+    places: list(
+      r.places,
+      20,
+      (p) => pick(p, { name: "str", path: "str" }) as any,
+    ),
   };
 }
 
 /** Remote IDs to desktop IDs in a result (lane IDs are per folder and stay as they are). */
 function toLocal(hostId: string, value: unknown, depth = 0): unknown {
   if (depth > 12 || value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map((v) => toLocal(hostId, v, depth + 1));
+  if (Array.isArray(value))
+    return value.map((v) => toLocal(hostId, v, depth + 1));
   const out: Record<string, unknown> = {};
   for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
     if (key === "lanes") out[key] = v;
-    else if (key === "positions" && v && typeof v === "object" && !Array.isArray(v))
+    else if (
+      key === "positions" &&
+      v &&
+      typeof v === "object" &&
+      !Array.isArray(v)
+    )
       out[key] = Object.fromEntries(
         Object.entries(v as Record<string, unknown>)
           .filter(([k]) => REMOTE_ID.test(k))
@@ -376,7 +444,11 @@ function toRemote(hostId: string, payload: Record<string, unknown>) {
       throw new Error("This item belongs to a different host");
     out[key] = parsed.remoteId;
   }
-  if (out.positions && typeof out.positions === "object" && !Array.isArray(out.positions))
+  if (
+    out.positions &&
+    typeof out.positions === "object" &&
+    !Array.isArray(out.positions)
+  )
     out.positions = Object.fromEntries(
       Object.entries(out.positions as Record<string, unknown>).map(([k, p]) => {
         const parsed = parseQualifiedId(k);
@@ -414,7 +486,9 @@ export interface HostRouter {
   close(): Promise<void>;
 }
 
-export async function createHostRouter(options: HostRouterOptions): Promise<HostRouter> {
+export async function createHostRouter(
+  options: HostRouterOptions,
+): Promise<HostRouter> {
   const { local, emit } = options;
   const delays = options.reconnectDelays ?? [1000, 2000, 4000, 8000, 15000];
   const stored = (await local.hostRecords("list")) as {
@@ -479,18 +553,32 @@ export async function createHostRouter(options: HostRouterOptions): Promise<Host
           createdAt: r.cachedAt,
           hostId: id,
         }));
-      return { projects, tasks: [], attempts: [], sessions: [], notes: [], layouts: [], boardLanes: [] };
+      return {
+        projects,
+        tasks: [],
+        attempts: [],
+        sessions: [],
+        notes: [],
+        layouts: [],
+        boardLanes: [],
+      };
     }
     const t = toLocal(id, h.remote) as Snapshot;
     return {
       projects: t.projects.map((p) => ({ ...p, hostId: id })),
       tasks: t.tasks,
-      attempts: t.attempts.map((a) => (connected ? a : { ...a, status: "unknown" as const })),
+      attempts: t.attempts.map((a) =>
+        connected ? a : { ...a, status: "unknown" as const },
+      ),
       sessions: t.sessions.map((s) => {
         if (connected) return { ...s, hostId: id };
         // Cached, not authoritative: a disconnected host's sessions are unknown.
         const { activity: _a, activityAt: _b, ...rest } = s;
-        return { ...rest, hostId: id, status: s.status === "exited" ? s.status : ("unknown" as const) };
+        return {
+          ...rest,
+          hostId: id,
+          status: s.status === "exited" ? s.status : ("unknown" as const),
+        };
       }),
       notes: t.notes,
       layouts: t.layouts,
@@ -556,7 +644,11 @@ export async function createHostRouter(options: HostRouterOptions): Promise<Host
       });
     }
   }
-  function onRemoteEvent(h: HostState, epoch: number, event: Record<string, any>) {
+  function onRemoteEvent(
+    h: HostState,
+    epoch: number,
+    event: Record<string, any>,
+  ) {
     if (h.epoch !== epoch || closed) return;
     const id = h.record.id;
     const viewerKey = () => {
@@ -645,7 +737,10 @@ export async function createHostRouter(options: HostRouterOptions): Promise<Host
     h.timer = setTimeout(() => void connect(h).catch(() => {}), delay);
     h.timer.unref?.();
   }
-  function connect(h: HostState, extra: Pick<ConnectOptions, "approveUpgrade"> = {}) {
+  function connect(
+    h: HostState,
+    extra: Pick<ConnectOptions, "approveUpgrade"> = {},
+  ) {
     if (h.connecting) return h.connecting;
     if (h.state === "connected" && h.conn) return Promise.resolve();
     clearTimeout(h.timer);
@@ -660,7 +755,9 @@ export async function createHostRouter(options: HostRouterOptions): Promise<Host
       try {
         const conn = await connectHost(spec(h), {
           ...extra,
-          ...(h.record.remoteHostId ? { expectRemoteHostId: h.record.remoteHostId } : {}),
+          ...(h.record.remoteHostId
+            ? { expectRemoteHostId: h.record.remoteHostId }
+            : {}),
           onEvent: (event) => onRemoteEvent(h, epoch, event),
           onLost: (problem) => {
             if (live) lost(h, epoch, problem);
@@ -675,7 +772,10 @@ export async function createHostRouter(options: HostRouterOptions): Promise<Host
           }
           return;
         }
-        const snapshot = await conn.request("invoke", { command: "snapshot", payload: {} });
+        const snapshot = await conn.request("invoke", {
+          command: "snapshot",
+          payload: {},
+        });
         if (h.epoch !== epoch) return;
         if (early) throw new HostProblemError(early);
         live = true;
@@ -708,8 +808,11 @@ export async function createHostRouter(options: HostRouterOptions): Promise<Host
             ? error.problem
             : { code: "failed", message: (error as Error).message });
         if (h.problem.code === "host-key-unknown")
-          h.problem.fingerprints = await hostKeyFingerprints(spec(h)).catch(() => []);
-        if (h.wantConnected && h.attempt > 0 && RETRYABLE.has(h.problem.code)) schedule(h);
+          h.problem.fingerprints = await hostKeyFingerprints(spec(h)).catch(
+            () => [],
+          );
+        if (h.wantConnected && h.attempt > 0 && RETRYABLE.has(h.problem.code))
+          schedule(h);
         else {
           h.state = "disconnected";
           h.wantConnected = false;
@@ -751,17 +854,25 @@ export async function createHostRouter(options: HostRouterOptions): Promise<Host
     if (!payload || typeof payload !== "object" || Array.isArray(payload))
       throw new Error("Invalid SSH request");
     const v = payload as Record<string, unknown>;
-    if (Object.keys(v).some((k) => !keys.includes(k))) throw new Error("Unexpected SSH field");
+    if (Object.keys(v).some((k) => !keys.includes(k)))
+      throw new Error("Unexpected SSH field");
     return v;
   };
 
-  async function routeInvoke(command: Command, payload: Record<string, unknown>) {
+  async function routeInvoke(
+    command: Command,
+    payload: Record<string, unknown>,
+  ) {
     if (command === "snapshot") {
       localSnapshot = (await local.invoke("snapshot")) as Snapshot;
       return merged();
     }
     // Branches and transcript links stay on one computer: refuse any mix.
-    if (command === "conversation.fork" || command.startsWith("transcript.")) {
+    if (
+      command === "session.confirmIdle" ||
+      command === "conversation.fork" ||
+      command.startsWith("transcript.")
+    ) {
       if (ID_KEYS.some((key) => parseQualifiedId(payload[key])))
         throw new Error(REMOTE_REFUSED[command]!);
       return local.invoke(command, payload);
@@ -773,15 +884,19 @@ export async function createHostRouter(options: HostRouterOptions): Promise<Host
     const refused = REMOTE_REFUSED[command];
     if (refused) throw new Error(refused);
     if (payload.profileId !== undefined)
-      throw new Error("Claude profiles are only available for folders on this computer.");
+      throw new Error(
+        "Claude profiles are only available for folders on this computer.",
+      );
     const remotePayload = toRemote(hostId, payload);
     const key =
-      typeof remotePayload.sessionId === "string" && typeof remotePayload.viewerId === "string"
+      typeof remotePayload.sessionId === "string" &&
+      typeof remotePayload.viewerId === "string"
         ? remotePayload.sessionId + "\0" + remotePayload.viewerId
         : undefined;
     if (command === "session.detach" && key) h.viewers.delete(key);
     if (command === "session.attach" && key) {
-      if (!h.viewers.has(key) && h.viewers.size >= 256) throw new Error("Viewer limit reached");
+      if (!h.viewers.has(key) && h.viewers.size >= 256)
+        throw new Error("Viewer limit reached");
       h.viewers.add(key);
     }
     if (h.state !== "connected" || !h.conn) {
@@ -803,7 +918,12 @@ export async function createHostRouter(options: HostRouterOptions): Promise<Host
       }
       return toLocal(hostId, result);
     } catch (error) {
-      if (command === "session.attach" && key && h.conn === conn && h.state === "connected")
+      if (
+        command === "session.attach" &&
+        key &&
+        h.conn === conn &&
+        h.state === "connected"
+      )
         h.viewers.delete(key);
       throw error;
     }
@@ -829,7 +949,9 @@ export async function createHostRouter(options: HostRouterOptions): Promise<Host
         typeof payload === "object" &&
         parseQualifiedId((payload as Record<string, unknown>).sessionId)
       )
-        throw new Error("Agent control is only available for sessions on this computer.");
+        throw new Error(
+          "Agent control is only available for sessions on this computer.",
+        );
       return local.agentControl(action, payload);
     },
     async profiles(action, payload) {
@@ -839,7 +961,9 @@ export async function createHostRouter(options: HostRouterOptions): Promise<Host
         typeof payload === "object" &&
         parseQualifiedId((payload as Record<string, unknown>).projectId)
       )
-        throw new Error("Claude profiles are only available for folders on this computer.");
+        throw new Error(
+          "Claude profiles are only available for folders on this computer.",
+        );
       return local.profiles(action, payload);
     },
     async team(action, payload) {
@@ -854,7 +978,8 @@ export async function createHostRouter(options: HostRouterOptions): Promise<Host
           return [...hosts.values()].map(view);
         case "add": {
           const input = validateHostInput(payload);
-          if (hosts.size >= 32) throw new Error("At most 32 SSH hosts can be added");
+          if (hosts.size >= 32)
+            throw new Error("At most 32 SSH hosts can be added");
           if (
             [...hosts.values()].some(
               (h) =>
@@ -868,7 +993,11 @@ export async function createHostRouter(options: HostRouterOptions): Promise<Host
           let id: string;
           do id = crypto.randomBytes(4).toString("hex");
           while (hosts.has(id));
-          const record: HostRecord = { id, ...input, createdAt: new Date().toISOString() };
+          const record: HostRecord = {
+            id,
+            ...input,
+            createdAt: new Date().toISOString(),
+          };
           await local.hostRecords("putHost", record);
           const h: HostState = {
             record,
@@ -903,7 +1032,9 @@ export async function createHostRouter(options: HostRouterOptions): Promise<Host
                 ? error.problem
                 : { code: "failed", message: (error as Error).message };
             if (problem.code === "host-key-unknown")
-              problem.fingerprints = await hostKeyFingerprints(spec(h)).catch(() => []);
+              problem.fingerprints = await hostKeyFingerprints(spec(h)).catch(
+                () => [],
+              );
             if (h.state !== "connected") h.problem = problem;
             publish();
             return { ok: false, host: view(h), problem };
@@ -911,7 +1042,10 @@ export async function createHostRouter(options: HostRouterOptions): Promise<Host
         }
         case "connect": {
           const v = fields(payload, ["hostId", "approveUpgrade"]);
-          if (v.approveUpgrade !== undefined && typeof v.approveUpgrade !== "boolean")
+          if (
+            v.approveUpgrade !== undefined &&
+            typeof v.approveUpgrade !== "boolean"
+          )
             throw new Error("Invalid SSH request");
           const h = host(v.hostId);
           h.wantConnected = true;
@@ -929,31 +1063,47 @@ export async function createHostRouter(options: HostRouterOptions): Promise<Host
         case "browse": {
           const v = fields(payload, ["hostId", "path"]);
           const h = host(v.hostId);
-          if (v.path !== undefined && (typeof v.path !== "string" || v.path.length > 4096))
+          if (
+            v.path !== undefined &&
+            (typeof v.path !== "string" || v.path.length > 4096)
+          )
             throw new Error("Choose a folder from the list");
           return sanitizeListing(
-            await connected(h).request("browse", v.path === undefined ? {} : { path: v.path }),
+            await connected(h).request(
+              "browse",
+              v.path === undefined ? {} : { path: v.path },
+            ),
           );
         }
         case "registerProject": {
           const v = fields(payload, ["hostId", "path"]);
           const h = host(v.hostId);
-          if (typeof v.path !== "string" || !v.path.startsWith("/") || v.path.length > 4096)
+          if (
+            typeof v.path !== "string" ||
+            !v.path.startsWith("/") ||
+            v.path.length > 4096
+          )
             throw new Error("Choose an absolute folder path on the host");
           const conn = connected(h);
-          const project = pick(await conn.request("register", { path: v.path }), {
-            id: "id",
-            name: "str",
-            path: "str",
-            createdAt: "str",
-          });
+          const project = pick(
+            await conn.request("register", { path: v.path }),
+            {
+              id: "id",
+              name: "str",
+              path: "str",
+              createdAt: "str",
+            },
+          );
           if (!project) throw new ProtocolError("Invalid folder");
           h.remote = sanitizeSnapshot(
             await conn.request("invoke", { command: "snapshot", payload: {} }),
           );
           await updateRefs(h);
           publish();
-          return { ...(toLocal(h.record.id, project) as Project), hostId: h.record.id };
+          return {
+            ...(toLocal(h.record.id, project) as Project),
+            hostId: h.record.id,
+          };
         }
         case "remove": {
           const h = host(fields(payload, ["hostId"]).hostId);
@@ -982,7 +1132,10 @@ export async function createHostRouter(options: HostRouterOptions): Promise<Host
         (h): ExecutionHost => ({
           id: h.record.id,
           invoke: async (command, payload) =>
-            toLocal(h.record.id, await connected(h).request("invoke", { command, payload })),
+            toLocal(
+              h.record.id,
+              await connected(h).request("invoke", { command, payload }),
+            ),
         }),
       ),
     ],

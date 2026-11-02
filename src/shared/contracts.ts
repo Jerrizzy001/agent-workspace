@@ -1,7 +1,14 @@
-import type { AgentControlState, DesktopAgentControlAPI } from "./controller-contracts.js";
+import type {
+  AgentControlState,
+  DesktopAgentControlAPI,
+} from "./controller-contracts.js";
 import type { DesktopTeamAPI } from "./team-contracts.js";
 export type TaskStatus =
-  "backlog" | "ready" | "in_progress" | "review" | "done";
+  | "backlog"
+  | "ready"
+  | "in_progress"
+  | "review"
+  | "done";
 export type Provider = "shell" | "claude" | "codex";
 export interface Project {
   id: string;
@@ -35,7 +42,7 @@ export interface Attempt {
   createdAt: string;
 }
 /** Agent turn state reported by provider hooks; absent when the provider cannot report it. */
-export type Activity = "running" | "needs" | "done";
+export type Activity = "running" | "needs" | "done" | "error" | "stale";
 export interface Session {
   id: string;
   /** Null for sessions opened directly from a folder rather than a task attempt. */
@@ -43,6 +50,8 @@ export interface Session {
   projectId: string;
   provider: Provider;
   cwd: string;
+  /** Validated worktree root for a directly launched session. */
+  worktreePath?: string;
   backendName: string;
   generation: number;
   status: "running" | "exited" | "unknown";
@@ -62,6 +71,8 @@ export interface Session {
   title?: string;
   /** Incremented on every rename; `session.rename` must name the current one. */
   titleRevision?: number;
+  /** Hidden from Canvas only; the session keeps running. */
+  canvasHidden?: boolean;
   /** Session-board lane chosen by the owner; absent shows a default lane. */
   lane?: string;
   /** Position within the lane (ascending); absent sorts after placed cards. */
@@ -73,7 +84,11 @@ export interface Session {
   /** Claude profile (private config folder) this session was launched with; absent is the default sign-in. */
   profileId?: string;
   /** Set when this session's conversation was branched from another session's. */
-  forkedFrom?: { sessionId: string; generation: number; conversationId: string };
+  forkedFrom?: {
+    sessionId: string;
+    generation: number;
+    conversationId: string;
+  };
   /**
    * Branches only: "pending" until the CLI reports the new conversation ID,
    * "known" once it did, "unknown" when the report was missing or ambiguous.
@@ -104,6 +119,7 @@ export interface Note {
   revision?: number;
   /** "agent" when created through agent control (`awctl note create`). */
   source?: "agent";
+  archived?: boolean;
 }
 export interface Layout {
   projectId: string;
@@ -192,7 +208,10 @@ export interface DesktopSSHAPI {
     dataDir?: string;
   }): Promise<ExecutionHostView>;
   probe(hostId: string): Promise<HostProbeResult>;
-  connect(hostId: string, options?: { approveUpgrade?: boolean }): Promise<ExecutionHostView>;
+  connect(
+    hostId: string,
+    options?: { approveUpgrade?: boolean },
+  ): Promise<ExecutionHostView>;
   disconnect(hostId: string): Promise<ExecutionHostView>;
   browse(hostId: string, path?: string): Promise<DirectoryListing>;
   registerProject(hostId: string, path: string): Promise<Project>;
@@ -266,6 +285,9 @@ export const COMMANDS = [
   "session.capture",
   "session.ack",
   "session.rename",
+  "session.canvas",
+  "session.confirmIdle",
+  "session.task",
   "session.place",
   "lane.rename",
   "lane.add",
@@ -283,6 +305,7 @@ export const COMMANDS = [
   "layout.save",
   "note.create",
   "note.update",
+  "note.archive",
   "settings.read",
   "settings.write",
   "assist.status",
@@ -301,6 +324,8 @@ export interface RemoteConfig {
   port: number;
   publicOrigin?: string;
   tls: boolean;
+  /** Explicit owner-selected local folders. */
+  projectIds?: string[];
 }
 export interface RemoteStatus {
   enabled: boolean;
@@ -543,13 +568,28 @@ export interface ProfilesState {
   warnings: string[];
 }
 /** Desktop owner only: Claude profiles. No route exists through the gateway or awctl. */
+export interface AccountStatus {
+  loggedIn: boolean | null;
+  email?: string;
+  method?: string;
+  checkedAt: string;
+  detail: string;
+}
 export interface DesktopProfilesAPI {
+  account(input: { profileId?: string }): Promise<AccountStatus>;
   list(): Promise<ProfilesState>;
   create(input: { label: string }): Promise<ProfilesState>;
   /** Opens the unmodified CLI with this profile in a new terminal so the owner signs in there. */
-  setup(input: { profileId: string; projectId: string; idempotencyKey: string }): Promise<{ session: Session }>;
+  setup(input: {
+    profileId: string;
+    projectId: string;
+    idempotencyKey: string;
+  }): Promise<{ session: Session }>;
   check(input: { profileId: string }): Promise<ProfileView>;
-  remove(input: { profileId: string; deleteData: boolean }): Promise<ProfilesState & { keptData?: string }>;
+  remove(input: {
+    profileId: string;
+    deleteData: boolean;
+  }): Promise<ProfilesState & { keptData?: string }>;
 }
 /** Provenance of one transcript export (roadmap section 3). */
 export interface TranscriptExportInfo {

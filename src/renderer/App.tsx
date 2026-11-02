@@ -80,7 +80,9 @@ const initial: Snapshot = {
   boardLanes: [],
   capabilities: [],
 };
-const isMac = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent);
+const isMac = /Mac|iPhone|iPad/i.test(
+  navigator.platform || navigator.userAgent,
+);
 const modKey = isMac ? "⌘" : "Ctrl";
 function stored(key: string, fallback = "") {
   try {
@@ -144,7 +146,9 @@ export default function App() {
   const [launching, setLaunching] = useState<Provider | null>(null);
   const [problem, setProblem] = useState<LaunchProblem | null>(null);
   const [git, setGit] = useState<ReviewSummary | null>(null);
-  const [filesOpen, setFilesOpen] = useState(() => stored("files", "1") !== "0");
+  const [filesOpen, setFilesOpen] = useState(
+    () => stored("files", "1") !== "0",
+  );
   const [drawer, setDrawer] = useState(false);
   const [mobilePane, setMobilePane] = useState<"terminal" | "files">(
     "terminal",
@@ -152,12 +156,20 @@ export default function App() {
   const [modal, setModal] = useState<
     "task" | "edit-task" | "attempt" | "palette" | null
   >(null);
+  const [settingsPanel, setSettingsPanel] = useState(false);
+  const [handoffDraft, setHandoffDraft] = useState<{
+    sessionId: string;
+    generation: number;
+    text: string;
+  } | null>(null);
+  const [connectRequested, setConnectRequested] = useState(false);
   const [remotePanel, setRemotePanel] = useState(false);
   const [sshPanel, setSSHPanel] = useState(false);
   const [teamPanel, setTeamPanel] = useState(false);
   const [folderMenu, setFolderMenu] = useState(false);
   const [showEnded, setShowEnded] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [reviewOverride, setReviewOverride] = useState<string | null>(null);
   const [reviewRefresh, setReviewRefresh] = useState(0);
   const [editorDirty, setEditorDirty] = useState(false);
   const canNavigate = useCallback(
@@ -247,9 +259,7 @@ export default function App() {
   const target = targets[projectId] || "";
   const folderSessions = useMemo(
     () =>
-      orderSessions(
-        snapshot.sessions.filter((s) => s.projectId === projectId),
-      ),
+      orderSessions(snapshot.sessions.filter((s) => s.projectId === projectId)),
     [snapshot.sessions, projectId],
   );
   const tabs = useMemo(() => {
@@ -266,15 +276,20 @@ export default function App() {
     : undefined;
   // Files follow a task attempt's isolated worktree when one is selected.
   const reviewTree =
-    attempt && project && attempt.worktreePath !== project.path
-      ? attempt.worktreePath
-      : undefined;
+    reviewOverride !== null
+      ? reviewOverride || undefined
+      : session?.worktreePath ||
+        (attempt && project && attempt.worktreePath !== project.path
+          ? attempt.worktreePath
+          : undefined);
   const allSessions = useMemo(
     () => orderSessions(snapshot.sessions),
     [snapshot.sessions],
   );
   const needsYou = allSessions.filter(
-    (s) => s.status === "running" && s.activity === "needs",
+    (s) =>
+      s.status === "running" &&
+      (s.activity === "needs" || s.activity === "error"),
   );
   const openSessions = allSessions.filter(isOpen);
   const endedSessions = allSessions.filter((s) => !isOpen(s)).slice(0, 12);
@@ -295,7 +310,9 @@ export default function App() {
       : "");
 
   // ---- Notifications: needs-you, finished turns and unexpected exits.
-  const previous = useRef(new Map<string, Pick<Session, "status" | "activity">>());
+  const previous = useRef(
+    new Map<string, Pick<Session, "status" | "activity">>(),
+  );
   const endedByUser = useRef(new Set<string>());
   const visibleSession = useRef("");
   visibleSession.current = view === "terminals" ? session?.id || "" : "";
@@ -309,8 +326,14 @@ export default function App() {
       const was = before.get(s.id);
       if (!was) continue;
       let message = "";
-      if (s.status === "running" && s.activity === "needs" && was.activity !== "needs")
+      if (
+        s.status === "running" &&
+        s.activity === "needs" &&
+        was.activity !== "needs"
+      )
         message = "needs you";
+      else if (s.activity === "error" && was.activity !== "error")
+        message = "could not finish its turn";
       else if (s.activity === "done" && was.activity === "running")
         message = "finished its turn";
       else if (
@@ -329,7 +352,11 @@ export default function App() {
         snapshot.projects.find((p) => p.id === s.projectId),
       )}`;
       const away = document.hidden || !document.hasFocus();
-      if (away && "Notification" in window && Notification.permission === "granted") {
+      if (
+        away &&
+        "Notification" in window &&
+        Notification.permission === "granted"
+      ) {
         try {
           const note = new Notification(title, { body: detail, tag: s.id });
           note.onclick = () => {
@@ -376,16 +403,20 @@ export default function App() {
     )[0];
     setSessionId(first?.id || "");
     setChoices((current) => ({ ...current, worktreePath: "" }));
+    setReviewOverride(null);
   }
-  function openSession(s: Session) {
+  function openSession(s: Session, draft?: string) {
     const sessionAttempt = s.attemptId
       ? snapshot.attempts.find((a) => a.id === s.attemptId)
       : undefined;
     const sessionProject = snapshot.projects.find((p) => p.id === s.projectId);
     const tree =
-      sessionAttempt && sessionProject && sessionAttempt.worktreePath !== sessionProject.path
+      s.worktreePath ||
+      (sessionAttempt &&
+      sessionProject &&
+      sessionAttempt.worktreePath !== sessionProject.path
         ? sessionAttempt.worktreePath
-        : undefined;
+        : undefined);
     if (sessionProject?.hidden) {
       setError(
         "This session's folder was removed from the list. Open the folder again to see it.",
@@ -399,6 +430,11 @@ export default function App() {
       setTaskId("");
       setGit(null);
     }
+    setReviewOverride(null);
+    setChoices((c) => ({ ...c, worktreePath: tree || "" }));
+    setHandoffDraft(
+      draft ? { sessionId: s.id, generation: s.generation, text: draft } : null,
+    );
     setSessionId(s.id);
     setBrowsing(false);
     setView("terminals");
@@ -482,7 +518,9 @@ export default function App() {
         message,
         kind: /not installed/.test(message)
           ? "missing"
-          : /uncertain|outcome unknown|outcome is unknown|timed out|interrupted/i.test(message)
+          : /uncertain|outcome unknown|outcome is unknown|timed out|interrupted/i.test(
+                message,
+              )
             ? "uncertain"
             : "error",
         retry: { key, payload },
@@ -567,11 +605,14 @@ export default function App() {
   async function addNote() {
     if (!project) return undefined;
     try {
-      const note = await window.workspace.invoke<{ id: string }>("note.create", {
-        projectId: project.id,
-        title: "Note",
-        body: "",
-      });
+      const note = await window.workspace.invoke<{ id: string }>(
+        "note.create",
+        {
+          projectId: project.id,
+          title: "Note",
+          body: "",
+        },
+      );
       return note.id;
     } catch (e) {
       report(e);
@@ -606,7 +647,8 @@ export default function App() {
       const mod = isMac ? e.metaKey : e.ctrlKey;
       if (!mod || e.altKey || e.shiftKey) return;
       // Off macOS, Ctrl shortcuts inside a terminal belong to the terminal.
-      if (!isMac && (e.target as HTMLElement | null)?.closest?.(".xterm")) return;
+      if (!isMac && (e.target as HTMLElement | null)?.closest?.(".xterm"))
+        return;
       const k = e.key.toLowerCase();
       if (k === "k") {
         e.preventDefault();
@@ -706,7 +748,9 @@ export default function App() {
           <BrandMark />
           <div className="brand-name">
             Agent Workspace
-            <small>{isRemoteBrowser ? "Remote workspace" : "This computer"}</small>
+            <small>
+              {isRemoteBrowser ? "Remote workspace" : "This computer"}
+            </small>
           </div>
           <button
             className="drawer-close icon-button"
@@ -716,10 +760,7 @@ export default function App() {
             <X size={18} />
           </button>
         </div>
-        <button
-          className="command-button"
-          onClick={() => setModal("palette")}
-        >
+        <button className="command-button" onClick={() => setModal("palette")}>
           <Search size={14} />
           <span>Search and commands</span>
           <kbd>{modKey} K</kbd>
@@ -751,7 +792,9 @@ export default function App() {
                     "folder-row" +
                     (p.id === projectId && !showBrowser ? " selected" : "")
                   }
-                  title={p.hostId ? `${hostOf(p)?.label || "SSH"}:${p.path}` : p.path}
+                  title={
+                    p.hostId ? `${hostOf(p)?.label || "SSH"}:${p.path}` : p.path
+                  }
                   onClick={() => chooseProject(p.id)}
                 >
                   {p.hostId ? <Server size={15} /> : <FolderOpen size={15} />}
@@ -761,7 +804,12 @@ export default function App() {
                       className="host-badge"
                       title={`On SSH host ${hostOf(p)?.label || "removed host"}: ${hostStateLabel(hostOf(p)?.state || "disconnected")}`}
                     >
-                      <span className={"ssh-dot " + (hostOf(p)?.state || "disconnected")} aria-hidden="true" />
+                      <span
+                        className={
+                          "ssh-dot " + (hostOf(p)?.state || "disconnected")
+                        }
+                        aria-hidden="true"
+                      />
                       {hostOf(p)?.label || "SSH"}
                     </span>
                   ) : null}
@@ -828,7 +876,10 @@ export default function App() {
                   aria-expanded={showEnded}
                   onClick={() => setShowEnded((v) => !v)}
                 >
-                  <ChevronDown size={12} className={showEnded ? "" : "rotated"} />
+                  <ChevronDown
+                    size={12}
+                    className={showEnded ? "" : "rotated"}
+                  />
                   Ended · {endedSessions.length}
                 </button>
                 {showEnded ? endedSessions.map(sidebarSession) : null}
@@ -854,7 +905,12 @@ export default function App() {
             </span>
           </div>
           {hosts.map((h) => (
-            <div key={h.id} className="host-connection" role="status" aria-label={`SSH host ${h.label}`}>
+            <div
+              key={h.id}
+              className="host-connection"
+              role="status"
+              aria-label={`SSH host ${h.label}`}
+            >
               <span className={"ssh-dot " + h.state} aria-hidden="true" />
               {h.label}
               <span>{hostStateLabel(h.state)}</span>
@@ -871,95 +927,13 @@ export default function App() {
               </span>
             ))}
           </div>
-          {power && !isRemoteBrowser ? (
-            <label
-              className="keep-awake"
-              title={
-                "Prevents this computer from sleeping while a local Claude session reports it is working. " +
-                "The display can still sleep. Needs input, done, exit or a quiet turn longer than 20 minutes releases it. " +
-                "Codex and shell sessions cannot report work, so they never keep it awake."
-              }
-            >
-              <input
-                type="checkbox"
-                role="switch"
-                checked={power.enabled}
-                disabled={powerBusy}
-                aria-label="Keep awake while agents work"
-                onChange={(e) => void togglePower(e.target.checked)}
-              />
-              <span className="keep-awake-text">
-                Keep awake while agents work
-                <span className="keep-awake-status" data-active={power.active}>
-                  {!power.enabled
-                    ? "Off"
-                    : power.active
-                      ? `Keeping awake · ${power.sessions.length} ${power.sessions.length === 1 ? "session" : "sessions"} working`
-                      : "On · idle"}
-                </span>
-              </span>
-            </label>
-          ) : null}
-          {dictationAvailable() && !isRemoteBrowser ? (
-            <button
-              className="foot-button"
-              aria-label="Voice dictation settings"
-              onClick={() => openDictationSettings()}
-            >
-              <Mic size={14} />
-              Voice dictation
-            </button>
-          ) : null}
-          {assistAvailable() && !isRemoteBrowser ? (
-            <button
-              className="foot-button"
-              aria-label="AI suggestions settings"
-              onClick={() => openAssistSettings()}
-            >
-              <Sparkles size={14} />
-              AI suggestions
-            </button>
-          ) : null}
-          {profilesAvailable() && !isRemoteBrowser ? (
-            <button
-              className="foot-button"
-              aria-label="Claude profiles"
-              onClick={() => setProfilesPanel(true)}
-            >
-              <KeyRound size={14} />
-              Claude profiles
-            </button>
-          ) : null}
-          {window.workspace.ssh && !isRemoteBrowser ? (
-            <button
-              className="foot-button"
-              aria-label="SSH hosts"
-              onClick={() => setSSHPanel(true)}
-            >
-              <Server size={14} />
-              SSH hosts
-            </button>
-          ) : null}
-          {window.workspace.team && !isRemoteBrowser ? (
-            <button
-              className="foot-button"
-              aria-label="Team"
-              onClick={() => setTeamPanel(true)}
-            >
-              <Users size={14} />
-              Team
-            </button>
-          ) : null}
-          {window.workspace.remote ? (
-            <button
-              className="foot-button"
-              aria-label="Remote access settings"
-              onClick={() => setRemotePanel(true)}
-            >
-              <Smartphone size={14} />
-              Remote access
-            </button>
-          ) : null}
+          <button
+            className="foot-button"
+            onClick={() => setSettingsPanel(true)}
+            aria-label="Settings and connections"
+          >
+            <Ellipsis size={16} /> Settings & connections
+          </button>
         </footer>
       </aside>
       <main className="main">
@@ -980,8 +954,14 @@ export default function App() {
               <>
                 <h1>{project.name}</h1>
                 {projectHost ? (
-                  <span className="host-badge" title={`Runs on ${projectHost.label} (${projectHost.alias})`}>
-                    <span className={"ssh-dot " + projectHost.state} aria-hidden="true" />
+                  <span
+                    className="host-badge"
+                    title={`Runs on ${projectHost.label} (${projectHost.alias})`}
+                  >
+                    <span
+                      className={"ssh-dot " + projectHost.state}
+                      aria-hidden="true"
+                    />
                     {projectHost.label}
                   </span>
                 ) : null}
@@ -1041,7 +1021,11 @@ export default function App() {
                   setFilesOpen((open) => !open);
                 }}
               >
-                {filesOpen ? <PanelRightClose size={17} /> : <PanelRight size={17} />}
+                {filesOpen ? (
+                  <PanelRightClose size={17} />
+                ) : (
+                  <PanelRight size={17} />
+                )}
               </button>
             ) : null}
             {project && !showBrowser ? (
@@ -1078,7 +1062,10 @@ export default function App() {
                       New task
                     </button>
                     {window.workspace.browseDirectory ? (
-                      <button role="menuitem" onClick={() => void hideProject()}>
+                      <button
+                        role="menuitem"
+                        onClick={() => void hideProject()}
+                      >
                         Remove from list…
                       </button>
                     ) : null}
@@ -1110,8 +1097,8 @@ export default function App() {
             <h2>No folders are shared with this browser yet</h2>
             <p>
               Folders live on the host computer. On the host, open the folder in
-              the desktop app, then stop and enable Remote access again, or start
-              the server with <code>--project /path/to/folder</code>.
+              the desktop app, then stop and enable Remote access again, or
+              start the server with <code>--project /path/to/folder</code>.
             </p>
           </div>
         ) : (
@@ -1149,7 +1136,9 @@ export default function App() {
                   problem.retry
                     ? void invokeLaunch(
                         problem.provider,
-                        problem.kind === "uncertain" ? problem.retry.key : createId(),
+                        problem.kind === "uncertain"
+                          ? problem.retry.key
+                          : createId(),
                         problem.retry.payload,
                       )
                     : void launch(problem.provider)
@@ -1160,10 +1149,14 @@ export default function App() {
                   const fresh = await window.workspace
                     .invoke<Snapshot>("snapshot")
                     .catch(() => null);
-                  const freshHost = fresh?.hosts?.find((h) => h.id === project.hostId);
-                  const cap = (project.hostId ? freshHost?.capabilities : fresh?.capabilities)?.find(
-                    (c) => c.name === problem.provider,
+                  const freshHost = fresh?.hosts?.find(
+                    (h) => h.id === project.hostId,
                   );
+                  const cap = (
+                    project.hostId
+                      ? freshHost?.capabilities
+                      : fresh?.capabilities
+                  )?.find((c) => c.name === problem.provider);
                   if (cap && !cap.available)
                     setProblem({ ...problem, message: cap.detail });
                 }}
@@ -1179,11 +1172,18 @@ export default function App() {
                 (view === "terminals" && filesOpen ? " with-files" : "")
               }
             >
-              <div className="stage">
+              <div
+                className="stage"
+                inert={!!launching}
+                aria-busy={!!launching}
+              >
                 {view === "terminals" ? (
                   <>
                     {tabs.length ? (
-                      <div className="session-tabs" aria-label="Sessions in this folder">
+                      <div
+                        className="session-tabs"
+                        aria-label="Sessions in this folder"
+                      >
                         {tabs.map((s) => (
                           <button
                             key={s.id}
@@ -1207,7 +1207,9 @@ export default function App() {
                           </button>
                         ))}
                         <button
-                          className={"session-tab new-tab" + (!session ? " active" : "")}
+                          className={
+                            "session-tab new-tab" + (!session ? " active" : "")
+                          }
                           aria-label="New session"
                           title="Start another session"
                           onClick={() => setSessionId("")}
@@ -1228,7 +1230,14 @@ export default function App() {
                         report={report}
                         sessions={snapshot.sessions}
                         titleOf={titleOf}
-                        onOpen={(s) => openSession(s)}
+                        onOpen={openSession}
+                        handoffDraft={
+                          handoffDraft?.sessionId === session.id &&
+                          handoffDraft.generation === session.generation
+                            ? handoffDraft.text
+                            : undefined
+                        }
+                        clearHandoff={() => setHandoffDraft(null)}
                       />
                     ) : (
                       <Launchpad
@@ -1238,7 +1247,9 @@ export default function App() {
                         launching={launching}
                         disabledReason={disabledReason}
                         onLaunch={(provider) => void launch(provider)}
-                        recent={folderSessions.filter((s) => !isOpen(s)).slice(0, 4)}
+                        recent={folderSessions
+                          .filter((s) => !isOpen(s))
+                          .slice(0, 4)}
                         titleOf={titleOf}
                         onOpen={openSession}
                         onResume={(s) => void resume(s)}
@@ -1296,8 +1307,9 @@ export default function App() {
                   <div className="canvas-area">
                     <div className="canvas-toolbar">
                       <span>
-                        Right-click the canvas to add a session or note.
-                        Sessions keep running when you switch views.
+                        Arrange your agents and notes. Connect agents to share a
+                        reviewed snapshot; a line never starts work
+                        automatically.
                       </span>
                       <button
                         className="button ghost small"
@@ -1310,6 +1322,10 @@ export default function App() {
                     <CanvasView
                       key={projectId}
                       projectId={projectId}
+                      titleOf={titleOf}
+                      onOpenSession={openSession}
+                      connectRequested={connectRequested}
+                      onConnectHandled={() => setConnectRequested(false)}
                       attempts={attempts}
                       sessions={snapshot.sessions.filter(
                         (s) => s.projectId === projectId,
@@ -1324,7 +1340,9 @@ export default function App() {
                       onCreate={async (kind) => {
                         if (kind === "note") return addNote();
                         const created = await launch(kind, true);
-                        return created ? created.attemptId || created.id : undefined;
+                        return created
+                          ? created.attemptId || created.id
+                          : undefined;
                       }}
                     />
                   </div>
@@ -1348,6 +1366,24 @@ export default function App() {
                             [project.id]: path,
                           }))
                   }
+                  onOpenWorktree={(tree, provider) => {
+                    if (!canNavigate()) return;
+                    const location =
+                      tree.path === project.path ? "" : tree.path;
+                    setReviewOverride(location);
+                    setChoices((c) => ({ ...c, worktreePath: location }));
+                    if (provider)
+                      void invokeLaunch(provider, createId(), {
+                        projectId: project.id,
+                        provider,
+                        ...(location ? { worktreePath: location } : {}),
+                        ...(provider === "claude" &&
+                        !project.hostId &&
+                        choices.profileId
+                          ? { profileId: choices.profileId }
+                          : {}),
+                      });
+                  }}
                   onSummary={setGit}
                 />
               ) : null}
@@ -1362,7 +1398,9 @@ export default function App() {
           {needsYou.length ? <span className="needs-dot" /> : null}
         </button>
         <button
-          className={view === "terminals" && mobilePane === "terminal" ? "active" : ""}
+          className={
+            view === "terminals" && mobilePane === "terminal" ? "active" : ""
+          }
           onClick={() => {
             if (canNavigate()) {
               setView("terminals");
@@ -1374,7 +1412,9 @@ export default function App() {
           <span>Terminal</span>
         </button>
         <button
-          className={view === "terminals" && mobilePane === "files" ? "active" : ""}
+          className={
+            view === "terminals" && mobilePane === "files" ? "active" : ""
+          }
           onClick={() => {
             if (canNavigate()) {
               setView("terminals");
@@ -1404,7 +1444,11 @@ export default function App() {
       {toasts.length ? (
         <div className="toasts" aria-live="polite">
           {toasts.map((toast) => (
-            <div key={toast.id} className={"toast tone-" + toast.tone} role="status">
+            <div
+              key={toast.id}
+              className={"toast tone-" + toast.tone}
+              role="status"
+            >
               <span className="status-light" />
               <div>
                 <strong>{toast.title}</strong>
@@ -1414,7 +1458,9 @@ export default function App() {
                 className="button small"
                 onClick={() => {
                   dismissToast(toast.id);
-                  const s = snapshot.sessions.find((x) => x.id === toast.sessionId);
+                  const s = snapshot.sessions.find(
+                    (x) => x.id === toast.sessionId,
+                  );
                   if (s) openSession(s);
                 }}
               >
@@ -1429,6 +1475,140 @@ export default function App() {
               </button>
             </div>
           ))}
+        </div>
+      ) : null}
+      {settingsPanel ? (
+        <div className="modal-backdrop">
+          <section
+            className="modal settings-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Settings and connections"
+          >
+            <header>
+              <h2>Settings & connections</h2>
+              <button
+                aria-label="Close settings"
+                onClick={() => setSettingsPanel(false)}
+              >
+                ×
+              </button>
+            </header>
+            <p>
+              Set up accounts and optional tools. Your folders and running
+              sessions stay where they are.
+            </p>
+            {power && !isRemoteBrowser ? (
+              <label
+                className="keep-awake"
+                title={
+                  "Prevents this computer from sleeping while a local Claude session reports it is working. " +
+                  "The display can still sleep. Needs input, done, exit or a quiet turn longer than 20 minutes releases it. " +
+                  "Codex and shell sessions cannot report work, so they never keep it awake."
+                }
+              >
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={power.enabled}
+                  disabled={powerBusy}
+                  aria-label="Keep awake during Claude work"
+                  onChange={(e) => void togglePower(e.target.checked)}
+                />
+                <span className="keep-awake-text">
+                  Keep awake during Claude work
+                  <span
+                    className="keep-awake-status"
+                    data-active={power.active}
+                  >
+                    {!power.enabled
+                      ? "Off"
+                      : power.active
+                        ? `Keeping awake · ${power.sessions.length} ${power.sessions.length === 1 ? "session" : "sessions"} working`
+                        : "On · idle"}
+                  </span>
+                </span>
+              </label>
+            ) : null}
+            {dictationAvailable() && !isRemoteBrowser ? (
+              <button
+                className="foot-button"
+                aria-label="Voice dictation settings"
+                onClick={() => {
+                  setSettingsPanel(false);
+                  openDictationSettings();
+                }}
+              >
+                <Mic size={14} />
+                Voice dictation
+              </button>
+            ) : null}
+            {assistAvailable() && !isRemoteBrowser ? (
+              <button
+                className="foot-button"
+                aria-label="AI suggestions settings"
+                onClick={() => {
+                  setSettingsPanel(false);
+                  openAssistSettings();
+                }}
+              >
+                <Sparkles size={14} />
+                AI suggestions
+              </button>
+            ) : null}
+            {profilesAvailable() && !isRemoteBrowser ? (
+              <button
+                className="foot-button"
+                aria-label="Claude profiles"
+                onClick={() => {
+                  setSettingsPanel(false);
+                  setProfilesPanel(true);
+                }}
+              >
+                <KeyRound size={14} />
+                Claude profiles
+              </button>
+            ) : null}
+            {window.workspace.ssh && !isRemoteBrowser ? (
+              <button
+                className="foot-button"
+                aria-label="SSH hosts"
+                onClick={() => {
+                  setSettingsPanel(false);
+                  setSSHPanel(true);
+                }}
+              >
+                <Server size={14} />
+                SSH hosts
+              </button>
+            ) : null}
+            {window.workspace.team && !isRemoteBrowser ? (
+              <button
+                className="foot-button"
+                aria-label="Team"
+                onClick={() => {
+                  setSettingsPanel(false);
+                  setTeamPanel(true);
+                }}
+              >
+                <Users size={14} />
+                Team
+              </button>
+            ) : null}
+            {window.workspace.remote ? (
+              <button
+                className="foot-button"
+                aria-label="Remote access settings"
+                onClick={() => {
+                  setSettingsPanel(false);
+                  setRemotePanel(true);
+                }}
+              >
+                <Smartphone size={14} />
+                Remote access
+              </button>
+            ) : null}
+          </section>
         </div>
       ) : null}
       {dictationAvailable() && !isRemoteBrowser ? (
@@ -1505,8 +1685,86 @@ export default function App() {
         <Palette
           close={() => setModal(null)}
           items={[
+            {
+              id: "settings",
+              label: "Settings and connections",
+              run: () => setSettingsPanel(true),
+            },
+            ...(project && profilesAvailable() && !project.hostId
+              ? [
+                  {
+                    id: "connect",
+                    label: "Connect agents · share context on Canvas",
+                    run: () => {
+                      switchView("canvas");
+                      setConnectRequested(true);
+                    },
+                  },
+                ]
+              : []),
+            ...(dictationAvailable()
+              ? [
+                  {
+                    id: "voice",
+                    label: "Voice dictation settings · microphone",
+                    run: () => openDictationSettings(),
+                  },
+                ]
+              : []),
+            ...(assistAvailable()
+              ? [
+                  {
+                    id: "assist",
+                    label: "AI suggestions settings",
+                    run: () => openAssistSettings(),
+                  },
+                ]
+              : []),
+            ...(profilesAvailable()
+              ? [
+                  {
+                    id: "accounts",
+                    label: "Claude accounts and profiles",
+                    run: () => setProfilesPanel(true),
+                  },
+                ]
+              : []),
+            ...(window.workspace.remote
+              ? [
+                  {
+                    id: "phone",
+                    label: "Connect phone · remote access",
+                    run: () => setRemotePanel(true),
+                  },
+                ]
+              : []),
+            ...(window.workspace.ssh
+              ? [
+                  {
+                    id: "ssh",
+                    label: "Connect SSH computer",
+                    run: () => setSSHPanel(true),
+                  },
+                ]
+              : []),
+            ...(window.workspace.team
+              ? [
+                  {
+                    id: "team",
+                    label: "Join or set up a team",
+                    run: () => setTeamPanel(true),
+                  },
+                ]
+              : []),
             ...(window.workspace.browseDirectory
-              ? [{ id: "open", label: "Open folder…", hint: `${modKey} O`, run: browse }]
+              ? [
+                  {
+                    id: "open",
+                    label: "Open folder…",
+                    hint: `${modKey} O`,
+                    run: browse,
+                  },
+                ]
               : []),
             ...(project
               ? providers.map((p) => ({
@@ -1517,9 +1775,21 @@ export default function App() {
               : []),
             ...(project
               ? [
-                  { id: "view-terminals", label: "Show terminals", run: () => switchView("terminals") },
-                  { id: "view-board", label: "Show board", run: () => switchView("board") },
-                  { id: "view-canvas", label: "Show canvas", run: () => switchView("canvas") },
+                  {
+                    id: "view-terminals",
+                    label: "Show terminals",
+                    run: () => switchView("terminals"),
+                  },
+                  {
+                    id: "view-board",
+                    label: "Show board",
+                    run: () => switchView("board"),
+                  },
+                  {
+                    id: "view-canvas",
+                    label: "Show canvas",
+                    run: () => switchView("canvas"),
+                  },
                   {
                     id: "task",
                     label: "Create task",
@@ -1607,7 +1877,11 @@ function Launchpad({
             return (
               <button
                 key={provider}
-                className={"launchpad-option launch-" + provider + (missing ? " is-missing" : "")}
+                className={
+                  "launchpad-option launch-" +
+                  provider +
+                  (missing ? " is-missing" : "")
+                }
                 aria-label={`Open ${providerName(provider)} here`}
                 disabled={!!disabledReason || !!launching}
                 onClick={() => onLaunch(provider)}
@@ -1645,7 +1919,10 @@ function Launchpad({
                 </small>
               </button>
               {s.provider === "claude" && s.conversationId ? (
-                <button className="button ghost small" onClick={() => onResume(s)}>
+                <button
+                  className="button ghost small"
+                  onClick={() => onResume(s)}
+                >
                   Resume
                 </button>
               ) : null}
@@ -1690,10 +1967,11 @@ function LaunchNotice({
         <p>{problem.message}</p>
         {problem.kind === "missing" && installHints[problem.provider] ? (
           <p className="hint">
-            To install it{hostLabel ? ` on ${hostLabel}` : ""}, run <code>{installHints[problem.provider]}</code> in a
-            Shell {hostLabel ? `on ${hostLabel} ` : ""}(the shell opens there), then run <code>{problem.provider}</code> once to sign in. If
-            it's already installed, make sure your login shell's PATH includes
-            it.
+            To install it{hostLabel ? ` on ${hostLabel}` : ""}, run{" "}
+            <code>{installHints[problem.provider]}</code> in a Shell{" "}
+            {hostLabel ? `on ${hostLabel} ` : ""}(the shell opens there), then
+            run <code>{problem.provider}</code> once to sign in. If it's already
+            installed, make sure your login shell's PATH includes it.
           </p>
         ) : null}
         {problem.kind === "uncertain" ? (
@@ -1717,7 +1995,9 @@ function LaunchNotice({
         ) : (
           <button className="button small" onClick={onRetry}>
             <RefreshCw size={13} />
-            {problem.kind === "uncertain" ? "Check the same launch" : "Try again"}
+            {problem.kind === "uncertain"
+              ? "Check the same launch"
+              : "Try again"}
           </button>
         )}
         {target && /no longer exists|permission/i.test(problem.message) ? (
@@ -1747,7 +2027,9 @@ function Palette({
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const matches = items
-    .filter((item) => item.label.toLowerCase().includes(query.trim().toLowerCase()))
+    .filter((item) =>
+      item.label.toLowerCase().includes(query.trim().toLowerCase()),
+    )
     .slice(0, 40);
   const run = (index: number) => {
     const item = matches[index];

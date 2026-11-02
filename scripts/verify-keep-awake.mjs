@@ -66,7 +66,7 @@ const started = () =>
 const statusText = (text) =>
   page.locator(".keep-awake-status").filter({ hasText: text }).waitFor();
 const toggle = () =>
-  page.getByRole("switch", { name: "Keep awake while agents work" });
+  page.getByRole("switch", { name: "Keep awake during Claude work" });
 const until = async (read, ok, label) => {
   for (let i = 0; i < 200; i++) {
     const value = await read();
@@ -77,6 +77,7 @@ const until = async (read, ok, label) => {
 };
 try {
   await page.waitForFunction(() => !!window.workspace?.power);
+  await page.getByRole("button", { name: "Settings and connections" }).click();
   await statusText("Off");
   assert.deepEqual(await power(), { enabled: false, active: false, sessions: [] });
   assert.equal(await toggle().isChecked(), false);
@@ -166,6 +167,7 @@ try {
   page = await app.firstWindow();
   page.setDefaultTimeout(20000);
   await page.waitForFunction(() => !!window.workspace?.power);
+  await page.getByRole("button", { name: "Settings and connections" }).click();
   await statusText("Keeping awake · 1 session working");
   assert.equal(await toggle().isChecked(), true);
   assert.deepEqual((await power()).sessions, [second.session.id]);

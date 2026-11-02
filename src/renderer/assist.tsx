@@ -134,16 +134,16 @@ export function AssistSettings() {
           <p className="assist-callout">{settingsNotice}</p>
         ) : null}
         <p className="muted">
-          Draft commit messages from staged changes and names for sessions.
-          Each suggestion is made only when you click Generate, after a preview
-          of exactly what will be sent. Drafts are editable; nothing is
-          committed, staged, pushed or renamed for you.
+          Draft commit messages from staged changes and names for sessions. Each
+          suggestion is made only when you click Generate, after a preview of
+          exactly what will be sent. Drafts are editable; nothing is committed,
+          staged, pushed or renamed for you.
         </p>
         <fieldset className="assist-providers" disabled={busy}>
           <legend>Provider</legend>
           {(["", "claude", "codex"] as const).map((value) => {
             const info = status?.adapters.find((a) => a.provider === value);
-            const disabled = !!value && (!status || info?.state === "unavailable");
+            const disabled = !!value && (!status || info?.state !== "ready");
             return (
               <label key={value || "off"} className="assist-provider">
                 <input
@@ -162,9 +162,9 @@ export function AssistSettings() {
                     {info ? (
                       <span className={"assist-state state-" + info.state}>
                         {info.state === "ready"
-                          ? "Read-only checks passed"
+                          ? "Available for suggestions"
                           : info.state === "unverified"
-                            ? "Isolation unverified"
+                            ? "Not ready on this CLI version"
                             : "Unavailable"}
                       </span>
                     ) : null}
@@ -174,7 +174,9 @@ export function AssistSettings() {
                       ? "No suggestions and no provider calls (default)."
                       : !status
                         ? "Checking the installed CLI…"
-                        : `${info?.detail || ""}${info?.version ? ` (${info.version})` : ""}`}
+                        : info?.state === "ready"
+                          ? "Drafts from only the context you preview. Sign-in and model access are checked by the provider when you generate."
+                          : "Suggestions are disabled until this CLI can be safely restricted. Use Claude or keep suggestions off."}
                   </span>
                 </span>
               </label>
@@ -336,7 +338,9 @@ export function AssistCommitDialog({
         <>
           <p className="muted">
             {providerLabel(preview.provider)}
-            {preview.model ? ` · ${preview.model}` : " · CLI default model"}{" "}
+            {preview.model
+              ? ` · ${preview.model}`
+              : " · CLI default model"}{" "}
             will receive the text below ({kilobytes(utf8Bytes(preview.input))},
             staged diff capped at {kilobytes(preview.limit)}). It may use your
             usage. Untick a file to leave it out.
@@ -349,8 +353,7 @@ export function AssistCommitDialog({
                     type="checkbox"
                     checked={file.included}
                     disabled={
-                      running ||
-                      (!file.included && file.reason !== "excluded")
+                      running || (!file.included && file.reason !== "excluded")
                     }
                     onChange={(e) =>
                       setExclude((list) =>
@@ -533,7 +536,9 @@ export function AssistNameDialog({
         <>
           <p className="muted">
             {providerLabel(preview.provider)}
-            {preview.model ? ` · ${preview.model}` : " · CLI default model"}{" "}
+            {preview.model
+              ? ` · ${preview.model}`
+              : " · CLI default model"}{" "}
             will receive exactly this text. Terminal output is never included.
           </p>
           <pre className="assist-input" aria-label="Exact text to be sent">

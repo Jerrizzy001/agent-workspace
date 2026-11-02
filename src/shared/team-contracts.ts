@@ -234,8 +234,12 @@ export interface TeamTaskDetail {
   outbox: TeamOutboxItem[];
 }
 export interface DesktopTeamAPI {
+  prepare(): Promise<TeamStatus>;
   status(): Promise<TeamStatus>;
-  connect(input: { serviceUrl: string; invitation?: string }): Promise<TeamStatus>;
+  connect(input: {
+    serviceUrl: string;
+    invitation?: string;
+  }): Promise<TeamStatus>;
   disconnect(): Promise<TeamStatus>;
   publishProject(input: {
     projectId: string;
@@ -248,8 +252,14 @@ export interface DesktopTeamAPI {
   publishTask(input: { taskId: string; hash: string }): Promise<TeamBoardEntry>;
   unpublishTask(input: { taskId: string }): Promise<TeamStatus>;
   sync(): Promise<TeamStatus>;
-  boardInfo(input: { projectId: string }): Promise<Record<string, TeamBoardEntry>>;
-  sharedTasks(input: { teamProjectId: string }): Promise<(SharedTaskView & { assignee: string | null; commentCount: number })[]>;
+  boardInfo(input: {
+    projectId: string;
+  }): Promise<Record<string, TeamBoardEntry>>;
+  sharedTasks(input: {
+    teamProjectId: string;
+  }): Promise<
+    (SharedTaskView & { assignee: string | null; commentCount: number })[]
+  >;
   taskDetail(input: { sharedTaskId: string }): Promise<TeamTaskDetail>;
   members(input: { teamProjectId: string }): Promise<TeamMemberView[]>;
   invite(input: {
@@ -257,18 +267,42 @@ export interface DesktopTeamAPI {
     role: ProjectRole;
     email?: string;
   }): Promise<InvitationCreated>;
-  setRole(input: { teamProjectId: string; memberId: string; role: ProjectRole }): Promise<TeamMemberView[]>;
-  removeMember(input: { teamProjectId: string; memberId: string }): Promise<TeamMemberView[]>;
-  addComment(input: { sharedTaskId: string; body: string }): Promise<TeamTaskDetail>;
-  editComment(input: { commentId: string; body: string }): Promise<TeamTaskDetail>;
+  setRole(input: {
+    teamProjectId: string;
+    memberId: string;
+    role: ProjectRole;
+  }): Promise<TeamMemberView[]>;
+  removeMember(input: {
+    teamProjectId: string;
+    memberId: string;
+  }): Promise<TeamMemberView[]>;
+  addComment(input: {
+    sharedTaskId: string;
+    body: string;
+  }): Promise<TeamTaskDetail>;
+  editComment(input: {
+    commentId: string;
+    body: string;
+  }): Promise<TeamTaskDetail>;
   deleteComment(input: { commentId: string }): Promise<TeamTaskDetail>;
-  assign(input: { sharedTaskId: string; memberId: string | null }): Promise<TeamTaskDetail>;
-  resolve(input: { mutationId: string; choice: "retry" | "discard" }): Promise<TeamStatus>;
+  assign(input: {
+    sharedTaskId: string;
+    memberId: string | null;
+  }): Promise<TeamTaskDetail>;
+  resolve(input: {
+    mutationId: string;
+    choice: "retry" | "discard";
+  }): Promise<TeamStatus>;
   onChange(listener: () => void): () => void;
 }
 
 /** Plain text: control characters (except newline and tab) and bidi overrides removed. */
-export function plainText(value: unknown, max: number, label: string, multiline = true) {
+export function plainText(
+  value: unknown,
+  max: number,
+  label: string,
+  multiline = true,
+) {
   if (typeof value !== "string" || value.length > max * 4)
     throw new Error(`Invalid ${label}`);
   let text = value
@@ -277,6 +311,7 @@ export function plainText(value: unknown, max: number, label: string, multiline 
     .replace(/[‪-‮⁦-⁩‎‏﻿]/g, "");
   if (!multiline) text = text.replace(/\s+/g, " ");
   text = text.trim();
-  if ([...text].length > max) throw new Error(`${label} must be ${max} characters or fewer`);
+  if ([...text].length > max)
+    throw new Error(`${label} must be ${max} characters or fewer`);
   return text;
 }

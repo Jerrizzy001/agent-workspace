@@ -110,6 +110,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       projectId: s.projectId,
       provider: s.provider,
       cwd: s.cwd,
+      ...(s.worktreePath ? { worktreePath: s.worktreePath } : {}),
       backendName: s.backendName,
       generation: s.generation,
       status: s.status,
@@ -124,6 +125,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       ...(s.transcript ? { transcript: true } : {}),
       ...(s.title ? { title: s.title } : {}),
       ...(s.titleRevision ? { titleRevision: s.titleRevision } : {}),
+      ...(s.canvasHidden !== undefined ? { canvasHidden: s.canvasHidden } : {}),
       ...(typeof s.lane === "string" ? { lane: s.lane } : {}),
       ...(typeof s.laneOrder === "number" ? { laneOrder: s.laneOrder } : {}),
       ...(s.placementRevision
@@ -613,8 +615,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
               const result =
                 command === "snapshot" || command === "layout.save"
                   ? filtered(raw as Snapshot)
-                  : command === "attempt.start" ||
-                      command === "terminal.open"
+                  : command === "attempt.start" || command === "terminal.open"
                     ? {
                         ...(raw as any),
                         session: publicSession((raw as any).session),

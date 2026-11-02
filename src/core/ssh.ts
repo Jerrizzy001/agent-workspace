@@ -8,7 +8,11 @@
  * folders. Unknown or changed host keys are reported with fingerprints and
  * never accepted or written to any known_hosts file by the app.
  */
-import { spawn, execFile, type ChildProcessWithoutNullStreams } from "node:child_process";
+import {
+  spawn,
+  execFile,
+  type ChildProcessWithoutNullStreams,
+} from "node:child_process";
 import {
   encodeFrame,
   FrameDecoder,
@@ -54,7 +58,10 @@ export function validateHostInput(input: unknown) {
   const v = input as Record<string, unknown>;
   if (
     Object.keys(v).some(
-      (k) => !["alias", "label", "user", "port", "helperPath", "dataDir"].includes(k),
+      (k) =>
+        !["alias", "label", "user", "port", "helperPath", "dataDir"].includes(
+          k,
+        ),
     )
   )
     throw new Error("Unexpected host field");
@@ -66,14 +73,23 @@ export function validateHostInput(input: unknown) {
     v.label === undefined || v.label === ""
       ? v.alias
       : typeof v.label === "string"
-        ? v.label.replace(/[\p{Cc}]/gu, " ").trim().slice(0, 60)
+        ? v.label
+            .replace(/[\p{Cc}]/gu, " ")
+            .trim()
+            .slice(0, 60)
         : undefined;
   if (!label) throw new Error("Invalid label");
-  if (v.user !== undefined && v.user !== "" && (typeof v.user !== "string" || !USER.test(v.user)))
+  if (
+    v.user !== undefined &&
+    v.user !== "" &&
+    (typeof v.user !== "string" || !USER.test(v.user))
+  )
     throw new Error("Invalid user name");
   if (
     v.port !== undefined &&
-    (!Number.isInteger(v.port) || (v.port as number) < 1 || (v.port as number) > 65535)
+    (!Number.isInteger(v.port) ||
+      (v.port as number) < 1 ||
+      (v.port as number) > 65535)
   )
     throw new Error("Port must be a number from 1 to 65535");
   const helperPath =
@@ -81,7 +97,9 @@ export function validateHostInput(input: unknown) {
       ? DEFAULT_HELPER_PATH
       : remotePath(v.helperPath, "Helper folder");
   const dataDir =
-    v.dataDir === undefined || v.dataDir === "" ? undefined : remotePath(v.dataDir, "Data folder");
+    v.dataDir === undefined || v.dataDir === ""
+      ? undefined
+      : remotePath(v.dataDir, "Data folder");
   return {
     alias: v.alias,
     label,
@@ -99,7 +117,9 @@ function shellPath(value: string) {
 export function remoteCommand(spec: Pick<HostSpec, "helperPath" | "dataDir">) {
   remotePath(spec.helperPath, "Helper folder");
   const helper =
-    spec.helperPath === "/" ? "'/bin/aw-ssh-helper'" : shellPath(spec.helperPath + "/bin/aw-ssh-helper");
+    spec.helperPath === "/"
+      ? "'/bin/aw-ssh-helper'"
+      : shellPath(spec.helperPath + "/bin/aw-ssh-helper");
   if (spec.dataDir === undefined) return helper;
   remotePath(spec.dataDir, "Data folder");
   return `${helper} --data-dir ${shellPath(spec.dataDir)}`;
@@ -115,7 +135,8 @@ function baseOptions(spec: Pick<HostSpec, "user" | "port">) {
 }
 export function sshArguments(spec: HostSpec) {
   if (!ALIAS.test(spec.alias)) throw new Error("Invalid host alias");
-  if (spec.user !== undefined && !USER.test(spec.user)) throw new Error("Invalid user name");
+  if (spec.user !== undefined && !USER.test(spec.user))
+    throw new Error("Invalid user name");
   if (
     spec.port !== undefined &&
     (!Number.isInteger(spec.port) || spec.port < 1 || spec.port > 65535)
@@ -123,20 +144,34 @@ export function sshArguments(spec: HostSpec) {
     throw new Error("Invalid port");
   return [
     "-T",
-    "-o", "BatchMode=yes",
-    "-o", "StrictHostKeyChecking=yes",
-    "-o", "UpdateHostKeys=no",
-    "-o", "ForwardAgent=no",
-    "-o", "ForwardX11=no",
-    "-o", "ForwardX11Trusted=no",
-    "-o", "ClearAllForwardings=yes",
-    "-o", "PermitLocalCommand=no",
-    "-o", "RequestTTY=no",
-    "-o", "ControlMaster=no",
-    "-o", "ControlPath=none",
-    "-o", "ConnectTimeout=15",
-    "-o", "ServerAliveInterval=15",
-    "-o", "ServerAliveCountMax=3",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "UpdateHostKeys=no",
+    "-o",
+    "ForwardAgent=no",
+    "-o",
+    "ForwardX11=no",
+    "-o",
+    "ForwardX11Trusted=no",
+    "-o",
+    "ClearAllForwardings=yes",
+    "-o",
+    "PermitLocalCommand=no",
+    "-o",
+    "RequestTTY=no",
+    "-o",
+    "ControlMaster=no",
+    "-o",
+    "ControlPath=none",
+    "-o",
+    "ConnectTimeout=15",
+    "-o",
+    "ServerAliveInterval=15",
+    "-o",
+    "ServerAliveCountMax=3",
     ...baseOptions(spec),
     "--",
     spec.alias,
@@ -146,21 +181,23 @@ export function sshArguments(spec: HostSpec) {
 const sshBinary = () => process.env.WORKSPACE_SSH_BIN || "ssh";
 
 function capture(bin: string, args: string[], input?: string, timeout = 8000) {
-  return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
-    const child = execFile(
-      bin,
-      args,
-      { timeout, encoding: "utf8", maxBuffer: 512 * 1024 },
-      (error, stdout, stderr) =>
-        resolve({
-          code: error ? ((error as any).code ?? 1) : 0,
-          stdout: String(stdout || ""),
-          stderr: String(stderr || ""),
-        }),
-    );
-    child.stdin?.on("error", () => {});
-    child.stdin?.end(input ?? "");
-  });
+  return new Promise<{ code: number | null; stdout: string; stderr: string }>(
+    (resolve) => {
+      const child = execFile(
+        bin,
+        args,
+        { timeout, encoding: "utf8", maxBuffer: 512 * 1024 },
+        (error, stdout, stderr) =>
+          resolve({
+            code: error ? ((error as any).code ?? 1) : 0,
+            stdout: String(stdout || ""),
+            stderr: String(stderr || ""),
+          }),
+      );
+      child.stdin?.on("error", () => {});
+      child.stdin?.end(input ?? "");
+    },
+  );
 }
 /**
  * Fingerprints the server offers, for the owner to compare out of band. Read
@@ -168,16 +205,39 @@ function capture(bin: string, args: string[], input?: string, timeout = 8000) {
  * written. Hosts reached through a proxy cannot be scanned this way.
  */
 export async function hostKeyFingerprints(spec: HostSpec): Promise<string[]> {
-  const resolved = await capture("ssh", ["-G", ...baseOptions(spec), "--", spec.alias]);
+  const resolved = await capture("ssh", [
+    "-G",
+    ...baseOptions(spec),
+    "--",
+    spec.alias,
+  ]);
   if (resolved.code !== 0) return [];
   const value = (key: string) =>
-    resolved.stdout.split("\n").find((l) => l.startsWith(key + " "))?.slice(key.length + 1).trim();
-  if (value("proxycommand") || (value("proxyjump") && value("proxyjump") !== "none")) return [];
+    resolved.stdout
+      .split("\n")
+      .find((l) => l.startsWith(key + " "))
+      ?.slice(key.length + 1)
+      .trim();
+  if (
+    value("proxycommand") ||
+    (value("proxyjump") && value("proxyjump") !== "none")
+  )
+    return [];
   const hostname = value("hostname");
   const port = value("port") || "22";
-  if (!hostname || !/^[A-Za-z0-9_.:\[\]-]{1,255}$/.test(hostname) || hostname.startsWith("-") || !/^\d{1,5}$/.test(port))
+  if (
+    !hostname ||
+    !/^[A-Za-z0-9_.:\[\]-]{1,255}$/.test(hostname) ||
+    hostname.startsWith("-") ||
+    !/^\d{1,5}$/.test(port)
+  )
     return [];
-  const scanned = await capture("ssh-keyscan", ["-T", "6", "-p", port, "--", hostname], undefined, 10000);
+  const scanned = await capture(
+    "ssh-keyscan",
+    ["-T", "6", "-p", port, "--", hostname],
+    undefined,
+    10000,
+  );
   const keys = scanned.stdout
     .split("\n")
     .filter((line) => line && !line.startsWith("#"))
@@ -186,7 +246,11 @@ export async function hostKeyFingerprints(spec: HostSpec): Promise<string[]> {
   const listed = await capture("ssh-keygen", ["-l", "-f", "-"], keys + "\n");
   return listed.stdout
     .split("\n")
-    .map((line) => /^(\d+) (SHA256:[A-Za-z0-9+/=]+) .*\(([A-Z0-9-]+)\)\s*$/.exec(line.trim()))
+    .map((line) =>
+      /^(\d+) (SHA256:[A-Za-z0-9+/=]+) .*\(([A-Z0-9-]+)\)\s*$/.exec(
+        line.trim(),
+      ),
+    )
     .filter((m): m is RegExpExecArray => !!m)
     .map((m) => `${m[2]} (${m[3]})`)
     .slice(0, 8);
@@ -200,12 +264,17 @@ export function classifyFailure(
 ): HostProblem {
   const where = spec.alias;
   if (/REMOTE HOST IDENTIFICATION HAS CHANGED/.test(stderr)) {
-    const fingerprint = /key sent by the remote host is\s*\n?\s*(SHA256:[A-Za-z0-9+/=]+)/.exec(stderr);
+    const fingerprint =
+      /key sent by the remote host is\s*\n?\s*(SHA256:[A-Za-z0-9+/=]+)/.exec(
+        stderr,
+      );
     const type = /The fingerprint for the (\S+) key sent/.exec(stderr);
     return {
       code: "host-key-changed",
       message: `The host key for ${where} has CHANGED since you last connected. This can mean someone is intercepting the connection. The app will not connect. Check the new fingerprint with the host's administrator, then update your known_hosts yourself (for example with ssh-keygen -R) only if it is expected.`,
-      ...(fingerprint ? { fingerprints: [`${fingerprint[1]} (${type?.[1] || "key"})`] } : {}),
+      ...(fingerprint
+        ? { fingerprints: [`${fingerprint[1]} (${type?.[1] || "key"})`] }
+        : {}),
     };
   }
   if (/host key is known for|Host key verification failed/.test(stderr))
@@ -223,7 +292,12 @@ export function classifyFailure(
       code: "node-missing",
       message: `Node.js 24 or newer was not found on ${where}. Install it on that host (or set AW_NODE for the helper), then probe again.`,
     };
-  if (exitCode === 127 || /aw-ssh-helper.*(No such file|not found)|(No such file|not found).*aw-ssh-helper/.test(stderr))
+  if (
+    exitCode === 127 ||
+    /aw-ssh-helper.*(No such file|not found)|(No such file|not found).*aw-ssh-helper/.test(
+      stderr,
+    )
+  )
     return {
       code: "helper-missing",
       message: `The Agent Workspace helper is not installed at ${spec.helperPath} on ${where}. On that host, extract the agent-workspace-server archive of this version there and run "npm ci" inside it, then probe again. Requirements on the host: Node 24+, tmux and Git.`,
@@ -240,14 +314,17 @@ export function classifyFailure(
     };
   return {
     code: "failed",
-    message: `The helper on ${where} did not start${lastLine(stderr) ? ": " + lastLine(stderr) : "."}`,
+    message: `The helper on ${where} did not start${lastLine(stderr) ? ": " + lastLine(stderr) : ". Run its bin/aw-ssh-helper --version on that host, check Node 24+ and the matching server installation, then check the host again."}`,
   };
 }
 const lastLine = (text: string) =>
   text
     .split("\n")
     .map((l) => l.replace(/[\p{Cc}]/gu, " ").trim())
-    .filter(Boolean)
+    .filter(
+      (l) =>
+        !!l && !/ExperimentalWarning|--trace-warnings|^at |^Node\.js v/.test(l),
+    )
     .slice(-1)[0]
     ?.slice(0, 300) || "";
 
@@ -288,15 +365,23 @@ function validHello(message: Record<string, any>): HostHello {
     tools: message.tools
       .filter(
         (t: any) =>
-          t && ["node", "tmux", "git", "claude", "codex"].includes(t.name) && typeof t.available === "boolean",
+          t &&
+          ["node", "tmux", "git", "claude", "codex"].includes(t.name) &&
+          typeof t.available === "boolean",
       )
-      .map((t: any) => ({ name: t.name, available: t.available, detail: text(t.detail, 160) }) as HostTool),
+      .map(
+        (t: any) =>
+          ({
+            name: t.name,
+            available: t.available,
+            detail: text(t.detail, 160),
+          }) as HostTool,
+      ),
   };
 }
 export function negotiate(hello: HostHello) {
   const version = Math.min(hello.protocol.max, PROTOCOL_VERSION);
-  if (version < Math.max(hello.protocol.min, PROTOCOL_MIN))
-    return undefined;
+  if (version < Math.max(hello.protocol.min, PROTOCOL_MIN)) return undefined;
   return version;
 }
 
@@ -304,7 +389,11 @@ export interface HostConnection {
   hello: HostHello;
   protocol: number;
   remoteHostId: string;
-  request(op: HelperOp, fields: Record<string, unknown>, timeoutMs?: number): Promise<unknown>;
+  request(
+    op: HelperOp,
+    fields: Record<string, unknown>,
+    timeoutMs?: number,
+  ): Promise<unknown>;
   /** Deliberate close: the helper exits, remote tmux sessions keep running. */
   close(): Promise<void>;
   /** Test hook: the ssh client process. */
@@ -345,7 +434,11 @@ export function connectHost(spec: HostSpec, options: ConnectOptions = {}) {
     let nextId = 0;
     const pending = new Map<
       number,
-      { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }
+      {
+        resolve: (v: unknown) => void;
+        reject: (e: Error) => void;
+        timer: NodeJS.Timeout;
+      }
     >();
     const timer = setTimeout(
       () =>
@@ -428,7 +521,10 @@ export function connectHost(spec: HostSpec, options: ConnectOptions = {}) {
     });
     function handle(message: Record<string, any>) {
       if (message.k === "fatal") {
-        const text = typeof message.error === "string" ? message.error.slice(0, 2000) : "Helper failed";
+        const text =
+          typeof message.error === "string"
+            ? message.error.slice(0, 2000)
+            : "Helper failed";
         const code = /^upgrade-required: /.test(text)
           ? "upgrade-required"
           : /^data-in-use: /.test(text)
@@ -440,7 +536,8 @@ export function connectHost(spec: HostSpec, options: ConnectOptions = {}) {
         return;
       }
       if (phase === "hello") {
-        if (message.k !== "hello") throw new ProtocolError("Expected a greeting");
+        if (message.k !== "hello")
+          throw new ProtocolError("Expected a greeting");
         hello = validHello(message);
         const version = negotiate(hello);
         if (version === undefined) {
@@ -490,10 +587,18 @@ export function connectHost(spec: HostSpec, options: ConnectOptions = {}) {
         return;
       }
       if (phase === "ready") {
-        if (message.k !== "ready") throw new ProtocolError("Expected the helper to start");
-        if (typeof message.hostId !== "string" || !/^[0-9a-f]{32}$/.test(message.hostId) || message.protocol !== protocol)
+        if (message.k !== "ready")
+          throw new ProtocolError("Expected the helper to start");
+        if (
+          typeof message.hostId !== "string" ||
+          !/^[0-9a-f]{32}$/.test(message.hostId) ||
+          message.protocol !== protocol
+        )
           throw new ProtocolError("Invalid start answer");
-        if (options.expectRemoteHostId && message.hostId !== options.expectRemoteHostId) {
+        if (
+          options.expectRemoteHostId &&
+          message.hostId !== options.expectRemoteHostId
+        ) {
           fail({
             code: "failed",
             message: `The helper data on ${spec.alias} belongs to a different installation than the one this app paired with.`,
@@ -543,7 +648,11 @@ export function connectHost(spec: HostSpec, options: ConnectOptions = {}) {
                 ),
               );
             }, timeoutMs);
-            pending.set(id, { resolve: resolveRequest, reject: rejectRequest, timer: t });
+            pending.set(id, {
+              resolve: resolveRequest,
+              reject: rejectRequest,
+              timer: t,
+            });
             try {
               write({ k: "req", id, op, ...fields });
               self.onRequestSent?.(op, fields);
@@ -574,7 +683,8 @@ export function connectHost(spec: HostSpec, options: ConnectOptions = {}) {
             }, 3000);
             kill.unref();
           }).then(() => {
-            if ((phase as string) !== "closed") fail({ code: "failed", message: "closed" });
+            if ((phase as string) !== "closed")
+              fail({ code: "failed", message: "closed" });
           });
         },
       };

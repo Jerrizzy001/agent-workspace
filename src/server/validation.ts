@@ -40,7 +40,10 @@ const fields: Record<string, string[]> = {
   "worktree.create": ["projectId", "branch"],
   "layout.save": ["projectId", "positions"],
   "note.create": ["projectId", "title", "body"],
-  "note.update": ["noteId", "projectId", "title", "body"],
+  "note.update": ["noteId", "projectId", "title", "body", "revision"],
+  "session.canvas": ["sessionId", "generation", "hidden"],
+  "session.task": ["sessionId", "generation", "taskId"],
+  "note.archive": ["noteId", "revision", "archived"],
   "session.rename": ["sessionId", "generation", "title", "titleRevision"],
   "session.place": [
     "sessionId",
@@ -89,6 +92,9 @@ const required: Record<string, string[]> = {
   "layout.save": ["projectId", "positions"],
   "git.commit": ["projectId", "message"],
   "worktree.create": ["projectId", "branch"],
+  "session.canvas": ["hidden"],
+  "session.task": ["taskId"],
+  "note.archive": ["noteId", "revision", "archived"],
   "session.rename": ["title", "titleRevision"],
   "session.place": ["lane", "placementRevision"],
   "lane.rename": ["projectId", "laneId", "name", "revision"],
@@ -173,7 +179,7 @@ export function validateCommand(
         )
       )
         throw new Error("Invalid paths");
-    } else if (k === "staged") {
+    } else if (["staged", "hidden", "archived"].includes(k)) {
       if (typeof v !== "boolean") throw new Error("Invalid staged");
     } else if (k === "expectedHash" && v === null) {
       /* new file */

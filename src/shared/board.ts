@@ -2,9 +2,9 @@ import type { BoardLane, BoardLanes, Session } from "./contracts.js";
 
 /** Lanes a folder's session board starts with until the owner changes them. */
 export const DEFAULT_LANES: readonly BoardLane[] = [
-  { id: "next", name: "Up next" },
-  { id: "working", name: "Working" },
-  { id: "review", name: "Review" },
+  { id: "next", name: "Ready" },
+  { id: "working", name: "In progress" },
+  { id: "review", name: "In review" },
   { id: "done", name: "Done" },
 ];
 export const MAX_LANES = 6;
@@ -53,6 +53,8 @@ export function laneNameText(value: unknown) {
     .trim();
   if (!name) throw new Error("A lane needs a name");
   if ([...name].length > LANE_NAME_LIMIT)
-    throw new Error(`Lane names must be ${LANE_NAME_LIMIT} characters or fewer`);
+    throw new Error(
+      `Lane names must be ${LANE_NAME_LIMIT} characters or fewer`,
+    );
   return name;
 }

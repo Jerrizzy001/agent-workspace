@@ -42,31 +42,36 @@ export function FolderBrowser({
   const [loading, setLoading] = useState(false);
   const [opening, setOpening] = useState("");
   const [showHidden, setShowHidden] = useState(false);
+  const [location, setLocation] = useState("");
   const [filter, setFilter] = useState("");
   const ticket = useRef(0);
-  const go = useCallback(async (target?: string, fallback = true) => {
-    const browse = window.workspace.browseDirectory;
-    if (!browse) return;
-    const current = ++ticket.current;
-    setLoading(true);
-    try {
-      const next = await browse(target);
-      if (current !== ticket.current) return;
-      setListing(next);
-      setError("");
-      setFilter("");
+  const go = useCallback(
+    async (target?: string, fallback = true) => {
+      const browse = window.workspace.browseDirectory;
+      if (!browse) return;
+      const current = ++ticket.current;
+      setLoading(true);
       try {
-        localStorage.setItem(lastPathKey, next.path);
-      } catch {}
-    } catch (reason) {
-      if (current !== ticket.current) return;
-      // A remembered folder may have moved; fall back to home once.
-      if (fallback && target && !listing) return go(undefined, false);
-      setError(errorText(reason));
-    } finally {
-      if (current === ticket.current) setLoading(false);
-    }
-  }, [listing]);
+        const next = await browse(target);
+        if (current !== ticket.current) return;
+        setListing(next);
+        setLocation(next.path);
+        setError("");
+        setFilter("");
+        try {
+          localStorage.setItem(lastPathKey, next.path);
+        } catch {}
+      } catch (reason) {
+        if (current !== ticket.current) return;
+        // A remembered folder may have moved; fall back to home once.
+        if (fallback && target && !listing) return go(undefined, false);
+        setError(errorText(reason));
+      } finally {
+        if (current === ticket.current) setLoading(false);
+      }
+    },
+    [listing],
+  );
   useEffect(() => {
     void go(rememberedPath());
     // Only the initial location is loaded here; later navigation is explicit.
@@ -179,6 +184,34 @@ export function FolderBrowser({
           ))}
         </nav>
         <div className="browser-main">
+          <form
+            className="browser-location"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const target = location.trim();
+              if (target)
+                void go(
+                  target.startsWith("~/") && listing
+                    ? listing.home + target.slice(1)
+                    : target,
+                  false,
+                );
+            }}
+          >
+            <label>
+              Folder location
+              <input
+                aria-label="Folder location"
+                disabled={loading}
+                value={location}
+                placeholder="Paste a folder path…"
+                onChange={(e) => setLocation(e.target.value)}
+              />
+            </label>
+            <button className="button" disabled={loading || !location.trim()}>
+              Go
+            </button>
+          </form>
           <div className="browser-bar">
             <button
               className="icon-button"
@@ -243,7 +276,11 @@ export function FolderBrowser({
               </div>
             </div>
           ) : null}
-          <ul className="entries" aria-label="Folder contents" aria-busy={loading}>
+          <ul
+            className="entries"
+            aria-label="Folder contents"
+            aria-busy={loading}
+          >
             {entries.map((entry) =>
               entry.type === "directory" ? (
                 <li key={entry.path} className="entry">
@@ -293,9 +330,7 @@ export function FolderBrowser({
               </li>
             ) : null}
             {listing?.truncated ? (
-              <li className="entries-empty">
-                Showing the first 2,000 items.
-              </li>
+              <li className="entries-empty">Showing the first 2,000 items.</li>
             ) : null}
           </ul>
           <footer className="browser-foot">

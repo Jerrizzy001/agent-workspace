@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
@@ -44,10 +44,13 @@ try{
     const next=async k=>{for(let i=0;i<300;i++){const at=frames.findIndex(f=>f.k===k);if(at>=0)return frames.splice(at,1)[0];await new Promise(r=>setTimeout(r,50));}throw new Error('helper frame '+k);};
     const hello=await next('hello');assert.equal(hello.helperVersion,pkg.version);assert.deepEqual(hello.protocol,{min:1,max:1});assert.ok(hello.tools.find(t=>t.name==='node'&&t.available));
     helper.stdin.write(frame({k:'start',protocol:1}));const ready=await next('ready');assert.match(ready.hostId,/^[0-9a-f]{32}$/);
-    helper.stdin.write(frame({k:'req',id:1,op:'register',path:repo}));assert.equal((await next('res')).result.path,repo);
+    helper.stdin.write(frame({k:'req',id:1,op:'register',path:repo}));assert.equal((await next('res')).result.path,await realpath(repo));
     helper.stdin.write(frame({k:'req',id:2,op:'invoke',command:'settings.read',payload:{key:'keepAwake'}}));assert.match((await next('res')).error,/not available remotely/);
     helper.stdin.write(frame({k:'bye'}));assert.equal(await new Promise(r=>helper.once('exit',r)),0);
     checks.push('archive ships bin/aw-ssh-helper: greeting, start, folder registration and owner-command refusal work outside checkout');
   }
+  assert.match(await readFile(path.join(serverDir,'team-service.md'),'utf8'),/Team service/);
+  const teamCli=await readFile(path.join(serverDir,'dist/team/server.mjs'),'utf8');assert.ok(teamCli.length>1000);
+  checks.push('archive includes the bundled team service and its setup guide');
   console.log(JSON.stringify({passed:true,checks}));
 }finally{await browser?.close();if(child){child.kill('SIGTERM');await new Promise(resolve=>{if(child.exitCode!==null)resolve();else child.once('exit',resolve);});}await cleanupFixture(fixture);}

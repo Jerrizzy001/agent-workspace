@@ -176,18 +176,35 @@ test("file services enforce symlink/root boundaries and durable optimistic saves
     );
     fs.writeFileSync(path.join(f.repo, "binary"), Buffer.from([0, 1, 2]));
     await assert.rejects(f.call("files.read", { path: "binary" }), /Binary/);
-    fs.writeFileSync(path.join(f.repo, "invalid-utf8"), Buffer.from([0xff, 0xfe]));
-    await assert.rejects(f.call("files.read", { path: "invalid-utf8" }), /non-UTF-8/);
+    fs.writeFileSync(
+      path.join(f.repo, "invalid-utf8"),
+      Buffer.from([0xff, 0xfe]),
+    );
+    await assert.rejects(
+      f.call("files.read", { path: "invalid-utf8" }),
+      /non-UTF-8/,
+    );
     fs.writeFileSync(path.join(f.repo, "replacement.txt"), "\ufffd");
     const replacement = await f.call("files.read", { path: "replacement.txt" });
     fs.writeFileSync(path.join(f.repo, "replacement.txt"), Buffer.from([0xff]));
     await assert.rejects(
-      f.call("files.write", { path: "replacement.txt", expectedHash: replacement.hash, content: "overwrite" }),
+      f.call("files.write", {
+        path: "replacement.txt",
+        expectedHash: replacement.hash,
+        content: "overwrite",
+      }),
       /conflict/,
     );
-    assert.deepEqual(fs.readFileSync(path.join(f.repo, "replacement.txt")), Buffer.from([0xff]));
+    assert.deepEqual(
+      fs.readFileSync(path.join(f.repo, "replacement.txt")),
+      Buffer.from([0xff]),
+    );
     await assert.rejects(
-      f.call("files.write", { path: "new-binary", expectedHash: null, content: "\0" }),
+      f.call("files.write", {
+        path: "new-binary",
+        expectedHash: null,
+        content: "\0",
+      }),
       /Invalid file content/,
     );
     fs.mkdirSync(path.join(f.repo, "nested"));
@@ -253,9 +270,15 @@ test("failed database startup releases owner lock and stale owner recovery prese
     const newer = new DatabaseSync(path.join(temp, "workspace.sqlite"));
     newer.exec(`PRAGMA user_version=${SCHEMA_VERSION + 1}`);
     newer.close();
-    await assert.rejects(createCore({ dataDir: temp, emit: () => {} }), /newer app version/);
+    await assert.rejects(
+      createCore({ dataDir: temp, emit: () => {} }),
+      /newer app version/,
+    );
     const preserved = new DatabaseSync(path.join(temp, "workspace.sqlite"));
-    assert.equal((preserved.prepare("PRAGMA user_version").get() as any).user_version, SCHEMA_VERSION + 1);
+    assert.equal(
+      (preserved.prepare("PRAGMA user_version").get() as any).user_version,
+      SCHEMA_VERSION + 1,
+    );
     preserved.close();
     assert.equal(fs.existsSync(path.join(temp, "owner.lock")), false);
   } finally {
@@ -290,13 +313,19 @@ function childOwner(dataDir: string, leaveAcquisition = false) {
   );
   let stderr = "";
   child.stderr!.on("data", (chunk) => (stderr += chunk));
-  const result = new Promise<{ state: string; message?: string }>((resolve, reject) => {
-    child.once("message", (message) => resolve(message as any));
-    child.once("error", reject);
-    child.once("exit", (code, signal) =>
-      reject(new Error(`Owner child exited before reporting: ${code ?? signal}: ${stderr}`)),
-    );
-  });
+  const result = new Promise<{ state: string; message?: string }>(
+    (resolve, reject) => {
+      child.once("message", (message) => resolve(message as any));
+      child.once("error", reject);
+      child.once("exit", (code, signal) =>
+        reject(
+          new Error(
+            `Owner child exited before reporting: ${code ?? signal}: ${stderr}`,
+          ),
+        ),
+      );
+    },
+  );
   return { child, result };
 }
 async function killOwner(child: ChildProcess) {
@@ -305,47 +334,74 @@ async function killOwner(child: ChildProcess) {
   child.kill("SIGKILL");
   await exited;
 }
-test("ownership survives a real process crash with acquisition residue and rejects concurrent processes", { timeout: 15000 }, async () => {
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "workspace-owner-crash-"));
-  const crashed = childOwner(temp, true);
-  let reopened: Awaited<ReturnType<typeof createCore>> | undefined;
-  try {
-    assert.equal((await crashed.result).state, "acquired");
-    await assert.rejects(createCore({ dataDir: temp, emit: () => {} }), /already owned/);
-    await killOwner(crashed.child);
-    assert.equal(fs.existsSync(path.join(temp, "owner.acquire.lock")), true);
-    reopened = await createCore({ dataDir: temp, emit: () => {} });
-    assert.equal(((await reopened.invoke("snapshot")) as any).projects.length, 1);
-    assert.equal(fs.existsSync(path.join(temp, "owner.acquire.lock")), false);
-    await Promise.all([reopened.close(), reopened.close()]);
-    reopened = undefined;
-    for (const contenderDir of [temp, path.join(temp, "fresh")]) {
-      const contenders = [childOwner(contenderDir), childOwner(contenderDir)];
-      try {
-        const results = await Promise.all(contenders.map((c) => c.result));
-        assert.equal(results.filter((r) => r.state === "acquired").length, 1, JSON.stringify(results));
-        assert.equal(results.filter((r) => r.state === "rejected").length, 1);
-        assert.match(results.find((r) => r.state === "rejected")!.message!, /already owned/);
-      } finally {
-        await Promise.all(contenders.map((c) => killOwner(c.child)));
+test(
+  "ownership survives a real process crash with acquisition residue and rejects concurrent processes",
+  { timeout: 15000 },
+  async () => {
+    const temp = fs.mkdtempSync(
+      path.join(os.tmpdir(), "workspace-owner-crash-"),
+    );
+    const crashed = childOwner(temp, true);
+    let reopened: Awaited<ReturnType<typeof createCore>> | undefined;
+    try {
+      assert.equal((await crashed.result).state, "acquired");
+      await assert.rejects(
+        createCore({ dataDir: temp, emit: () => {} }),
+        /already owned/,
+      );
+      await killOwner(crashed.child);
+      assert.equal(fs.existsSync(path.join(temp, "owner.acquire.lock")), true);
+      reopened = await createCore({ dataDir: temp, emit: () => {} });
+      assert.equal(
+        ((await reopened.invoke("snapshot")) as any).projects.length,
+        1,
+      );
+      assert.equal(fs.existsSync(path.join(temp, "owner.acquire.lock")), false);
+      await Promise.all([reopened.close(), reopened.close()]);
+      reopened = undefined;
+      for (const contenderDir of [temp, path.join(temp, "fresh")]) {
+        const contenders = [childOwner(contenderDir), childOwner(contenderDir)];
+        try {
+          const results = await Promise.all(contenders.map((c) => c.result));
+          assert.equal(
+            results.filter((r) => r.state === "acquired").length,
+            1,
+            JSON.stringify(results),
+          );
+          assert.equal(results.filter((r) => r.state === "rejected").length, 1);
+          assert.match(
+            results.find((r) => r.state === "rejected")!.message!,
+            /already owned/,
+          );
+        } finally {
+          await Promise.all(contenders.map((c) => killOwner(c.child)));
+        }
       }
+      reopened = await createCore({ dataDir: temp, emit: () => {} });
+      assert.equal(
+        ((await reopened.invoke("snapshot")) as any).projects.length,
+        1,
+      );
+    } finally {
+      await killOwner(crashed.child);
+      await reopened?.close();
+      fs.rmSync(temp, { recursive: true, force: true });
     }
-    reopened = await createCore({ dataDir: temp, emit: () => {} });
-    assert.equal(((await reopened.invoke("snapshot")) as any).projects.length, 1);
-  } finally {
-    await killOwner(crashed.child);
-    await reopened?.close();
-    fs.rmSync(temp, { recursive: true, force: true });
-  }
-});
+  },
+);
 test("legacy live ownership files are never stolen and failed acquisition releases the SQLite lock", async () => {
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "workspace-owner-legacy-"));
+  const temp = fs.mkdtempSync(
+    path.join(os.tmpdir(), "workspace-owner-legacy-"),
+  );
   try {
     for (const name of ["owner.lock", "owner.acquire.lock"]) {
       const file = path.join(temp, name);
       const contents = JSON.stringify({ pid: process.pid });
       fs.writeFileSync(file, contents);
-      await assert.rejects(createCore({ dataDir: temp, emit: () => {} }), /owned|in progress/);
+      await assert.rejects(
+        createCore({ dataDir: temp, emit: () => {} }),
+        /owned|in progress/,
+      );
       assert.equal(fs.readFileSync(file, "utf8"), contents);
       fs.unlinkSync(file);
       const core = await createCore({ dataDir: temp, emit: () => {} });
@@ -358,7 +414,9 @@ test("legacy live ownership files are never stolen and failed acquisition releas
 
 test("owner folder listing sorts folders first, flags repositories and explains denied folders", async () => {
   const { listDirectory } = await import("../src/desktop/folders.js");
-  const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "workspace-browse-")));
+  const temp = fs.realpathSync(
+    fs.mkdtempSync(path.join(os.tmpdir(), "workspace-browse-")),
+  );
   try {
     fs.mkdirSync(path.join(temp, "beta"));
     fs.mkdirSync(path.join(temp, "alpha", ".git"), { recursive: true });
@@ -380,14 +438,25 @@ test("owner folder listing sorts folders first, flags repositories and explains 
     );
     assert.ok(listing.places.some((p) => p.name === "Home"));
     await assert.rejects(listDirectory("relative/path"), /Choose a folder/);
-    await assert.rejects(listDirectory(path.join(temp, "missing")), /no longer exists/);
-    await assert.rejects(listDirectory(path.join(temp, "notes.txt")), /file, not a folder/);
+    await assert.rejects(
+      listDirectory(path.join(temp, "missing")),
+      /no longer exists/,
+    );
+    await assert.rejects(
+      listDirectory(path.join(temp, "notes.txt")),
+      /file, not a folder/,
+    );
     if (process.getuid?.() !== 0) {
       fs.mkdirSync(path.join(temp, "locked"), { mode: 0o000 });
-      await assert.rejects(listDirectory(path.join(temp, "locked")), /permission/);
+      await assert.rejects(
+        listDirectory(path.join(temp, "locked")),
+        /permission/,
+      );
     }
   } finally {
     fs.chmodSync(temp, 0o700);
+    if (fs.existsSync(path.join(temp, "locked")))
+      fs.chmodSync(path.join(temp, "locked"), 0o700);
     fs.rmSync(temp, { recursive: true, force: true });
   }
 });

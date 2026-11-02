@@ -1,3 +1,4 @@
+import { isDirectEntry } from "../shared/entrypoint.js";
 /**
  * SSH helper: a fixed, versioned stdio entrypoint that runs a normal core on
  * this (execution) host and speaks the framed protocol in
@@ -384,10 +385,7 @@ export async function runStdioHost(
   return new Promise<number>(() => {});
 }
 
-if (
-  process.argv[1] &&
-  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
+if (isDirectEntry(import.meta.url)) {
   void runStdioHost().then(
     (code) => {
       if (typeof code === "number") process.exit(code);

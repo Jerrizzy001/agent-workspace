@@ -23,6 +23,9 @@ export const COMMAND_POLICY: Record<Command, CommandAccess> = {
   "session.capture": "remote",
   "session.ack": "remote",
   "session.rename": "remote",
+  "session.canvas": "remote",
+  "session.confirmIdle": "owner",
+  "session.task": "remote",
   "session.place": "remote",
   "lane.rename": "remote",
   "lane.add": "remote",
@@ -40,6 +43,7 @@ export const COMMAND_POLICY: Record<Command, CommandAccess> = {
   "layout.save": "remote",
   "note.create": "remote",
   "note.update": "remote",
+  "note.archive": "remote",
   "settings.read": "owner",
   "settings.write": "owner",
   // AI suggestions spend the owner's provider usage: desktop window only.

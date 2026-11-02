@@ -48,7 +48,10 @@ import {
   type AssistProvider,
   type AssistRun,
 } from "./assist.js";
-import { DICTATION_MODEL_IDS, isDictationModelId } from "../shared/dictation.js";
+import {
+  DICTATION_MODEL_IDS,
+  isDictationModelId,
+} from "../shared/dictation.js";
 import { MAX_LANES, laneNameText, laneOf, lanesFor } from "../shared/board.js";
 import * as pty from "node-pty";
 import type {
@@ -228,7 +231,9 @@ export async function createCore({
       try {
         if (JSON.parse(row.request).startReport !== true) continue;
         const known = db
-          .prepare("SELECT 1 FROM records WHERE kind='conversationRefs' AND id=?")
+          .prepare(
+            "SELECT 1 FROM records WHERE kind='conversationRefs' AND id=?",
+          )
           .get(row.sessionId);
         const record = db
           .prepare("SELECT value FROM records WHERE kind='sessions' AND id=?")
@@ -287,10 +292,11 @@ export async function createCore({
               : undefined;
           const pane: PaneState = {
             dead: dead === "1" && (previous?.dead ?? true),
-            exitCode: previous?.exitCode ?? (status ? Number(status) : undefined),
+            exitCode:
+              previous?.exitCode ?? (status ? Number(status) : undefined),
             activity:
               previous?.activity ??
-              (["running", "needs", "done"].includes(activity!)
+              (["running", "needs", "done", "error"].includes(activity!)
                 ? (activity as Activity)
                 : undefined),
             ...(reported !== undefined ? { activityAt: reported } : {}),
@@ -372,7 +378,7 @@ export async function createCore({
      * A dead pane (remain-on-exit) keeps the process's last screen. Save it as
      * the session transcript, then remove the tmux session.
      */
-    async function finalize(s: Session, exitCode?: number) {
+    async function finalize(s: Session, exitCode?: number, ending = false) {
       let pending = finalizing.get(s.id);
       if (!pending) {
         pending = (async (): Promise<Final> => {
@@ -383,7 +389,11 @@ export async function createCore({
           // exit status when it reaps the process; on a loaded host that can
           // lag, and occasionally tmux never records it. Wait briefly; the
           // status stays best effort, the saved screen does not.
-          for (let retry = 0; exitCode === undefined && retry < 20; retry++) {
+          for (
+            let retry = 0;
+            !ending && exitCode === undefined && retry < 20;
+            retry++
+          ) {
             try {
               const status = (
                 await tx(
@@ -427,7 +437,8 @@ export async function createCore({
             };
             dropBlank();
             const footer =
-              lines.length && /^Pane is dead/.test(plain(lines[lines.length - 1]!))
+              lines.length &&
+              /^Pane is dead/.test(plain(lines[lines.length - 1]!))
                 ? lines.pop()
                 : undefined;
             dropBlank();
@@ -444,8 +455,19 @@ export async function createCore({
             saved = true;
           } catch {}
           try {
-            await tx(["kill-session", "-t", "=" + s.backendName], sessionSocket(s));
-          } catch {}
+            await tx(
+              ["kill-session", "-t", "=" + s.backendName],
+              sessionSocket(s),
+            );
+          } catch (error: any) {
+            if (
+              ending &&
+              !/can.t find|no server running|No such file/.test(
+                String(error.stderr || error.message),
+              )
+            )
+              throw error;
+          }
           return {
             ...(Number.isInteger(exitCode) ? { exitCode } : {}),
             transcript: saved,
@@ -570,7 +592,12 @@ export async function createCore({
     // Optional Claude flags are used only when this installed version lists them.
     const claudeSupport = new Map<
       string,
-      Promise<{ sessionId: boolean; settings: boolean; resume: boolean; fork: boolean }>
+      Promise<{
+        sessionId: boolean;
+        settings: boolean;
+        resume: boolean;
+        fork: boolean;
+      }>
     >();
     function claudeFeatures(bin: string) {
       let key = bin;
@@ -856,10 +883,7 @@ export async function createCore({
         if (command !== "terminal.open")
           throw new Error("Resume is only available for folder sessions");
         previous = get("sessions", p.resumeSessionId) as Session;
-        if (
-          previous.projectId !== projectId ||
-          previous.provider !== provider
-        )
+        if (previous.projectId !== projectId || previous.provider !== provider)
           throw new Error("That session does not belong to this folder");
         if (provider === "shell")
           throw new Error("A shell cannot be resumed; open a new shell");
@@ -941,9 +965,7 @@ export async function createCore({
       try {
         folder = fs.statSync(cwd);
       } catch {
-        throw new Error(
-          "That folder no longer exists. Choose another folder.",
-        );
+        throw new Error("That folder no longer exists. Choose another folder.");
       }
       if (!folder.isDirectory())
         throw new Error("Choose a folder, not a file, to open a terminal.");
@@ -972,8 +994,7 @@ export async function createCore({
       const setup = !!variant.setupProfile;
       const conversationId =
         provider === "claude" && !fork && !setup
-          ? previous?.conversationId ||
-            (features.sessionId ? id() : undefined)
+          ? previous?.conversationId || (features.sessionId ? id() : undefined)
           : undefined;
       const tracked = provider === "claude" && features.settings && !setup;
       const providerArgs = setup
@@ -997,6 +1018,7 @@ export async function createCore({
         projectId,
         provider,
         cwd,
+        ...(inherited?.worktreePath ? { worktreePath: inherited.worktreePath } : base !== get("projects", projectId).path ? { worktreePath: base } : {}),
         backendName: "aw-" + sid,
         backendSocket: socket,
         generation: 1,
@@ -1044,10 +1066,7 @@ export async function createCore({
         : undefined;
       db.exec("BEGIN IMMEDIATE");
       try {
-        db.prepare("INSERT INTO receipts VALUES (?,?,NULL)").run(
-          key,
-          digest,
-        );
+        db.prepare("INSERT INTO receipts VALUES (?,?,NULL)").run(key, digest);
         put("sessions", s);
         if (a) put("attempts", a);
         db.prepare("INSERT INTO launch_intents VALUES (?,?,?)").run(
@@ -1078,7 +1097,11 @@ export async function createCore({
         throw e;
       }
       activeLaunches.add(sid);
-      if (profileId) launchingProfiles.set(profileId, (launchingProfiles.get(profileId) ?? 0) + 1);
+      if (profileId)
+        launchingProfiles.set(
+          profileId,
+          (launchingProfiles.get(profileId) ?? 0) + 1,
+        );
       if (tracked) awaitingStart.add(sid);
       // Per-session environment only (never tmux's global one): where this
       // session's agent-control grant file would be, and the awctl
@@ -1094,21 +1117,19 @@ export async function createCore({
       try {
         // A server started by an older build lacks remain-on-exit from the
         // config file; without it a fast-exiting CLI loses its error output.
-        await tx(["set-option", "-g", "remain-on-exit", "on"]).catch(
-          () => {},
-        );
+        await tx(["set-option", "-g", "remain-on-exit", "on"]).catch(() => {});
         await tx(
           [
-          "new-session",
-          "-d",
-          "-s",
-          s.backendName,
-          "-c",
-          cwd,
-          "-x",
-          "100",
-          "-y",
-          "30",
+            "new-session",
+            "-d",
+            "-s",
+            s.backendName,
+            "-c",
+            cwd,
+            "-x",
+            "100",
+            "-y",
+            "30",
             ...controlEnv,
             bin,
             ...providerArgs,
@@ -1116,13 +1137,7 @@ export async function createCore({
           socket,
           controlPath ? { ...process.env, PATH: controlPath } : undefined,
         );
-        await tx([
-          "set-option",
-          "-t",
-          s.backendName,
-          "history-limit",
-          "5000",
-        ]);
+        await tx(["set-option", "-t", s.backendName, "history-limit", "5000"]);
         await tx(
           ["set-option", "-t", s.backendName, "status", "off"],
           sessionSocket(s),
@@ -1190,7 +1205,9 @@ export async function createCore({
     };
     const refOf = (sessionId: string): ConversationRef | undefined => {
       const row = db
-        .prepare("SELECT value FROM records WHERE kind='conversationRefs' AND id=?")
+        .prepare(
+          "SELECT value FROM records WHERE kind='conversationRefs' AND id=?",
+        )
         .get(sessionId) as { value: string } | undefined;
       return row ? JSON.parse(row.value) : undefined;
     };
@@ -1204,7 +1221,15 @@ export async function createCore({
       try {
         raw = (
           await tx(
-            ["show-options", "-p", "-q", "-v", "-t", "=" + s.backendName + ":", SESSION_START_OPTION],
+            [
+              "show-options",
+              "-p",
+              "-q",
+              "-v",
+              "-t",
+              "=" + s.backendName + ":",
+              SESSION_START_OPTION,
+            ],
             sessionSocket(s),
           )
         ).replace(/\n$/, "");
@@ -1268,7 +1293,9 @@ export async function createCore({
           sessionId: latest.id,
           generation: latest.generation,
           ...(latest.profileId ? { profileId: latest.profileId } : {}),
-          ...(report && !problem ? { conversationId: report.conversationId } : {}),
+          ...(report && !problem
+            ? { conversationId: report.conversationId }
+            : {}),
           ...(transcriptPath ? { transcriptPath } : {}),
           ...(report?.source ? { source: report.source.slice(0, 40) } : {}),
           ...(problem ? { problem } : {}),
@@ -1277,7 +1304,9 @@ export async function createCore({
     }
     function sameHost(s: Session, what: string) {
       if (s.hostId)
-        throw new Error(`${what} is only available for sessions on this computer.`);
+        throw new Error(
+          `${what} is only available for sessions on this computer.`,
+        );
     }
     function approvedTranscript(source: Session) {
       if (source.provider !== "claude")
@@ -1289,9 +1318,13 @@ export async function createCore({
           "Claude has not reported this session's conversation yet. Sessions started before this version cannot be linked.",
         );
       if (ref.problem)
-        throw new Error("This session's conversation could not be confirmed: " + ref.problem);
+        throw new Error(
+          "This session's conversation could not be confirmed: " + ref.problem,
+        );
       if (!ref.conversationId || !ref.transcriptPath)
-        throw new Error("Claude did not report a transcript file for this session");
+        throw new Error(
+          "Claude did not report a transcript file for this session",
+        );
       return approvedTranscriptPath(
         profiles.storageRoot(source.profileId),
         ref.transcriptPath,
@@ -1303,7 +1336,9 @@ export async function createCore({
         throw new Error("Only Claude conversations can be branched");
       sameHost(source, "Branching");
       if (source.profileSetup)
-        throw new Error("A profile's sign-in terminal has no conversation to branch");
+        throw new Error(
+          "A profile's sign-in terminal has no conversation to branch",
+        );
       if (!source.conversationId)
         throw new Error(
           source.conversationState === "pending"
@@ -1312,12 +1347,15 @@ export async function createCore({
         );
       const observed = await live(source);
       if (observed === "unknown")
-        throw new Error("This session's state is unknown, so it cannot be branched until it is reachable again.");
+        throw new Error(
+          "This session's state is unknown, so it cannot be branched until it is reachable again.",
+        );
       if (observed === "running") {
         const current = get("sessions", source.id) as Session;
         const idle =
           current.activityTracking &&
           (current.activity === "done" ||
+            current.activity === "error" ||
             (current.activity === undefined &&
               (() => {
                 try {
@@ -1342,7 +1380,9 @@ export async function createCore({
       // usually within a moment. Later reports are picked up by reconcile.
       for (
         let retry = 0;
-        retry < 30 && awaitingStart.has(result.session.id) && result.session.status === "running";
+        retry < 30 &&
+        awaitingStart.has(result.session.id) &&
+        result.session.status === "running";
         retry++
       ) {
         await new Promise((resolve) => setTimeout(resolve, 100));
@@ -1368,7 +1408,9 @@ export async function createCore({
       textBytes: e.textBytes,
     });
     function linkView(link: any): TranscriptLinkView {
-      const record = list("transcriptExports").find((e) => e.id === link.exportId);
+      const record = list("transcriptExports").find(
+        (e) => e.id === link.exportId,
+      );
       return {
         id: link.id,
         exportId: link.exportId,
@@ -1387,7 +1429,10 @@ export async function createCore({
         },
       };
     }
-    async function transcriptCommand(command: Command, p: any): Promise<unknown> {
+    async function transcriptCommand(
+      command: Command,
+      p: any,
+    ): Promise<unknown> {
       if (command === "transcript.list") {
         exact(p, ["sessionId"]);
         const links = list("transcriptLinks").filter(
@@ -1436,7 +1481,10 @@ export async function createCore({
         } satisfies TranscriptPreview;
       }
       // transcript.link
-      const recipient = get("sessions", str(p.recipientSessionId, "recipient")) as Session;
+      const recipient = get(
+        "sessions",
+        str(p.recipientSessionId, "recipient"),
+      ) as Session;
       if (p.recipientGeneration !== recipient.generation)
         throw new Error("Stale recipient session generation");
       if (recipient.id === source.id)
@@ -1444,20 +1492,28 @@ export async function createCore({
       sameHost(recipient, "Linking context");
       if ((await live(recipient)) !== "running")
         throw new Error("The receiving session must be running");
-      const crossProfile = (source.profileId ?? null) !== (recipient.profileId ?? null);
+      const crossProfile =
+        (source.profileId ?? null) !== (recipient.profileId ?? null);
       if (crossProfile && p.allowCrossProfile !== true)
         throw new Error(
           "The receiving session uses a different Claude profile. Its agent may send this context to that account's provider; confirm cross-profile sharing to continue.",
         );
-      if (p.allowCrossProfile !== undefined && typeof p.allowCrossProfile !== "boolean")
+      if (
+        p.allowCrossProfile !== undefined &&
+        typeof p.allowCrossProfile !== "boolean"
+      )
         throw new Error("Invalid cross-profile confirmation");
       if (typeof p.textHash !== "string" || p.textHash !== exported.textHash)
-        throw new Error("The transcript changed since your preview. Preview it again before linking.");
+        throw new Error(
+          "The transcript changed since your preview. Preview it again before linking.",
+        );
       const active = list("transcriptLinks").filter(
         (l) => l.recipient.sessionId === recipient.id && !l.revokedAt,
       );
       if (active.length >= 20)
-        throw new Error("A session can receive at most 20 active links; revoke one first");
+        throw new Error(
+          "A session can receive at most 20 active links; revoke one first",
+        );
       const redacted = redact(exported.text, p.redactions);
       const stamp = now();
       const { text: _full, ...info } = exported;
@@ -1515,11 +1571,21 @@ export async function createCore({
       grant: { sessionId: string; generation: number },
       args: Record<string, unknown>,
     ): Record<string, unknown> {
-      if (Object.keys(args).some((k) => !["link", "offset", "limit"].includes(k)))
-        throw controllerFailure("bad_request", "Unknown transcript read option");
-      const recipient = list("sessions").find((x) => x.id === grant.sessionId) as Session | undefined;
+      if (
+        Object.keys(args).some((k) => !["link", "offset", "limit"].includes(k))
+      )
+        throw controllerFailure(
+          "bad_request",
+          "Unknown transcript read option",
+        );
+      const recipient = list("sessions").find(
+        (x) => x.id === grant.sessionId,
+      ) as Session | undefined;
       if (!recipient || recipient.generation !== grant.generation)
-        throw controllerFailure("revoked", "This session is no longer the one the grant was made for");
+        throw controllerFailure(
+          "revoked",
+          "This session is no longer the one the grant was made for",
+        );
       const valid = (l: any) =>
         l.recipient.sessionId === recipient.id &&
         !l.revokedAt &&
@@ -1530,7 +1596,9 @@ export async function createCore({
         const mine = links.filter(valid);
         return {
           links: mine.map((l) => {
-            const e = list("transcriptExports").find((x) => x.id === l.exportId);
+            const e = list("transcriptExports").find(
+              (x) => x.id === l.exportId,
+            );
             return {
               link: l.id,
               createdAt: l.createdAt,
@@ -1544,22 +1612,55 @@ export async function createCore({
         };
       }
       if (typeof args.link !== "string" || args.link.length > 64)
-        throw controllerFailure("bad_request", "--link must be a link ID from awctl transcript read");
+        throw controllerFailure(
+          "bad_request",
+          "--link must be a link ID from awctl transcript read",
+        );
       const link = links.find((l) => l.id === args.link);
       if (!link || link.recipient.sessionId !== recipient.id)
-        throw controllerFailure("not_found", "No transcript link to this session has that ID");
-      if (link.revokedAt) throw controllerFailure("revoked", "The owner revoked this transcript link");
+        throw controllerFailure(
+          "not_found",
+          "No transcript link to this session has that ID",
+        );
+      if (link.revokedAt)
+        throw controllerFailure(
+          "revoked",
+          "The owner revoked this transcript link",
+        );
       if (!valid(link))
-        throw controllerFailure("stale", "This transcript link was made for an earlier session or profile");
-      const record = list("transcriptExports").find((e) => e.id === link.exportId);
-      if (!record) throw controllerFailure("not_found", "The linked export no longer exists");
+        throw controllerFailure(
+          "stale",
+          "This transcript link was made for an earlier session or profile",
+        );
+      const record = list("transcriptExports").find(
+        (e) => e.id === link.exportId,
+      );
+      if (!record)
+        throw controllerFailure(
+          "not_found",
+          "The linked export no longer exists",
+        );
       const text = String(record.text);
       const offset = args.offset === undefined ? 0 : args.offset;
       const limit = args.limit === undefined ? 16 * 1024 : args.limit;
-      if (!Number.isSafeInteger(offset) || (offset as number) < 0 || (offset as number) > text.length)
-        throw controllerFailure("bad_request", "--offset is outside the transcript");
-      if (!Number.isSafeInteger(limit) || (limit as number) < 1 || (limit as number) > GRANT_LIMITS.transcriptPage)
-        throw controllerFailure("bad_request", `--limit must be 1-${GRANT_LIMITS.transcriptPage}`);
+      if (
+        !Number.isSafeInteger(offset) ||
+        (offset as number) < 0 ||
+        (offset as number) > text.length
+      )
+        throw controllerFailure(
+          "bad_request",
+          "--offset is outside the transcript",
+        );
+      if (
+        !Number.isSafeInteger(limit) ||
+        (limit as number) < 1 ||
+        (limit as number) > GRANT_LIMITS.transcriptPage
+      )
+        throw controllerFailure(
+          "bad_request",
+          `--limit must be 1-${GRANT_LIMITS.transcriptPage}`,
+        );
       const end = Math.min(text.length, (offset as number) + (limit as number));
       const page = plainText(text.slice(offset as number, end));
       link.reads = (link.reads ?? 0) + 1;
@@ -1567,7 +1668,11 @@ export async function createCore({
       put("transcriptLinks", link);
       return {
         link: link.id,
-        export: { ...exportInfo(record.info), redactions: record.redactions ?? 0, createdAt: record.createdAt },
+        export: {
+          ...exportInfo(record.info),
+          redactions: record.redactions ?? 0,
+          createdAt: record.createdAt,
+        },
         offset,
         nextOffset: end < text.length ? end : null,
         total: text.length,
@@ -1752,7 +1857,10 @@ export async function createCore({
           if (p.placementRevision !== (s.placementRevision ?? 0))
             throw new Error("Stale session placement");
           const board = lanesFor(list("boardLanes"), s.projectId);
-          if (typeof p.lane !== "string" || !board.lanes.some((l) => l.id === p.lane))
+          if (
+            typeof p.lane !== "string" ||
+            !board.lanes.some((l) => l.id === p.lane)
+          )
             throw new Error("Unknown lane");
           let order: number;
           if (p.order === undefined) {
@@ -1791,11 +1899,9 @@ export async function createCore({
         }
         case "session.terminate": {
           const s = ownedSession(p);
-          await captureStart(s, true).catch(() => {});
-          await tx(
-            ["kill-session", "-t", "=" + s.backendName],
-            sessionSocket(s),
-          );
+          // Capture before destroying the pane. End has the same retained history
+          // as a natural exit, without waiting for a process we are about to stop.
+          await finalize(s, undefined, true);
           s.activity = undefined;
           recordStatus(s, "exited");
           changed();
@@ -1840,10 +1946,7 @@ export async function createCore({
           const exists = fs.existsSync(f);
           if (exists && !fs.statSync(f).isFile())
             throw new Error("Only regular files can be edited");
-          if (
-            (exists ? hash(fs.readFileSync(f)) : null) !==
-            p.expectedHash
-          )
+          if ((exists ? hash(fs.readFileSync(f)) : null) !== p.expectedHash)
             throw new Error(
               "File conflict: file changed on disk. Reload before saving.",
             );
@@ -1925,24 +2028,33 @@ export async function createCore({
         case "lane.remove": {
           const project = get("projects", p.projectId);
           const board = lanesFor(list("boardLanes"), project.id);
-          if (p.revision !== board.revision) throw new Error("Stale board lanes");
+          if (p.revision !== board.revision)
+            throw new Error("Stale board lanes");
           const lanes = board.lanes.map((l) => ({ ...l }));
           if (command === "lane.add") {
             if (lanes.length >= MAX_LANES)
               throw new Error(`A board has at most ${MAX_LANES} lanes`);
-            lanes.push({ id: "lane-" + id().slice(0, 8), name: laneNameText(p.name) });
+            lanes.push({
+              id: "lane-" + id().slice(0, 8),
+              name: laneNameText(p.name),
+            });
           } else {
             const index = lanes.findIndex((l) => l.id === p.laneId);
             if (index < 0) throw new Error("Unknown lane");
-            if (command === "lane.rename") lanes[index]!.name = laneNameText(p.name);
+            if (command === "lane.rename")
+              lanes[index]!.name = laneNameText(p.name);
             else {
-              if (lanes.length <= 1) throw new Error("A board needs at least one lane");
+              if (lanes.length <= 1)
+                throw new Error("A board needs at least one lane");
               const occupied = (list("sessions") as Session[]).some(
                 (s) =>
-                  s.projectId === project.id && laneOf(s, board.lanes) === p.laneId,
+                  s.projectId === project.id &&
+                  laneOf(s, board.lanes) === p.laneId,
               );
               if (occupied)
-                throw new Error("Move this lane's cards to another lane before removing it");
+                throw new Error(
+                  "Move this lane's cards to another lane before removing it",
+                );
               lanes.splice(index, 1);
             }
           }
@@ -1960,7 +2072,9 @@ export async function createCore({
             throw new Error("Unexpected settings field");
           const key = settingKey(p.key);
           const row = db
-            .prepare("SELECT value FROM records WHERE kind='ownerSettings' AND id=?")
+            .prepare(
+              "SELECT value FROM records WHERE kind='ownerSettings' AND id=?",
+            )
             .get(key) as { value: string } | undefined;
           return {
             key,
@@ -1984,6 +2098,125 @@ export async function createCore({
             providerModel("claude", p.value);
           put("ownerSettings", { id: key, value: p.value, updatedAt: now() });
           return { key, value: p.value };
+        }
+        case "session.confirmIdle": {
+          exact(p, ["sessionId", "generation"]);
+          const s = session(p);
+          if (s.generation !== p.generation)
+            throw new Error("Stale session generation");
+          if (
+            s.provider !== "claude" ||
+            !s.activityTracking ||
+            (await live(s)) !== "running"
+          )
+            throw new Error(
+              "Only a running local Claude session can be marked idle",
+            );
+          await tx(
+            [
+              "set-option",
+              "-p",
+              "-t",
+              "=" + s.backendName + ":0.0",
+              "@aw_activity",
+              "done",
+              ";",
+              "set-option",
+              "-p",
+              "-t",
+              "=" + s.backendName + ":0.0",
+              "@aw_activity_at",
+              String(Math.floor(Date.now() / 1000)),
+            ],
+            sessionSocket(s),
+          );
+          s.activity = "done";
+          s.activityAt = Date.now();
+          recordStatus(s, "running");
+          changed();
+          return s;
+        }
+        case "session.canvas": {
+          if (
+            Object.keys(p).some(
+              (k) => !["sessionId", "generation", "hidden"].includes(k),
+            ) ||
+            typeof p.hidden !== "boolean"
+          )
+            throw new Error("Invalid canvas visibility");
+          const s = get("sessions", p.sessionId);
+          if (s.generation !== p.generation)
+            throw new Error("Stale session generation");
+          s.canvasHidden = p.hidden;
+          put("sessions", s);
+          changed();
+          return s;
+        }
+        case "session.task": {
+          if (
+            Object.keys(p).some(
+              (k) => !["sessionId", "generation", "taskId"].includes(k),
+            )
+          )
+            throw new Error("Unexpected task assignment field");
+          const s = get("sessions", p.sessionId);
+          const t = get("tasks", p.taskId);
+          if (s.generation !== p.generation)
+            throw new Error("Stale session generation");
+          if (s.projectId !== t.projectId)
+            throw new Error("Task and session must be in the same folder");
+          if (s.attemptId) {
+            if (get("attempts", s.attemptId).taskId === t.id) return s;
+            throw new Error("This session is already attached to another task");
+          }
+          const a = {
+            id: id(),
+            taskId: t.id,
+            projectId: t.projectId,
+            provider: s.provider,
+            sessionId: s.id,
+            worktreePath: s.cwd,
+            status: s.status,
+            createdAt: now(),
+          };
+          s.attemptId = a.id;
+          db.exec("BEGIN IMMEDIATE");
+          try {
+            put("attempts", a);
+            put("sessions", s);
+            const layout = list("layouts").find(
+              (l) => l.projectId === s.projectId,
+            );
+            if (layout?.positions?.[s.id]) {
+              layout.positions[a.id] = layout.positions[s.id];
+              layout.revision = (layout.revision ?? 1) + 1;
+              put("layouts", layout);
+            }
+            db.exec("COMMIT");
+          } catch (e) {
+            db.exec("ROLLBACK");
+            throw e;
+          }
+          changed();
+          return s;
+        }
+        case "note.archive": {
+          if (
+            Object.keys(p).some(
+              (k) => !["noteId", "revision", "archived"].includes(k),
+            ) ||
+            typeof p.archived !== "boolean"
+          )
+            throw new Error("Invalid note archive request");
+          const n = get("notes", p.noteId);
+          if (p.revision !== (n.revision ?? 1))
+            throw new Error("Stale note revision");
+          n.archived = p.archived;
+          n.revision = (n.revision ?? 1) + 1;
+          n.updatedAt = now();
+          put("notes", n);
+          changed();
+          return n;
         }
         case "note.create": {
           get("projects", p.projectId);
@@ -2040,9 +2273,13 @@ export async function createCore({
       assistProvider: "",
       assistModel: "",
     };
-    function ownerSetting<K extends keyof OwnerSettings>(key: K): OwnerSettings[K] {
+    function ownerSetting<K extends keyof OwnerSettings>(
+      key: K,
+    ): OwnerSettings[K] {
       const row = db
-        .prepare("SELECT value FROM records WHERE kind='ownerSettings' AND id=?")
+        .prepare(
+          "SELECT value FROM records WHERE kind='ownerSettings' AND id=?",
+        )
         .get(key) as { value: string } | undefined;
       return row ? JSON.parse(row.value).value : ownerDefaults[key];
     }
@@ -2086,7 +2323,9 @@ export async function createCore({
       const r = await repository(p);
       const snap = await stagedSnapshot(r, excludeList(p.exclude));
       if (!snap.files.length)
-        throw new Error("Nothing is staged. Stage the changes to describe first.");
+        throw new Error(
+          "Nothing is staged. Stage the changes to describe first.",
+        );
       if (!snap.diff)
         throw new Error(
           "Every staged file is excluded or omitted, so there is nothing to send.",
@@ -2109,14 +2348,20 @@ export async function createCore({
     function nameSources(s: Session) {
       const bounded = (value: string) =>
         value.length > 2000 ? value.slice(0, 2000) + "…" : value;
-      const sources: { id: "task" | "firstMessage" | "folder"; label: string; text: string }[] = [];
+      const sources: {
+        id: "task" | "firstMessage" | "folder";
+        label: string;
+        text: string;
+      }[] = [];
       if (s.attemptId) {
         try {
           const task = get("tasks", get("attempts", s.attemptId).taskId);
           sources.push({
             id: "task",
             label: "Task title and description",
-            text: bounded([task.title, task.description].filter(Boolean).join("\n\n")),
+            text: bounded(
+              [task.title, task.description].filter(Boolean).join("\n\n"),
+            ),
           });
         } catch {}
       }
@@ -2131,10 +2376,18 @@ export async function createCore({
           const at = Array.isArray(args) ? args.lastIndexOf("--") : -1;
           const first = at >= 0 ? (args as unknown[])[at + 1] : undefined;
           if (typeof first === "string" && first.trim())
-            sources.push({ id: "firstMessage", label: "First message", text: bounded(first) });
+            sources.push({
+              id: "firstMessage",
+              label: "First message",
+              text: bounded(first),
+            });
         } catch {}
       }
-      sources.push({ id: "folder", label: "Folder name", text: path.basename(s.cwd) });
+      sources.push({
+        id: "folder",
+        label: "Folder name",
+        text: path.basename(s.cwd),
+      });
       return sources;
     }
     function namePreview(p: any, provider: string, model: string) {
@@ -2143,17 +2396,27 @@ export async function createCore({
         !Array.isArray(p.include) ||
         !p.include.length ||
         p.include.length > 3 ||
-        p.include.some((v: unknown) => !["task", "firstMessage", "folder"].includes(v as string))
+        p.include.some(
+          (v: unknown) =>
+            !["task", "firstMessage", "folder"].includes(v as string),
+        )
       )
         throw new Error("Choose at least one kind of context to share");
       const sources = nameSources(s);
       const chosen = sources.filter((source) => p.include.includes(source.id));
-      if (!chosen.length) throw new Error("The chosen context is not available for this session");
+      if (!chosen.length)
+        throw new Error("The chosen context is not available for this session");
       const input = namePrompt(
         chosen
-          .map((c) =>
-            (c.id === "task" ? "Task" : c.id === "firstMessage" ? "First message" : "Folder") +
-            ":\n" + c.text,
+          .map(
+            (c) =>
+              (c.id === "task"
+                ? "Task"
+                : c.id === "firstMessage"
+                  ? "First message"
+                  : "Folder") +
+              ":\n" +
+              c.text,
           )
           .join("\n\n"),
       );
@@ -2169,15 +2432,33 @@ export async function createCore({
         inputHash: hashText(input),
       };
     }
-    async function assist(command: "assist.preview" | "assist.suggest", p: any) {
+    async function assist(
+      command: "assist.preview" | "assist.suggest",
+      p: any,
+    ) {
       const kind = p.kind;
       const preview = command === "assist.preview";
       if (kind === "commit")
-        assistFields(p, preview
-          ? ["kind", "projectId", "worktreePath", "exclude", "hashOnly"]
-          : ["kind", "projectId", "worktreePath", "exclude", "inputHash", "stagedHash"]);
+        assistFields(
+          p,
+          preview
+            ? ["kind", "projectId", "worktreePath", "exclude", "hashOnly"]
+            : [
+                "kind",
+                "projectId",
+                "worktreePath",
+                "exclude",
+                "inputHash",
+                "stagedHash",
+              ],
+        );
       else if (kind === "name")
-        assistFields(p, preview ? ["kind", "sessionId", "include"] : ["kind", "sessionId", "include", "inputHash"]);
+        assistFields(
+          p,
+          preview
+            ? ["kind", "sessionId", "include"]
+            : ["kind", "sessionId", "include", "inputHash"],
+        );
       else throw new Error("Unknown AI suggestion kind");
       if (preview && p.hashOnly !== undefined) {
         if (p.hashOnly !== true || p.exclude !== undefined)
@@ -2191,10 +2472,18 @@ export async function createCore({
           : namePreview(p, status.provider, model);
       if (preview) return shown;
       if (typeof p.inputHash !== "string" || p.inputHash !== shown.inputHash)
-        throw new Error("What would be sent changed since the preview. Review the preview again.");
-      if (kind === "commit" && p.stagedHash !== (shown as { stagedHash: string }).stagedHash)
-        throw new Error("Staged changes changed since the preview. Review the preview again.");
-      if (assistBusy) throw new Error("A suggestion is already being generated.");
+        throw new Error(
+          "What would be sent changed since the preview. Review the preview again.",
+        );
+      if (
+        kind === "commit" &&
+        p.stagedHash !== (shown as { stagedHash: string }).stagedHash
+      )
+        throw new Error(
+          "Staged changes changed since the preview. Review the preview again.",
+        );
+      if (assistBusy)
+        throw new Error("A suggestion is already being generated.");
       assistBusy = true;
       try {
         const text = await runSuggestion({
@@ -2308,7 +2597,7 @@ export async function createCore({
           : "unknown";
         // Hooks write turn state into the pane; an unreachable socket keeps the last value.
         const fromPane = observed === "running" && current.activityTracking;
-        const activity =
+        const reportedActivity =
           observed === "exited"
             ? undefined
             : fromPane
@@ -2321,6 +2610,11 @@ export async function createCore({
             : fromPane
               ? pane!.activityAt
               : current.activityAt;
+        const activity =
+          reportedActivity === "running" &&
+          (!activityAt || Date.now() - activityAt > 20 * 60_000)
+            ? "stale"
+            : reportedActivity;
         if (
           current.status !== observed ||
           current.activity !== activity ||
@@ -2350,22 +2644,28 @@ export async function createCore({
         if (!record.sessionEndedAt) {
           record.sessionEndedAt = new Date(at).toISOString();
           put("attachments", record);
-        } else if (at - Date.parse(record.sessionEndedAt) > ATTACHMENT_GRACE_MS) {
+        } else if (
+          at - Date.parse(record.sessionEndedAt) >
+          ATTACHMENT_GRACE_MS
+        ) {
           removeAttachmentFile(dataDir, record);
-          db.prepare("DELETE FROM records WHERE kind='attachments' AND id=?").run(
-            record.id,
-          );
+          db.prepare(
+            "DELETE FROM records WHERE kind='attachments' AND id=?",
+          ).run(record.id);
         }
       }
     }
     try {
       cleanupAttachments();
     } catch {}
-    const cleanupTimer = setInterval(() => {
-      try {
-        cleanupAttachments();
-      } catch {}
-    }, 60 * 60 * 1000);
+    const cleanupTimer = setInterval(
+      () => {
+        try {
+          cleanupAttachments();
+        } catch {}
+      },
+      60 * 60 * 1000,
+    );
     cleanupTimer.unref();
     async function createAttachment(input: {
       sessionId: unknown;
@@ -2422,10 +2722,14 @@ export async function createCore({
       if (action === "removeHost") {
         db.exec("BEGIN IMMEDIATE");
         try {
-          db.prepare("DELETE FROM records WHERE kind='executionHosts' AND id=?").run(hostId);
+          db.prepare(
+            "DELETE FROM records WHERE kind='executionHosts' AND id=?",
+          ).run(hostId);
           for (const ref of list("remoteProjectRefs"))
             if (ref.hostId === hostId)
-              db.prepare("DELETE FROM records WHERE kind='remoteProjectRefs' AND id=?").run(ref.id);
+              db.prepare(
+                "DELETE FROM records WHERE kind='remoteProjectRefs' AND id=?",
+              ).run(ref.id);
           db.exec("COMMIT");
         } catch (error) {
           db.exec("ROLLBACK");
@@ -2451,7 +2755,9 @@ export async function createCore({
         try {
           for (const ref of list("remoteProjectRefs"))
             if (ref.hostId === hostId)
-              db.prepare("DELETE FROM records WHERE kind='remoteProjectRefs' AND id=?").run(ref.id);
+              db.prepare(
+                "DELETE FROM records WHERE kind='remoteProjectRefs' AND id=?",
+              ).run(ref.id);
           for (const ref of refs) put("remoteProjectRefs", ref);
           db.exec("COMMIT");
         } catch (error) {
@@ -2506,7 +2812,9 @@ export async function createCore({
         const project = get("projects", projectId);
         const canonical = fs.realpathSync(project.path);
         if (canonical !== project.path)
-          throw new Error("Project path changed; register its current location");
+          throw new Error(
+            "Project path changed; register its current location",
+          );
         return canonical;
       },
       transcriptRead: (grant, args) =>
@@ -2528,12 +2836,17 @@ export async function createCore({
     const teamCache = createTeamCache({
       db,
       task: (taskId) => {
-        const row = db.prepare("SELECT value FROM records WHERE kind='tasks' AND id=?").get(taskId) as any;
+        const row = db
+          .prepare("SELECT value FROM records WHERE kind='tasks' AND id=?")
+          .get(taskId) as any;
         return row ? JSON.parse(row.value) : null;
       },
-      tasks: (projectId) => list("tasks").filter((t) => t.projectId === projectId),
+      tasks: (projectId) =>
+        list("tasks").filter((t) => t.projectId === projectId),
       project: (projectId) => {
-        const row = db.prepare("SELECT value FROM records WHERE kind='projects' AND id=?").get(projectId) as any;
+        const row = db
+          .prepare("SELECT value FROM records WHERE kind='projects' AND id=?")
+          .get(projectId) as any;
         return row ? JSON.parse(row.value) : null;
       },
     });
@@ -2558,6 +2871,8 @@ export async function createCore({
           case "list":
             profiles.fields(payload, []);
             return profiles.state();
+          case "account":
+            return profiles.account(payload);
           case "check":
             return profiles.check(payload);
           case "create":
@@ -2570,14 +2885,19 @@ export async function createCore({
             return enqueue("mutations", () => {
               const result = profiles.remove(payload, () =>
                 [...launchingProfiles.keys()].some(
-                  (key) => key === (payload as Record<string, unknown>)?.profileId,
+                  (key) =>
+                    key === (payload as Record<string, unknown>)?.profileId,
                 ),
               );
               changed();
               return result;
             });
           case "setup": {
-            const v = profiles.fields(payload, ["profileId", "projectId", "idempotencyKey"]);
+            const v = profiles.fields(payload, [
+              "profileId",
+              "projectId",
+              "idempotencyKey",
+            ]);
             const profile = profiles.record(v.profileId);
             return enqueue("launch", () =>
               launch(

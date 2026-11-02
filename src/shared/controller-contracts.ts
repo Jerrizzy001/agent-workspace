@@ -28,7 +28,12 @@ export const CONTROL_FILE_ENV = "AW_CONTROL_FILE";
 export const AWCTL_ENV = "AWCTL";
 
 export const GRANT_DEFAULTS = {
-  verbs: ["status", "note.create", "note.update", "canvas.place"] as ControllerVerb[],
+  verbs: [
+    "status",
+    "note.create",
+    "note.update",
+    "canvas.place",
+  ] as ControllerVerb[],
   expiresInMinutes: 60,
   openLimit: 3,
   ratePerMinute: 30,
@@ -98,6 +103,10 @@ export interface AgentControlState {
 /** Desktop owner only. Remote browsers and agents have no route to this. */
 export interface DesktopAgentControlAPI {
   list(target: { sessionId: string }): Promise<AgentControlState>;
+  allowTranscript(target: {
+    sessionId: string;
+    generation: number;
+  }): Promise<AgentControlState>;
   grant(request: GrantRequest): Promise<AgentControlState>;
   revoke(target: { sessionId: string }): Promise<AgentControlState>;
 }

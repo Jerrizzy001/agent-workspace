@@ -12,7 +12,12 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import {
+  execFileSync,
+  spawnSync,
+  spawn,
+  type ChildProcess,
+} from "node:child_process";
 
 export const SSHD = "/usr/sbin/sshd";
 export const sshAvailable = () =>
@@ -78,12 +83,32 @@ export interface SshFixture {
 
 export async function startSshFixture(prefix = "aw-ssh-"): Promise<SshFixture> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const version = String(
+    spawnSync(SSHD, ["-V"], { encoding: "utf8" }).stderr,
+  ).match(/OpenSSH_(\d+)\.(\d+)/);
+  const penalties =
+    version &&
+    (Number(version[1]) >= 10 ||
+      (Number(version[1]) === 9 && Number(version[2]) >= 8));
   const key = (name: string) =>
-    execFileSync("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-C", name, "-f", path.join(dir, name)]);
+    execFileSync("ssh-keygen", [
+      "-q",
+      "-t",
+      "ed25519",
+      "-N",
+      "",
+      "-C",
+      name,
+      "-f",
+      path.join(dir, name),
+    ]);
   key("host_key");
   key("user_key");
   key("other_host_key");
-  fs.copyFileSync(path.join(dir, "user_key.pub"), path.join(dir, "authorized_keys"));
+  fs.copyFileSync(
+    path.join(dir, "user_key.pub"),
+    path.join(dir, "authorized_keys"),
+  );
   fs.chmodSync(path.join(dir, "authorized_keys"), 0o600);
   const port = await freePort();
   const sshdConfig = path.join(dir, "sshd_config");
@@ -98,6 +123,8 @@ export async function startSshFixture(prefix = "aw-ssh-"): Promise<SshFixture> {
       "KbdInteractiveAuthentication no",
       "PubkeyAuthentication yes",
       "UsePAM no",
+      "MaxStartups 100",
+      ...(penalties ? ["PerSourcePenalties no"] : []),
       "PermitRootLogin prohibit-password",
       "StrictModes no",
       `PidFile ${dir}/sshd.pid`,
@@ -110,7 +137,8 @@ export async function startSshFixture(prefix = "aw-ssh-"): Promise<SshFixture> {
     ].join("\n"),
   );
   // sshd refuses to start without its (empty) privilege separation directory.
-  if (!fs.existsSync("/run/sshd")) fs.mkdirSync("/run/sshd", { mode: 0o755 });
+  if (process.platform === "linux" && !fs.existsSync("/run/sshd"))
+    fs.mkdirSync("/run/sshd", { mode: 0o755 });
   const sshd: ChildProcess = spawn(SSHD, ["-D", "-e", "-f", sshdConfig], {
     stdio: ["ignore", "ignore", "pipe"],
   });
@@ -119,12 +147,22 @@ export async function startSshFixture(prefix = "aw-ssh-"): Promise<SshFixture> {
     if (sshdLog.length < 65536) sshdLog += b;
   });
   await waitForPort(port);
-  const pub = fs.readFileSync(path.join(dir, "host_key.pub"), "utf8").trim().split(" ");
+  const pub = fs
+    .readFileSync(path.join(dir, "host_key.pub"), "utf8")
+    .trim()
+    .split(" ");
   const hostKeyLine = `[127.0.0.1]:${port} ${pub[0]} ${pub[1]}`;
-  const other = fs.readFileSync(path.join(dir, "other_host_key.pub"), "utf8").trim().split(" ");
-  const fingerprint = execFileSync("ssh-keygen", ["-l", "-f", path.join(dir, "host_key.pub")], {
-    encoding: "utf8",
-  }).split(" ")[1]!;
+  const other = fs
+    .readFileSync(path.join(dir, "other_host_key.pub"), "utf8")
+    .trim()
+    .split(" ");
+  const fingerprint = execFileSync(
+    "ssh-keygen",
+    ["-l", "-f", path.join(dir, "host_key.pub")],
+    {
+      encoding: "utf8",
+    },
+  ).split(" ")[1]!;
   const knownHosts = path.join(dir, "known_hosts");
   const alias = "aw-fixture";
   const config = path.join(dir, "ssh_config");
@@ -160,7 +198,10 @@ export async function startSshFixture(prefix = "aw-ssh-"): Promise<SshFixture> {
     trust: () => fs.writeFileSync(knownHosts, hostKeyLine + "\n"),
     distrust: () => fs.writeFileSync(knownHosts, ""),
     wrongKey: () =>
-      fs.writeFileSync(knownHosts, `[127.0.0.1]:${port} ${other[0]} ${other[1]}\n`),
+      fs.writeFileSync(
+        knownHosts,
+        `[127.0.0.1]:${port} ${other[0]} ${other[1]}\n`,
+      ),
     installHelper(options = {}) {
       fs.mkdirSync(path.join(helperDir, "bin"), { recursive: true });
       const launcher = path.join(helperDir, "bin", "aw-ssh-helper");
@@ -186,7 +227,11 @@ export function tmuxSocketFor(dataDir: string) {
   return path.join(
     os.tmpdir(),
     "aw-" +
-      crypto.createHash("sha256").update(fs.realpathSync(dataDir)).digest("hex").slice(0, 20) +
+      crypto
+        .createHash("sha256")
+        .update(fs.realpathSync(dataDir))
+        .digest("hex")
+        .slice(0, 20) +
       ".sock",
   );
 }
@@ -195,7 +240,11 @@ export function killTmuxFor(dataDir: string) {
   if (!fs.existsSync(dataDir)) return;
   const socket = tmuxSocketFor(dataDir);
   try {
-    execFileSync(process.env.WORKSPACE_TMUX || "tmux", ["-S", socket, "kill-server"], { stdio: "ignore" });
+    execFileSync(
+      process.env.WORKSPACE_TMUX || "tmux",
+      ["-S", socket, "kill-server"],
+      { stdio: "ignore" },
+    );
   } catch {}
   fs.rmSync(socket, { force: true });
 }

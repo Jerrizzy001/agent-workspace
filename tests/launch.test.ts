@@ -104,11 +104,19 @@ process.exit(3);`,
     });
     assert.equal(claude.attempt, undefined);
     assert.equal(claude.session.attemptId, null);
-    assert.equal(claude.session.cwd, fs.realpathSync(path.join(repo, "src", "lib")));
+    assert.equal(
+      claude.session.cwd,
+      fs.realpathSync(path.join(repo, "src", "lib")),
+    );
     assert.equal(claude.session.activityTracking, true);
     const conversation = claude.session.conversationId;
     assert.match(conversation, /^[0-9a-f-]{36}$/);
-    const first = (await until(async () => lines(), (l) => l.length >= 1))[0];
+    const first = (
+      await until(
+        async () => lines(),
+        (l) => l.length >= 1,
+      )
+    )[0];
     assert.equal(first.cwd, fs.realpathSync(path.join(repo, "src", "lib")));
     assert.equal(first.args.includes("--"), false);
     assert.deepEqual(first.args.slice(0, 2), ["--session-id", conversation]);
@@ -144,7 +152,12 @@ process.exit(3);`,
       model: "fixture-model",
       idempotencyKey: "claude-prompt",
     });
-    const third = (await until(async () => lines(), (l) => l.length >= 2))[1];
+    const third = (
+      await until(
+        async () => lines(),
+        (l) => l.length >= 2,
+      )
+    )[1];
     assert.equal(third.cwd, fs.realpathSync(other));
     assert.deepEqual(third.args.slice(0, 2), ["--model", "fixture-model"]);
     assert.deepEqual(third.args.slice(-2), ["--", "Explain $(whoami)"]);
@@ -204,7 +217,7 @@ process.exit(3);`,
       }),
       /no longer exists/,
     );
-    process.env.PATH = oldPath;
+    process.env.PATH = path.join(temp, "no-installed-providers");
     await assert.rejects(
       call("terminal.open", {
         projectId: project.id,
@@ -241,7 +254,12 @@ process.exit(3);`,
       resumeSessionId: claude.session.id,
       idempotencyKey: "resume",
     });
-    const fourth = (await until(async () => lines(), (l) => l.length >= 4))[3];
+    const fourth = (
+      await until(
+        async () => lines(),
+        (l) => l.length >= 4,
+      )
+    )[3];
     assert.deepEqual(fourth.args.slice(0, 2), ["--resume", conversation]);
     assert.equal(resumed.session.conversationId, conversation);
     assert.equal(resumed.session.resumedFrom, claude.session.id);
@@ -262,7 +280,10 @@ process.exit(3);`,
       generation: 1,
       viewerId: "fixture",
     });
-    assert.equal((await call("project.hide", { projectId: project.id })).hidden, true);
+    assert.equal(
+      (await call("project.hide", { projectId: project.id })).hidden,
+      true,
+    );
     const again = await call("project.add", { path: repo });
     assert.equal(again.id, project.id);
     assert.equal(again.hidden, undefined);
@@ -367,7 +388,10 @@ const timer = setInterval(() => {
       key: "keepAwake",
       value: false,
     });
-    await assert.rejects(call("settings.read", { key: "other" }), /Unknown setting/);
+    await assert.rejects(
+      call("settings.read", { key: "other" }),
+      /Unknown setting/,
+    );
     await assert.rejects(
       call("settings.write", { key: "keepAwake", value: "yes" }),
       /Invalid setting value/,
@@ -377,16 +401,25 @@ const timer = setInterval(() => {
       /Unexpected settings field/,
     );
     await call("settings.write", { key: "keepAwake", value: true });
-    assert.equal((await call("settings.read", { key: "keepAwake" })).value, true);
+    assert.equal(
+      (await call("settings.read", { key: "keepAwake" })).value,
+      true,
+    );
     // Dictation model: an English model ID from the fixed catalog only.
-    assert.equal((await call("settings.read", { key: "dictationModel" })).value, "base.en");
+    assert.equal(
+      (await call("settings.read", { key: "dictationModel" })).value,
+      "base.en",
+    );
     for (const value of ["large-v3", "../models", "", 1])
       await assert.rejects(
         call("settings.write", { key: "dictationModel", value }),
         /Unknown dictation model|Invalid setting value/,
       );
     await call("settings.write", { key: "dictationModel", value: "tiny.en" });
-    assert.equal((await call("settings.read", { key: "dictationModel" })).value, "tiny.en");
+    assert.equal(
+      (await call("settings.read", { key: "dictationModel" })).value,
+      "tiny.en",
+    );
   } finally {
     process.env.PATH = oldPath;
     await core.close();
@@ -399,7 +432,8 @@ const timer = setInterval(() => {
   const reopened = await createCore({ dataDir, emit: () => {} });
   try {
     assert.equal(
-      ((await reopened.invoke("settings.read", { key: "keepAwake" })) as any).value,
+      ((await reopened.invoke("settings.read", { key: "keepAwake" })) as any)
+        .value,
       true,
     );
     assert.equal(

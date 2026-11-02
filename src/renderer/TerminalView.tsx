@@ -21,6 +21,8 @@ export function TerminalView({
   endedNotice = true,
   imagePasteRequest = 0,
   dictationToggle = 0,
+  handoffPaste,
+  onHandoffInserted,
 }: {
   session: Session;
   onViewer?: (id: string | null) => void;
@@ -30,6 +32,8 @@ export function TerminalView({
   imagePasteRequest?: number;
   /** Incremented by the host's microphone button (desktop owner only). */
   dictationToggle?: number;
+  handoffPaste?: { request: number; text: string };
+  onHandoffInserted?: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   // The attached viewer, or null; image paste rechecks it before typing.
@@ -55,7 +59,11 @@ export function TerminalView({
     }
     if (!viewer || !terminalRef.current) return;
     // The destination is fixed now: this session, generation and viewer.
-    const fixed = { sessionId: session.id, generation: session.generation, viewerId: viewer };
+    const fixed = {
+      sessionId: session.id,
+      generation: session.generation,
+      viewerId: viewer,
+    };
     void startDictation({
       ...fixed,
       current: () =>
@@ -68,7 +76,8 @@ export function TerminalView({
           : null,
       paste: (text) => {
         // Bracketed-paste aware, no Enter: text only reaches the prompt.
-        if (viewerRef.current === fixed.viewerId) terminalRef.current?.paste(text);
+        if (viewerRef.current === fixed.viewerId)
+          terminalRef.current?.paste(text);
       },
     });
   };
@@ -82,6 +91,24 @@ export function TerminalView({
   const [imageBusy, setImageBusy] = useState(false);
   const [imageError, setImageError] = useState("");
   const [imageNotice, setImageNotice] = useState("");
+  useEffect(() => {
+    if (!handoffPaste) return;
+    if (
+      !viewerRef.current ||
+      !terminalRef.current ||
+      sessionRef.current.status !== "running"
+    ) {
+      setImageNotice(
+        "The terminal disconnected. Reconnect and insert the instructions again; nothing was queued.",
+      );
+      return;
+    }
+    terminalRef.current.paste(handoffPaste.text);
+    terminalRef.current.focus();
+    onHandoffInserted?.();
+    // An explicit button press inserts once; reconnects never replay it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handoffPaste?.request]);
   const startImagePaste = useRef(async () => {});
   startImagePaste.current = async () => {
     const api = window.workspace.clipboardImage;
@@ -123,9 +150,12 @@ export function TerminalView({
     if (!api || !imagePaste) return;
     const { preview, viewerId } = imagePaste;
     // The same session, generation and attached viewer must still be on screen.
-    const current = () => viewerRef.current === viewerId && !!terminalRef.current;
+    const current = () =>
+      viewerRef.current === viewerId && !!terminalRef.current;
     if (!current()) {
-      setImageError("The terminal reconnected. Cancel and paste the image again.");
+      setImageError(
+        "The terminal reconnected. Cancel and paste the image again.",
+      );
       return;
     }
     setImageBusy(true);
@@ -163,6 +193,10 @@ export function TerminalView({
   const status = useRef(session.status);
   status.current = session.status;
   const [ready, setReady] = useState(false);
+  const finalCapture = useRef(() => {});
+  useEffect(() => {
+    if (session.status === "exited") finalCapture.current();
+  }, [session.status, session.transcript]);
   useEffect(
     () =>
       window.workspace.subscribe((event) => {
@@ -176,6 +210,9 @@ export function TerminalView({
     setReady(false);
     setError("");
     let disposed = false;
+    let ended = false;
+    let finalLoading = false;
+    let finalLoaded = false;
     let attached = false;
     let resyncing = false;
     let streamEpoch = 0;
@@ -238,7 +275,11 @@ export function TerminalView({
     const element = host.current;
     const onPaste = (event: ClipboardEvent) => {
       const data = event.clipboardData;
-      if (!window.workspace.clipboardImage || !data || data.getData("text/plain"))
+      if (
+        !window.workspace.clipboardImage ||
+        !data ||
+        data.getData("text/plain")
+      )
         return;
       if (
         !Array.from(data.items).some(
@@ -252,7 +293,7 @@ export function TerminalView({
     };
     element.addEventListener("paste", onPaste, true);
     const fail = (e: unknown) => {
-      if (!disposed) {
+      if (!disposed && !ended && sessionRef.current.status !== "exited") {
         clearInput();
         attached = false;
         viewerCallback.current?.(null);
@@ -312,7 +353,7 @@ export function TerminalView({
         "session.attach",
         { ...identity, cols: terminal.cols, rows: terminal.rows },
       );
-      if (disposed) {
+      if (disposed || ended || status.current === "exited") {
         await window.workspace.invoke("session.detach", identity);
         return;
       }
@@ -331,6 +372,39 @@ export function TerminalView({
         resize();
       });
     };
+    const finish = () => {
+      ended = true;
+      attached = false;
+      clearInput();
+      pending.length = 0;
+      setReady(false);
+      setError("");
+      terminal.options.disableStdin = true;
+      viewerCallback.current?.(null);
+      if (disposed || finalLoading || finalLoaded) return;
+      finalLoading = true;
+      streamEpoch++;
+      void window.workspace
+        .invoke<{ data: string }>("session.capture", {
+          sessionId: session.id,
+          generation: session.generation,
+        })
+        .then(async (result) => {
+          if (disposed) return;
+          await new Promise<void>((resolve) => terminal.write("", resolve));
+          if (disposed) return;
+          terminal.reset();
+          terminal.write(result.data.replace(/\r?\n/g, "\r\n"));
+          finalLoaded = true;
+        })
+        .catch(() => {
+          /* Retain already visible output for legacy sessions without a capture. */
+        })
+        .finally(() => {
+          finalLoading = false;
+        });
+    };
+    finalCapture.current = finish;
     const unsubscribe = window.workspace.subscribe((event) => {
       if (
         (event.type === "session.exit" && event.sessionId === session.id) ||
@@ -338,11 +412,7 @@ export function TerminalView({
           event.snapshot.sessions.find((s) => s.id === session.id)?.status ===
             "exited")
       ) {
-        attached = false;
-        clearInput();
-        setReady(false);
-        terminal.options.disableStdin = true;
-        viewerCallback.current?.(null);
+        finish();
       }
       if (event.type === "core.status" && event.status !== "ready") {
         attached = false;
@@ -354,7 +424,8 @@ export function TerminalView({
       if (
         (event.type === "terminal.data" || event.type === "terminal.resync") &&
         event.sessionId === session.id &&
-        event.viewerId === viewerId
+        event.viewerId === viewerId &&
+        !ended
       ) {
         if (event.type === "terminal.data") {
           if (attached) write(event.data, event.sequence);
@@ -423,17 +494,7 @@ export function TerminalView({
       void attach().catch(fail);
     else {
       terminal.options.disableStdin = true;
-      // An ended process may have saved its final screen; show it read-only.
-      if (status.current === "exited")
-        void window.workspace
-          .invoke<{ data: string }>("session.capture", {
-            sessionId: session.id,
-            generation: session.generation,
-          })
-          .then((result) => {
-            if (!disposed) terminal.write(result.data.replace(/\r?\n/g, "\r\n"));
-          })
-          .catch(() => {});
+      if (status.current === "exited") finish();
     }
     return () => {
       disposed = true;

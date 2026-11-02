@@ -39,3 +39,6 @@
 .modal .transcript-consent { flex-direction: row; align-items: flex-start; gap: 8px; font-weight: 500; }
 .redaction-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .redaction-list button { font: 11px var(--mono); border: 1px solid var(--line-strong); border-radius: 4px; padding: 1px 6px; color: var(--text-2); }
+
+.link-row .link-actions { grid-column: 2; grid-row: 1 / span 2; display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.link-row > strong { grid-column: 1; }

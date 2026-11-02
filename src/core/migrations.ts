@@ -108,6 +108,13 @@ export const MIGRATIONS: readonly Migration[] = [
     name: "roadmap_05_team_metadata",
     up: (db) => db.exec(TEAM_METADATA_SQL),
   },
+  {
+    version: 9,
+    name: "ux_canvas_and_session_lifecycle",
+    // Optional JSON fields only: note.archived, session.canvasHidden and an
+    // error activity state. Keep all existing records and backend identities.
+    up: () => {},
+  },
 ];
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
 MIGRATIONS.forEach((m, index) => {

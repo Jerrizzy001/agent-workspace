@@ -48,6 +48,24 @@ export function sessionState(session: Session): {
           ? "Shell is running."
           : "Running. This CLI does not report when it needs you.",
     };
+  if (session.activity === "error")
+    return {
+      label: "Turn failed",
+      tone: "needs",
+      detail:
+        "The provider could not complete this turn. Read the terminal error, then retry or choose an available model.",
+    };
+  if (
+    session.activity === "stale" ||
+    (session.activity === "running" &&
+      (!session.activityAt || Date.now() - session.activityAt > 20 * 60_000))
+  )
+    return {
+      label: "Check terminal",
+      tone: "unknown",
+      detail:
+        "No recent activity report. Inspect the terminal before taking action.",
+    };
   if (session.activity === "needs")
     return {
       label: "Needs you",
@@ -58,11 +76,15 @@ export function sessionState(session: Session): {
     return { label: "Working", tone: "working", detail: "Working on a turn." };
   if (session.activity === "done")
     return {
-      label: "Done",
+      label: "Ready",
       tone: "done",
       detail: "Finished its turn. Waiting for your next message.",
     };
-  return { label: "Ready", tone: "idle", detail: "Waiting for your first message." };
+  return {
+    label: "Ready",
+    tone: "idle",
+    detail: "Waiting for your first message.",
+  };
 }
 
 /** Folder-relative location of a session, e.g. "src/lib" or "/" for the folder itself. */
@@ -93,7 +115,7 @@ export function orderSessions(sessions: Session[]) {
   const rank = (s: Session) =>
     s.status === "exited"
       ? 3
-      : s.activity === "needs"
+      : s.activity === "needs" || s.activity === "error"
         ? 0
         : s.status === "unknown"
           ? 2
@@ -104,8 +126,7 @@ export function orderSessions(sessions: Session[]) {
 }
 
 export function capability(capabilities: Capability[], provider: Provider) {
-  if (provider === "shell")
-    return capabilities.find((c) => c.name === "tmux");
+  if (provider === "shell") return capabilities.find((c) => c.name === "tmux");
   return capabilities.find((c) => c.name === provider);
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "agent-workspace",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "A desktop and secure remote browser workspace for coding agents",
   "main": "dist/desktop/main.cjs",
@@ -39,7 +39,8 @@
     "verify:remote-provider": "node scripts/verify-remote-provider.mjs",
     "verify:mobile-webkit": "node scripts/verify-mobile-webkit.mjs",
     "start:team": "node dist/team/server.mjs",
-    "verify:team": "node scripts/verify-team.mjs"
+    "verify:team": "node scripts/verify-team.mjs",
+    "verify:ux": "node scripts/verify-ux-repairs.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "4.7.0",

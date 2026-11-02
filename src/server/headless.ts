@@ -1,3 +1,4 @@
+import { isDirectEntry } from "../shared/entrypoint.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -118,10 +119,7 @@ export async function runHeadless(args = process.argv.slice(2)) {
     throw error;
   }
 }
-if (
-  process.argv[1] &&
-  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
+if (isDirectEntry(import.meta.url)) {
   void runHeadless().catch((error) => {
     process.stderr.write(
       "Agent Workspace host: " + String(error.message).slice(0, 512) + "\n",

@@ -11,7 +11,7 @@
   --line-strong: #303a4a;
   --text: #e7ebf3;
   --text-2: #a9b2c3;
-  --text-3: #6f7a8e;
+  --text-3: #9aa6ba;
   --accent: #8b9dff;
   --accent-strong: #6f84fb;
   --accent-soft: rgba(139, 157, 255, 0.14);
@@ -27,10 +27,10 @@
   --radius: 10px;
   --radius-sm: 7px;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
-  --font: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto,
-    sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas,
-    monospace;
+  --font:
+    -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+  --mono:
+    "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   font-family: var(--font);
   font-size: 13px;
   line-height: 1.45;
@@ -795,7 +795,8 @@ kbd {
 }
 .notice-error {
   border-color: rgba(242, 119, 127, 0.3);
-  background: linear-gradient(0deg, var(--danger-soft), var(--danger-soft)),
+  background:
+    linear-gradient(0deg, var(--danger-soft), var(--danger-soft)),
     var(--surface);
 }
 .notice > div:first-child {
@@ -2009,7 +2010,9 @@ kbd {
   min-height: 0;
   display: grid;
   grid-auto-flow: column;
-  grid-template-columns: repeat(var(--lane-count, 4), minmax(230px, 1fr)) max-content;
+  grid-template-columns:
+    repeat(var(--lane-count, 4), minmax(230px, 1fr))
+    max-content;
   gap: 12px;
   padding: 4px 22px 18px;
   overflow-x: auto;
@@ -2024,7 +2027,9 @@ kbd {
   border: 1px solid var(--line);
   min-height: 0;
   overflow-y: auto;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
 }
 .lane.drop-target {
   border-color: var(--accent);
@@ -2131,7 +2136,9 @@ kbd {
 .session-card.tone-needs {
   border-color: rgba(245, 184, 74, 0.55);
   background: color-mix(in srgb, var(--needs) 7%, var(--surface-2));
-  box-shadow: inset 3px 0 0 var(--needs), 0 0 0 1px rgba(245, 184, 74, 0.18);
+  box-shadow:
+    inset 3px 0 0 var(--needs),
+    0 0 0 1px rgba(245, 184, 74, 0.18);
 }
 .session-card.tone-working {
   box-shadow: inset 3px 0 0 var(--working);
@@ -2457,13 +2464,15 @@ kbd {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: 10vh 16px 16px;
+  padding: 24px 16px;
+  overflow-y: auto;
   background: rgba(5, 7, 10, 0.62);
   backdrop-filter: blur(3px);
 }
 .modal {
   width: min(520px, 100%);
-  max-height: calc(100dvh - 12vh - 16px);
+  max-height: calc(100dvh - 48px);
+  flex-shrink: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -2475,6 +2484,7 @@ kbd {
   box-shadow: var(--shadow);
 }
 .modal header {
+  flex-shrink: 0;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -2500,6 +2510,7 @@ kbd {
   min-height: 92px;
 }
 .modal footer {
+  flex-shrink: 0;
   display: flex;
   justify-content: flex-end;
   gap: 8px;
@@ -3470,4 +3481,323 @@ kbd {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+/* Audit repairs: focused editing and consistent dialog controls. */
+.editor-expanded {
+  position: fixed;
+  inset: 78px 24px 24px 288px;
+  z-index: 40;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.editor-overlay header small {
+  color: var(--text-2);
+}
+.modal > header {
+  position: sticky;
+  top: -20px;
+  z-index: 2;
+  background: var(--surface);
+  padding: 8px 0;
+}
+.modal > footer {
+  position: sticky;
+  bottom: -20px;
+  background: var(--surface);
+  padding: 12px 0;
+}
+@media (max-width: 960px) {
+  .editor-expanded {
+    inset: 64px 12px 72px;
+  }
+}
+
+/* Canvas actions remain in screen space while terminal cards pan and zoom. */
+.canvas-actions {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  right: 12px;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.canvas-actions label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.canvas-history {
+  top: 78px;
+}
+.canvas-card-toolbar {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.canvas-card-toolbar button {
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  padding: 5px 9px;
+  min-height: 30px;
+  background: var(--surface);
+}
+.canvas-card-menu {
+  position: absolute;
+  top: 44px;
+  right: 12px;
+  width: 230px;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
+}
+.canvas-card-menu span {
+  width: 100%;
+}
+.canvas-card-toolbar form {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.canvas-drag-handle {
+  cursor: grab;
+}
+.canvas-card .react-flow__handle {
+  width: 16px;
+  height: 16px;
+  background: var(--accent);
+  border: 2px solid var(--text);
+}
+.canvas-archived {
+  position: absolute;
+  top: 114px;
+  right: 16px;
+  z-index: 8;
+  max-height: 60%;
+  overflow: auto;
+  width: 290px;
+  display: grid;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: 16px;
+  border-radius: 8px;
+}
+.canvas-archived button {
+  text-align: left;
+  padding: 8px;
+  background: var(--surface-2);
+}
+.connection-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 30px;
+  color: var(--text-2);
+  padding-left: 24px;
+}
+.connection-success,
+.setup-guide {
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  background: var(--surface-2);
+}
+.connection-success textarea {
+  width: 100%;
+  min-height: 90px;
+}
+.permission-presets,
+.worktree-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.settings-panel .foot-button {
+  width: 100%;
+  padding: 12px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.browser-location {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.browser-location label {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-2);
+}
+.browser-location input {
+  width: 100%;
+  margin-top: 5px;
+}
+.browser-card {
+  min-height: 0;
+}
+.browser-body {
+  min-height: 0;
+}
+.attach-session {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 15px;
+}
+.attach-session label {
+  display: grid;
+  gap: 8px;
+}
+.session-recovery {
+  color: var(--needs);
+  font-size: 12px;
+  max-width: 440px;
+}
+.remote-access fieldset {
+  min-width: 0;
+}
+.remote-access .setup-guide ol,
+.setup-guide ol {
+  padding-left: 20px;
+}
+.setup-guide code {
+  overflow-wrap: anywhere;
+}
+
+.readable-transcript {
+  max-height: 250px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  border-radius: 6px;
+  padding: 12px;
+}
+.readable-transcript pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+  font: 13px/1.6 var(--font);
+}
+
+.session-more {
+  position: relative;
+}
+.session-more summary {
+  cursor: pointer;
+  padding: 8px;
+  color: var(--text-2);
+}
+.session-more-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 12;
+  width: 245px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.board-drag-handle {
+  cursor: grab;
+  float: right;
+  font-size: 11px;
+  padding: 4px 6px;
+  color: var(--text-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+}
+
+.handoff-draft {
+  padding: 14px 18px;
+  border: 1px solid var(--accent);
+  background: var(--surface-2);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.handoff-draft p,
+.handoff-draft pre {
+  width: 100%;
+  margin: 0;
+}
+.handoff-draft pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.canvas-flow {
+  position: absolute;
+  inset: 112px 0 0;
+}
+.modal > header {
+  top: 0;
+  box-shadow: 0 -24px 0 0 var(--surface);
+}
+.modal > footer {
+  bottom: 0;
+  box-shadow: 0 24px 0 0 var(--surface);
+}
+.modal.remote-access input[type="radio"],
+.modal.remote-access input[type="checkbox"] {
+  width: auto;
+  flex: none;
+  margin: 0;
+}
+.modal.remote-access .remote-checkbox {
+  justify-content: flex-start;
+  font-weight: 400;
+  line-height: 1.5;
+}
+@media (max-width: 960px) {
+  .canvas-flow {
+    top: 140px;
+  }
+  .canvas-history {
+    top: 108px;
+  }
+}
+
+.snapshot-edge-label {
+  position: absolute;
+  pointer-events: all;
+  padding: 7px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 14px;
+  box-shadow: 0 2px 8px #0005;
+}
+.canvas-card > header {
+  font-size: 14px;
 }

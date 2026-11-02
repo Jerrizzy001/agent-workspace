@@ -41,6 +41,10 @@ type Props = {
   directory?: string;
   onDirectoryChange?: (directory: string) => void;
   onSummary?: (summary: ReviewSummary) => void;
+  onOpenWorktree?: (
+    tree: Worktree,
+    provider?: "claude" | "codex" | "shell",
+  ) => void;
 };
 /** Explains why Git review is unavailable for a folder, and what would enable it. */
 function gitProblem(reason: unknown) {
@@ -62,6 +66,7 @@ export function ReviewPanel({
   directory: controlledDirectory,
   onDirectoryChange,
   onSummary,
+  onOpenWorktree,
 }: Props) {
   const request = useRef(0);
   const refreshTicket = useRef(0);
@@ -79,6 +84,7 @@ export function ReviewPanel({
   summary.current = onSummary;
   const [selected, setSelected] = useState<FileContent | null>(null);
   const [content, setContent] = useState("");
+  const [expanded, setExpanded] = useState(false);
   const [diff, setDiff] = useState("");
   const [message, setMessage] = useState("");
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
@@ -290,7 +296,11 @@ export function ReviewPanel({
             aria-pressed={tab === t}
             onClick={() => setTab(t)}
           >
-            {t === "files" ? "Files" : t === "changes" ? "Changes" : "Worktrees"}
+            {t === "files"
+              ? "Files"
+              : t === "changes"
+                ? "Changes"
+                : "Worktrees"}
             {t === "changes" && status.files.length ? (
               <span className="tab-count">{status.files.length}</span>
             ) : null}
@@ -456,12 +466,41 @@ export function ReviewPanel({
       ) : null}
       {tab === "worktrees" ? (
         <>
+          <p className="files-hint">
+            Worktrees give each agent an isolated copy of this repository.
+            Choose where to open files or start an agent below.
+          </p>
           <div className="worktree-list">
             {worktrees.map((tree) => (
               <div className="worktree-card" key={tree.path}>
                 <strong>{tree.branch || "Detached HEAD"}</strong>
                 <span>{tree.path}</span>
                 <code>{tree.head.slice(0, 8)}</code>
+                {onOpenWorktree ? (
+                  <div className="worktree-actions">
+                    <button
+                      className="button small"
+                      onClick={() => onOpenWorktree(tree)}
+                    >
+                      Open files here
+                    </button>
+                    {(["claude", "codex", "shell"] as const).map((p) => (
+                      <button
+                        className="button small"
+                        key={p}
+                        onClick={() => onOpenWorktree(tree, p)}
+                      >
+                        Open{" "}
+                        {p === "claude"
+                          ? "Claude"
+                          : p === "codex"
+                            ? "Codex"
+                            : "Shell"}{" "}
+                        here
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
@@ -499,7 +538,9 @@ export function ReviewPanel({
             if (
               message.trim() &&
               message !== draft.message &&
-              !confirm("Replace the commit message you typed with the AI draft?")
+              !confirm(
+                "Replace the commit message you typed with the AI draft?",
+              )
             )
               return;
             setMessage(draft.message);
@@ -510,10 +551,26 @@ export function ReviewPanel({
         />
       ) : null}
       {selected || diff ? (
-        <div className="editor-overlay">
+        <div
+          className={"editor-overlay" + (expanded ? " editor-expanded" : "")}
+        >
           <header>
-            <span>{selected?.path || "Selected diff"}</span>
+            <span>
+              {selected?.path || "Selected diff"}{" "}
+              {selected ? (
+                <small role="status">
+                  {content === selected.content ? " · Saved" : " · Unsaved"}
+                </small>
+              ) : null}
+            </span>
             <div>
+              <button
+                className="button small"
+                onClick={() => setExpanded((v) => !v)}
+                aria-label={expanded ? "Restore editor panel" : "Expand editor"}
+              >
+                {expanded ? "Restore" : "Expand"}
+              </button>
               {selected ? (
                 <button
                   className="secondary"
@@ -557,6 +614,9 @@ export function ReviewPanel({
           </header>
           <Suspense fallback={<p className="muted">Loading editor…</p>}>
             <Editor
+              onSave={() => {
+                if (selected && content !== selected.content) void save();
+              }}
               key={selected ? selected.path + selected.hash : "diff"}
               content={selected ? content : diff}
               path={selected?.path || "changes.diff"}

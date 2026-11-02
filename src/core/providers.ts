@@ -54,7 +54,11 @@ export function launchArguments(
   const conversation =
     provider === "claude" && options.conversation
       ? options.conversation.fork
-        ? ["--resume", conversationIdText(options.conversation.id), "--fork-session"]
+        ? [
+            "--resume",
+            conversationIdText(options.conversation.id),
+            "--fork-session",
+          ]
         : options.conversation.resume
           ? ["--resume", options.conversation.id]
           : ["--session-id", options.conversation.id]
@@ -103,9 +107,12 @@ const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
  * Each report also stamps `@aw_activity_at` (epoch seconds) so a working state can expire.
  */
 export function claudeActivitySettings(tmux: string): string {
-  const set = (state: "running" | "needs" | "done") =>
+  const set = (state: "running" | "needs" | "done" | "error") =>
     `${quote(tmux)} set-option -p @aw_activity ${state} \\; set-option -p @aw_activity_at "$(date +%s)" >/dev/null 2>&1 || true`;
-  const hook = (state: "running" | "needs" | "done", matcher?: string) => [
+  const hook = (
+    state: "running" | "needs" | "done" | "error",
+    matcher?: string,
+  ) => [
     {
       ...(matcher ? { matcher } : {}),
       hooks: [{ type: "command", command: set(state) }],
@@ -125,8 +132,12 @@ export function claudeActivitySettings(tmux: string): string {
       SessionStart: [{ hooks: [{ type: "command", command: start }] }],
       UserPromptSubmit: hook("running"),
       PostToolUse: hook("running", "*"),
-      Notification: hook("needs", "permission_prompt|elicitation_dialog"),
       Stop: hook("done"),
+      StopFailure: hook("error"),
+      Notification: hook(
+        "needs",
+        "permission_prompt|elicitation_dialog|idle_prompt",
+      ),
     },
   });
 }

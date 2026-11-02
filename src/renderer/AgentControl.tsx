@@ -11,14 +11,31 @@ import {
 import "./agent-control.css";
 
 const VERB_LABELS: Record<ControllerVerb, { label: string; detail: string }> = {
-  status: { label: "Read status", detail: "awctl status: this folder's sessions, notes and canvas layout" },
-  "note.create": { label: "Create notes", detail: "awctl note create (plain text, at most 50)" },
-  "note.update": { label: "Edit notes", detail: "awctl note update; refused if the note changed since the agent read it" },
-  "canvas.place": { label: "Move canvas cards", detail: "awctl canvas place; refused if the layout changed since the agent read it" },
-  open: { label: "Open sessions", detail: "awctl open: Claude, Codex or a shell here, with no first message and no control of their own" },
+  status: {
+    label: "Read status",
+    detail: "Read this folder's sessions, notes and canvas positions",
+  },
+  "note.create": {
+    label: "Create notes",
+    detail: "Add plain-text notes, at most 50",
+  },
+  "note.update": {
+    label: "Edit notes",
+    detail: "Edit a note only if it has not changed since the agent read it",
+  },
+  "canvas.place": {
+    label: "Move canvas cards",
+    detail: "Reposition cards without overwriting newer changes",
+  },
+  open: {
+    label: "Open sessions",
+    detail:
+      "Open Claude, Codex or a shell here without submitting a prompt or granting the new session control",
+  },
   "transcript.read": {
     label: "Read linked context",
-    detail: "awctl transcript read: only transcripts you link to this session with Link context, until you revoke them",
+    detail:
+      "Read only the conversation snapshots you explicitly connect to this session",
   },
 };
 const EXPIRY = [15, 30, 60, 120, 240];
@@ -124,7 +141,12 @@ function AgentControlDialog({
         }
       }}
     >
-      <section className="modal agent-control" role="dialog" aria-modal="true" aria-labelledby="agent-control-title">
+      <section
+        className="modal agent-control"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="agent-control-title"
+      >
         <header>
           <div>
             <div className="eyebrow">This session</div>
@@ -135,15 +157,20 @@ function AgentControlDialog({
           </button>
         </header>
         <p className="muted">
-          Lets the program in this terminal run <code>awctl</code> to read this folder's canvas and make the changes
-          you allow below. It cannot type into terminals, end sessions, change files or Git, or grant itself more.
-          Other programs running as you could also read the grant while it lasts.
+          Lets the program in this terminal run <code>awctl</code> to read this
+          folder's canvas and make the changes you allow below. It cannot type
+          into terminals, end sessions, change files or Git, or grant itself
+          more. Other programs running as you could also read the grant while it
+          lasts.
         </p>
         {grant ? (
           <div className="agent-control-grant" role="status">
             <strong>On until {time(grant.expiresAt)}</strong>
             <span className="muted">
-              Allowed: {grant.verbs.map((v) => VERB_LABELS[v].label.toLowerCase()).join(", ")}
+              Allowed:{" "}
+              {grant.verbs
+                .map((v) => VERB_LABELS[v].label.toLowerCase())
+                .join(", ")}
               {grant.verbs.includes("open")
                 ? ` · ${grant.openSessions} of ${grant.openLimit} opened sessions running`
                 : ""}
@@ -152,7 +179,9 @@ function AgentControlDialog({
             <button
               className="button danger small"
               disabled={busy}
-              onClick={() => void act(() => api.revoke({ sessionId: session.id }))}
+              onClick={() =>
+                void act(() => api.revoke({ sessionId: session.id }))
+              }
             >
               Revoke
             </button>
@@ -161,7 +190,34 @@ function AgentControlDialog({
           <p className="agent-control-unavailable">{state.unavailableReason}</p>
         ) : (
           <fieldset className="agent-control-form" disabled={busy || !state}>
-            <legend>Allow</legend>
+            <legend>Choose what this agent can do</legend>
+            <div className="permission-presets">
+              <button
+                type="button"
+                className="button small"
+                onClick={() => setVerbs(["transcript.read"])}
+              >
+                Read shared context only
+              </button>
+              <button
+                type="button"
+                className="button small"
+                onClick={() =>
+                  setVerbs([
+                    "status",
+                    "note.create",
+                    "note.update",
+                    "canvas.place",
+                  ])
+                }
+              >
+                Organize this canvas
+              </button>
+            </div>
+            <p>
+              Permissions apply only to this session and folder. Review the
+              selection below before granting.
+            </p>
             {CONTROLLER_VERBS.map((verb) => (
               <label key={verb} className="agent-control-verb">
                 <input
@@ -169,7 +225,9 @@ function AgentControlDialog({
                   checked={verbs.includes(verb)}
                   onChange={(e) =>
                     setVerbs((current) =>
-                      e.target.checked ? [...current, verb] : current.filter((v) => v !== verb),
+                      e.target.checked
+                        ? [...current, verb]
+                        : current.filter((v) => v !== verb),
                     )
                   }
                 />
@@ -182,10 +240,15 @@ function AgentControlDialog({
             <div className="agent-control-limits">
               <label>
                 Expires after
-                <select value={minutes} onChange={(e) => setMinutes(Number(e.target.value))}>
+                <select
+                  value={minutes}
+                  onChange={(e) => setMinutes(Number(e.target.value))}
+                >
                   {EXPIRY.map((m) => (
                     <option key={m} value={m}>
-                      {m < 60 ? `${m} minutes` : `${m / 60} hour${m > 60 ? "s" : ""}`}
+                      {m < 60
+                        ? `${m} minutes`
+                        : `${m / 60} hour${m > 60 ? "s" : ""}`}
                     </option>
                   ))}
                 </select>
@@ -193,7 +256,10 @@ function AgentControlDialog({
               {verbs.includes("open") ? (
                 <label>
                   Opened sessions running at once
-                  <select value={openLimit} onChange={(e) => setOpenLimit(Number(e.target.value))}>
+                  <select
+                    value={openLimit}
+                    onChange={(e) => setOpenLimit(Number(e.target.value))}
+                  >
                     {[1, 2, 3, 4, 5].map((n) => (
                       <option key={n} value={n}>
                         {n}
@@ -224,7 +290,10 @@ function AgentControlDialog({
             </footer>
           </fieldset>
         )}
-        <section className="agent-control-audit" aria-label="Recent agent actions">
+        <section
+          className="agent-control-audit"
+          aria-label="Recent agent actions"
+        >
           <h3>Recent actions</h3>
           {state?.audit.length ? (
             <ol>

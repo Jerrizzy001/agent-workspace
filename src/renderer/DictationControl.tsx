@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Copy, Download, Mic, Square, X } from "lucide-react";
 import {
@@ -33,7 +33,8 @@ export function DictationButton({
   compact?: boolean;
 }) {
   const state = useDictation();
-  const on = state.phase !== "idle" && !!viewerId && state.viewerId === viewerId;
+  const on =
+    state.phase !== "idle" && !!viewerId && state.viewerId === viewerId;
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!on) return;
@@ -43,7 +44,11 @@ export function DictationButton({
   if (!on)
     return (
       <button
-        className={compact ? "icon-button dictation-toggle" : "button ghost small dictation-toggle"}
+        className={
+          compact
+            ? "icon-button dictation-toggle"
+            : "button ghost small dictation-toggle"
+        }
         title={`Dictate into this terminal: words are typed as you pause, never submitted (${dictationShortcutLabel})`}
         aria-label="Dictate"
         aria-pressed={false}
@@ -56,7 +61,11 @@ export function DictationButton({
       </button>
     );
   const label =
-    state.phase === "starting" ? "Starting…" : state.phase === "finishing" ? "Finishing…" : "Listening";
+    state.phase === "starting"
+      ? "Starting…"
+      : state.phase === "finishing"
+        ? "Finishing…"
+        : "Listening";
   return (
     <span
       className={"dictation-indicator" + (compact ? " compact" : "")}
@@ -103,7 +112,11 @@ export function DictationNotices() {
             <strong>Dictation</strong>
             <p>{state.error}</p>
           </div>
-          <button className="icon-button" aria-label="Dismiss dictation message" onClick={clearDictationError}>
+          <button
+            className="icon-button"
+            aria-label="Dismiss dictation message"
+            onClick={clearDictationError}
+          >
             <X size={13} />
           </button>
         </div>
@@ -118,12 +131,18 @@ export function DictationNotices() {
           <div className="dictation-notice-actions">
             <button
               className="button ghost small"
-              onClick={() => void navigator.clipboard?.writeText(item.text).catch(() => {})}
+              onClick={() =>
+                void navigator.clipboard?.writeText(item.text).catch(() => {})
+              }
             >
               <Copy size={12} />
               Copy
             </button>
-            <button className="icon-button" aria-label="Dismiss untyped text" onClick={() => dismissLeftover(item.id)}>
+            <button
+              className="icon-button"
+              aria-label="Dismiss untyped text"
+              onClick={() => dismissLeftover(item.id)}
+            >
               <X size={13} />
             </button>
           </div>
@@ -137,20 +156,99 @@ export function DictationNotices() {
 /** Voice dictation settings: model choice, consented download, privacy. */
 export function DictationSettings() {
   const state = useDictation();
+  const [micTest, setMicTest] = useState("");
+  const [level, setLevel] = useState(0);
+  const micCleanup = useRef<(() => void) | null>(null);
+  const micTicket = useRef(0);
+  const stopMic = () => {
+    micTicket.current++;
+    micCleanup.current?.();
+    micCleanup.current = null;
+    setLevel(0);
+  };
+  useEffect(() => {
+    if (!state.settingsOpen) stopMic();
+    return () => {
+      micTicket.current++;
+      micCleanup.current?.();
+      micCleanup.current = null;
+    };
+  }, [state.settingsOpen]);
+  async function testMic() {
+    stopMic();
+    const ticket = micTicket.current;
+    setMicTest("Requesting microphone access…");
+    let stream: MediaStream | undefined;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (ticket !== micTicket.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      const ctx = new AudioContext();
+      const source = ctx.createMediaStreamSource(stream);
+      const meter = ctx.createAnalyser();
+      source.connect(meter);
+      meter.fftSize = 256;
+      const data = new Uint8Array(meter.fftSize);
+      let frame = 0;
+      const read = () => {
+        meter.getByteTimeDomainData(data);
+        const volume = Math.min(
+          100,
+          Math.round(
+            Math.sqrt(
+              data.reduce((sum, x) => sum + ((x - 128) / 128) ** 2, 0) /
+                data.length,
+            ) * 400,
+          ),
+        );
+        setLevel(volume);
+        frame = requestAnimationFrame(read);
+      };
+      const timer = setTimeout(() => {
+        stopMic();
+        setMicTest("Microphone test finished. No audio was saved or sent.");
+      }, 10000);
+      micCleanup.current = () => {
+        clearTimeout(timer);
+        cancelAnimationFrame(frame);
+        stream!.getTracks().forEach((t) => t.stop());
+        void ctx.close();
+      };
+      setMicTest(
+        "Listening for 10 seconds. Speak and watch the input level; no text is inserted.",
+      );
+      read();
+    } catch {
+      stream?.getTracks().forEach((t) => t.stop());
+      if (ticket === micTicket.current)
+        setMicTest(
+          "Microphone unavailable. Check system microphone permission and your input device, then try again.",
+        );
+    }
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
-    if (state.settingsOpen) void refreshDictationStatus().catch((e) => setError(dictationErrorText(e)));
+    if (state.settingsOpen)
+      void refreshDictationStatus().catch((e) =>
+        setError(dictationErrorText(e)),
+      );
   }, [state.settingsOpen]);
   if (!state.settingsOpen) return null;
   const status = state.status;
   const selected = status?.models.find((m) => m.id === status.selected);
   const download = status?.download;
-  const downloading = !!download && !["done", "failed"].includes(download.phase);
+  const downloading =
+    !!download && !["done", "failed"].includes(download.phase);
   const choose = async (modelId: string) => {
     setError("");
     try {
-      await window.workspace.invoke("settings.write", { key: "dictationModel", value: modelId });
+      await window.workspace.invoke("settings.write", {
+        key: "dictationModel",
+        value: modelId,
+      });
       await refreshDictationStatus();
     } catch (e) {
       setError(dictationErrorText(e));
@@ -169,16 +267,31 @@ export function DictationSettings() {
       setBusy(false);
     }
   };
-  const percent = download && download.total ? Math.min(100, Math.round((download.received / download.total) * 100)) : 0;
+  const percent =
+    download && download.total
+      ? Math.min(100, Math.round((download.received / download.total) * 100))
+      : 0;
   return createPortal(
-    <div className="modal-backdrop" onKeyDown={(e) => e.key === "Escape" && closeDictationSettings()}>
-      <section className="modal dictation-settings" role="dialog" aria-modal="true" aria-labelledby="dictation-title">
+    <div
+      className="modal-backdrop"
+      onKeyDown={(e) => e.key === "Escape" && closeDictationSettings()}
+    >
+      <section
+        className="modal dictation-settings"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dictation-title"
+      >
         <header>
           <div>
             <div className="eyebrow">This computer</div>
             <h2 id="dictation-title">Voice dictation</h2>
           </div>
-          <button className="icon-button" onClick={closeDictationSettings} aria-label="Close">
+          <button
+            className="icon-button"
+            onClick={closeDictationSettings}
+            aria-label="Close"
+          >
             <X size={18} />
           </button>
         </header>
@@ -186,13 +299,50 @@ export function DictationSettings() {
           <p className="dictation-callout">{state.settingsNotice}</p>
         ) : null}
         <p className="muted">
-          Press <kbd>{dictationShortcutLabel}</kbd> or the microphone button on a terminal and speak English.
-          Each phrase is typed into that terminal when you pause. Nothing is submitted: press Enter yourself.
+          Press <kbd>{dictationShortcutLabel}</kbd> or the microphone button on
+          a terminal and speak English. Each phrase is typed into that terminal
+          when you pause. Nothing is submitted: press Enter yourself.
         </p>
         <p className="muted">
-          Audio stays in memory on this computer and is transcribed here; it is never saved or uploaded. After
-          you press Enter, the agent's CLI may send the text to its provider.
+          Audio stays in memory on this computer and is transcribed here; it is
+          never saved or uploaded. After you press Enter, the agent's CLI may
+          send the text to its provider.
         </p>
+        <section className="setup-guide">
+          <strong>
+            {selected?.installed
+              ? "Speech model ready · English"
+              : "Download a speech model to begin"}
+          </strong>
+          <p>Check your microphone here without typing into a terminal.</p>
+          <button
+            className="button"
+            disabled={state.phase !== "idle"}
+            onClick={() => void testMic()}
+          >
+            Test microphone
+          </button>
+          {micTest ? (
+            <div role="status">
+              <p>{micTest}</p>
+              <meter
+                aria-label="Microphone input level"
+                min={0}
+                max={100}
+                value={level}
+              />
+              <button
+                className="button small"
+                onClick={() => {
+                  stopMic();
+                  setMicTest("Microphone test stopped.");
+                }}
+              >
+                Stop test
+              </button>
+            </div>
+          ) : null}
+        </section>
         <fieldset className="dictation-models" disabled={downloading}>
           <legend>English speech model</legend>
           {status?.models.map((model) => (
@@ -206,10 +356,13 @@ export function DictationSettings() {
               <span>
                 <strong>
                   {model.label}
-                  {model.installed ? <span className="dictation-installed">Downloaded</span> : null}
+                  {model.installed ? (
+                    <span className="dictation-installed">Downloaded</span>
+                  ) : null}
                 </strong>
                 <span className="muted">
-                  {model.description} Download {megabytes(model.downloadBytes)}, {megabytes(model.diskBytes)} on disk.
+                  {model.description} Download {megabytes(model.downloadBytes)},{" "}
+                  {megabytes(model.diskBytes)} on disk.
                 </span>
               </span>
             </label>
@@ -218,27 +371,41 @@ export function DictationSettings() {
         {selected && !selected.installed ? (
           <div className="dictation-consent">
             <p className="muted">
-              The model is not bundled. Downloading fetches {megabytes(selected.downloadBytes)} from{" "}
-              <code>{selected.source}</code>, checks it against a pinned SHA-256 and keeps only the files speech
-              recognition needs in this app's data folder.
+              The model is not bundled. Downloading fetches{" "}
+              {megabytes(selected.downloadBytes)} from{" "}
+              <code>{selected.source}</code>, checks it against a pinned SHA-256
+              and keeps only the files speech recognition needs in this app's
+              data folder.
             </p>
             <p className="muted">
               {selected.provenance} License: {selected.license}.
             </p>
-            <button className="button primary" disabled={busy || downloading} onClick={() => void fetchModel()}>
+            <button
+              className="button primary"
+              disabled={busy || downloading}
+              onClick={() => void fetchModel()}
+            >
               <Download size={14} />
-              Download English speech model (~{megabytes(selected.downloadBytes)})
+              Download English speech model (~
+              {megabytes(selected.downloadBytes)})
             </button>
           </div>
         ) : selected ? (
-          <p className="muted dictation-ready">
-            Ready. {selected.provenance} License: {selected.license}.
-          </p>
+          <details className="dictation-ready">
+            <summary>Model source and licenses</summary>
+            <p>
+              {selected.provenance} License: {selected.license}.
+            </p>
+          </details>
         ) : null}
-        {download && download.modelId === selected?.id && download.phase !== "done" ? (
+        {download &&
+        download.modelId === selected?.id &&
+        download.phase !== "done" ? (
           <div className="dictation-progress" role="status">
             {download.phase === "failed" ? (
-              <span className="inline-error">{download.error || "The download failed."}</span>
+              <span className="inline-error">
+                {download.error || "The download failed."}
+              </span>
             ) : (
               <>
                 <span>
@@ -257,7 +424,9 @@ export function DictationSettings() {
             )}
           </div>
         ) : null}
-        {status?.engineError ? <div className="inline-error">{status.engineError}</div> : null}
+        {status?.engineError ? (
+          <div className="inline-error">{status.engineError}</div>
+        ) : null}
         {error ? <div className="inline-error">{error}</div> : null}
         <footer>
           <button className="button ghost" onClick={closeDictationSettings}>

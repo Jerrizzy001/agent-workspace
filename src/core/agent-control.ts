@@ -177,7 +177,8 @@ export function createAgentControl(host: ControllerHost) {
   }
   function forget(grant: Grant, reason: string) {
     grants.delete(grant.tokenHash);
-    if (bySession.get(grant.sessionId) === grant) bySession.delete(grant.sessionId);
+    if (bySession.get(grant.sessionId) === grant)
+      bySession.delete(grant.sessionId);
     ended.set(grant.tokenHash, reason);
     if (ended.size > 1000) ended.delete(ended.keys().next().value!);
     try {
@@ -248,18 +249,29 @@ export function createAgentControl(host: ControllerHost) {
     const v = value as Record<string, unknown>;
     if (Object.keys(v).some((k) => !allowed.includes(k)))
       throw new Error("Unexpected agent control field");
-    if (typeof v.sessionId !== "string" || !v.sessionId || v.sessionId.length > 128)
+    if (
+      typeof v.sessionId !== "string" ||
+      !v.sessionId ||
+      v.sessionId.length > 128
+    )
       throw new Error("Session required");
     return v;
   }
-  const bounded = (v: unknown, fallback: number, min: number, max: number, label: string) => {
+  const bounded = (
+    v: unknown,
+    fallback: number,
+    min: number,
+    max: number,
+    label: string,
+  ) => {
     if (v === undefined) return fallback;
     if (!Number.isSafeInteger(v) || (v as number) < min || (v as number) > max)
       throw new Error(`Invalid ${label}`);
     return v as number;
   };
   async function ensureListening() {
-    if (!supported) throw new Error("Agent control is not available on this platform");
+    if (!supported)
+      throw new Error("Agent control is not available on this platform");
     if (server) return listening;
     server = net.createServer({ allowHalfOpen: false }, serve);
     server.maxConnections = 32;
@@ -283,7 +295,10 @@ export function createAgentControl(host: ControllerHost) {
       throw error;
     }
   }
-  async function owner(action: unknown, payload: unknown): Promise<AgentControlState> {
+  async function owner(
+    action: unknown,
+    payload: unknown,
+  ): Promise<AgentControlState> {
     if (closed) throw new Error("Core is closed");
     if (action === "list") {
       const v = exactFields(payload, ["sessionId"]);
@@ -294,6 +309,36 @@ export function createAgentControl(host: ControllerHost) {
       const grant = bySession.get(String(v.sessionId));
       if (grant) end(grant, "revoke", "Revoked by owner");
       return state(String(v.sessionId));
+    }
+    if (action === "allowTranscript") {
+      const v = exactFields(payload, ["sessionId", "generation"]);
+      const sessionId = String(v.sessionId);
+      const current = state(sessionId);
+      if (current.unavailableReason) throw new Error(current.unavailableReason);
+      if (sessionRecord(sessionId)?.generation !== v.generation)
+        throw new Error("Stale session generation");
+      const existing = bySession.get(sessionId);
+      if (existing) {
+        // Preserve token, expiry, budgets and every existing permission. This
+        // owner-only action adds just the explicitly approved read capability.
+        if (!existing.verbs.includes("transcript.read")) {
+          existing.verbs.push("transcript.read");
+          audit(
+            existing,
+            "grant",
+            "ok",
+            "Owner allowed reading linked context",
+          );
+          host.changed();
+        }
+        return state(sessionId);
+      }
+      return owner("grant", {
+        sessionId,
+        generation: v.generation,
+        verbs: ["transcript.read"],
+        expiresInMinutes: 15,
+      });
     }
     if (action !== "grant") throw new Error("Unsupported agent control action");
     const v = exactFields(payload, [
@@ -308,7 +353,8 @@ export function createAgentControl(host: ControllerHost) {
     const current = state(sessionId);
     if (current.unavailableReason) throw new Error(current.unavailableReason);
     const s = sessionRecord(sessionId)!;
-    if (v.generation !== s.generation) throw new Error("Stale session generation");
+    if (v.generation !== s.generation)
+      throw new Error("Stale session generation");
     if (
       !Array.isArray(v.verbs) ||
       !v.verbs.length ||
@@ -324,7 +370,13 @@ export function createAgentControl(host: ControllerHost) {
       GRANT_LIMITS.maxMinutes,
       "expiry",
     );
-    const openLimit = bounded(v.openLimit, GRANT_DEFAULTS.openLimit, 1, GRANT_LIMITS.maxOpenLimit, "open-session limit");
+    const openLimit = bounded(
+      v.openLimit,
+      GRANT_DEFAULTS.openLimit,
+      1,
+      GRANT_LIMITS.maxOpenLimit,
+      "open-session limit",
+    );
     const ratePerMinute = bounded(
       v.ratePerMinute,
       GRANT_DEFAULTS.ratePerMinute,
@@ -341,7 +393,9 @@ export function createAgentControl(host: ControllerHost) {
       sessionId,
       generation: s.generation,
       projectId: s.projectId,
-      verbs: CONTROLLER_VERBS.filter((verb) => (v.verbs as string[]).includes(verb)),
+      verbs: CONTROLLER_VERBS.filter((verb) =>
+        (v.verbs as string[]).includes(verb),
+      ),
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + minutes * 60_000).toISOString(),
       openLimit,
@@ -371,7 +425,9 @@ export function createAgentControl(host: ControllerHost) {
       "grant",
       "ok",
       `Allowed ${grant.verbs.join(", ")} for ${minutes} min` +
-        (grant.verbs.includes("open") ? `, up to ${openLimit} open sessions` : ""),
+        (grant.verbs.includes("open")
+          ? `, up to ${openLimit} open sessions`
+          : ""),
     );
     return state(sessionId);
   }
@@ -393,7 +449,9 @@ export function createAgentControl(host: ControllerHost) {
       if (done) return;
       buffer += chunk;
       if (buffer.length > GRANT_LIMITS.requestBytes) {
-        reply(failure(new ControllerError("too_large", "Request is too large")));
+        reply(
+          failure(new ControllerError("too_large", "Request is too large")),
+        );
         return;
       }
       const newline = buffer.indexOf("\n");
@@ -415,12 +473,14 @@ export function createAgentControl(host: ControllerHost) {
     return {
       ok: false,
       error: "failed",
-      message: error instanceof Error ? error.message.slice(0, 500) : "Request failed",
+      message:
+        error instanceof Error ? error.message.slice(0, 500) : "Request failed",
       outcome: "rejected",
     };
   }
   async function handle(line: string): Promise<ControllerResponse> {
-    if (closed) throw new ControllerError("unavailable", "Workspace core is closing");
+    if (closed)
+      throw new ControllerError("unavailable", "Workspace core is closing");
     let request: any;
     try {
       request = JSON.parse(line);
@@ -430,9 +490,19 @@ export function createAgentControl(host: ControllerHost) {
     if (!request || typeof request !== "object" || Array.isArray(request))
       throw new ControllerError("bad_request", "Invalid request");
     if (request.v !== CONTROLLER_PROTOCOL)
-      throw new ControllerError("bad_request", "Unsupported awctl protocol version");
-    if (typeof request.token !== "string" || !request.token || request.token.length > 200)
-      throw new ControllerError("unauthorized", "No agent control capability was presented");
+      throw new ControllerError(
+        "bad_request",
+        "Unsupported awctl protocol version",
+      );
+    if (
+      typeof request.token !== "string" ||
+      !request.token ||
+      request.token.length > 200
+    )
+      throw new ControllerError(
+        "unauthorized",
+        "No agent control capability was presented",
+      );
     const tokenHash = sha(request.token);
     const grant = grants.get(tokenHash);
     if (!grant) {
@@ -442,17 +512,30 @@ export function createAgentControl(host: ControllerHost) {
             reason === "Grant expired" ? "expired" : "revoked",
             `Agent control is no longer granted: ${reason}`,
           )
-        : new ControllerError("unauthorized", "Unknown agent control capability");
+        : new ControllerError(
+            "unauthorized",
+            "Unknown agent control capability",
+          );
     }
     const at = Date.now();
     if (Date.parse(grant.expiresAt) <= at) {
       end(grant, "expire", "Grant expired");
-      throw new ControllerError("expired", "Agent control is no longer granted: Grant expired");
+      throw new ControllerError(
+        "expired",
+        "Agent control is no longer granted: Grant expired",
+      );
     }
     const source = sessionRecord(grant.sessionId);
-    if (!source || source.generation !== grant.generation || source.status === "exited") {
+    if (
+      !source ||
+      source.generation !== grant.generation ||
+      source.status === "exited"
+    ) {
       end(grant, "revoke", "Source session ended");
-      throw new ControllerError("revoked", "Agent control is no longer granted: Source session ended");
+      throw new ControllerError(
+        "revoked",
+        "Agent control is no longer granted: Source session ended",
+      );
     }
     const verb = request.verb;
     if (!isControllerVerb(verb))
@@ -460,45 +543,77 @@ export function createAgentControl(host: ControllerHost) {
     grant.requests = grant.requests.filter((t) => at - t < 60_000);
     if (grant.requests.length >= grant.ratePerMinute) {
       audit(grant, verb, "denied", "Rate budget exceeded");
-      throw new ControllerError("rate_limited", "Too many requests; wait a minute", {
-        ratePerMinute: grant.ratePerMinute,
-      });
+      throw new ControllerError(
+        "rate_limited",
+        "Too many requests; wait a minute",
+        {
+          ratePerMinute: grant.ratePerMinute,
+        },
+      );
     }
     grant.requests.push(at);
     if (!grant.verbs.includes(verb)) {
       audit(grant, verb, "denied", "Action not granted");
-      throw new ControllerError("not_granted", `This grant does not allow "${verb}"`, {
-        allowed: grant.verbs,
-      });
+      throw new ControllerError(
+        "not_granted",
+        `This grant does not allow "${verb}"`,
+        {
+          allowed: grant.verbs,
+        },
+      );
     }
     const args =
-      request.args && typeof request.args === "object" && !Array.isArray(request.args)
+      request.args &&
+      typeof request.args === "object" &&
+      !Array.isArray(request.args)
         ? (request.args as Record<string, unknown>)
         : {};
-    const requestId = request.requestId === undefined ? undefined : requestIdOf(request.requestId);
+    const requestId =
+      request.requestId === undefined
+        ? undefined
+        : requestIdOf(request.requestId);
     try {
       const result = await dispatch(grant, verb, args, requestId);
       if (verb !== "status")
-        audit(grant, verb, "ok", String(result.summary || ""), result.ids as string[] | undefined);
+        audit(
+          grant,
+          verb,
+          "ok",
+          String(result.summary || ""),
+          result.ids as string[] | undefined,
+        );
       delete result.summary;
       delete result.ids;
       return { ok: true, ...(requestId ? { requestId } : {}), ...result };
     } catch (error) {
       const failed = failure(error);
       if (!failed.ok)
-        audit(grant, verb, failed.outcome === "unknown" ? "unknown" : "error", failed.message);
+        audit(
+          grant,
+          verb,
+          failed.outcome === "unknown" ? "unknown" : "error",
+          failed.message,
+        );
       throw error;
     }
   }
   function requestIdOf(v: unknown) {
     if (typeof v !== "string" || !/^[A-Za-z0-9._:-]{1,128}$/.test(v))
-      throw new ControllerError("bad_request", "--request-id must be 1-128 letters, digits, '.', '_', ':' or '-'");
+      throw new ControllerError(
+        "bad_request",
+        "--request-id must be 1-128 letters, digits, '.', '_', ':' or '-'",
+      );
     return v;
   }
-  function argString(args: Record<string, unknown>, key: string, required: boolean) {
+  function argString(
+    args: Record<string, unknown>,
+    key: string,
+    required: boolean,
+  ) {
     const v = args[key];
     if (v === undefined && !required) return undefined;
-    if (typeof v !== "string") throw new ControllerError("bad_request", `--${key} is required`);
+    if (typeof v !== "string")
+      throw new ControllerError("bad_request", `--${key} is required`);
     return v;
   }
   function plainTitle(v: string) {
@@ -507,29 +622,46 @@ export function createAgentControl(host: ControllerHost) {
       .replace(/\s+/g, " ")
       .trim();
     if (!title || [...title].length > GRANT_LIMITS.noteTitleChars)
-      throw new ControllerError("bad_request", `Note title must be 1-${GRANT_LIMITS.noteTitleChars} characters`);
+      throw new ControllerError(
+        "bad_request",
+        `Note title must be 1-${GRANT_LIMITS.noteTitleChars} characters`,
+      );
     return title;
   }
   function plainBody(v: string) {
     if (v.includes("\0") || Buffer.byteLength(v) > GRANT_LIMITS.noteBodyBytes)
-      throw new ControllerError("bad_request", `Note body must be text of at most ${GRANT_LIMITS.noteBodyBytes} bytes`);
+      throw new ControllerError(
+        "bad_request",
+        `Note body must be text of at most ${GRANT_LIMITS.noteBodyBytes} bytes`,
+      );
     return v;
   }
   function revisionArg(args: Record<string, unknown>) {
     const v = args.revision;
     if (!Number.isSafeInteger(v) || (v as number) < 0)
-      throw new ControllerError("bad_request", "--revision is required (see awctl status)");
+      throw new ControllerError(
+        "bad_request",
+        "--revision is required (see awctl status)",
+      );
     return v as number;
   }
   /** Namespaced mutation receipts in the core's receipts table. */
-  function receipt(grant: Grant, verb: string, requestId: string | undefined, digest: string) {
+  function receipt(
+    grant: Grant,
+    verb: string,
+    requestId: string | undefined,
+    digest: string,
+  ) {
     if (!requestId) return { key: undefined, prior: undefined };
     const key = `ctl:${grant.sessionId}:${verb}:${requestId}`;
-    const row = host.db.prepare("SELECT digest,result FROM receipts WHERE key=?").get(key) as
-      | { digest: string; result: string | null }
-      | undefined;
+    const row = host.db
+      .prepare("SELECT digest,result FROM receipts WHERE key=?")
+      .get(key) as { digest: string; result: string | null } | undefined;
     if (row && row.digest !== digest)
-      throw new ControllerError("request_id_conflict", "This --request-id was already used for a different request");
+      throw new ControllerError(
+        "request_id_conflict",
+        "This --request-id was already used for a different request",
+      );
     return { key, prior: row?.result ? JSON.parse(row.result) : undefined };
   }
   function store(key: string | undefined, digest: string, result: unknown) {
@@ -539,9 +671,13 @@ export function createAgentControl(host: ControllerHost) {
         .run(key, digest, JSON.stringify(result));
   }
   const layoutOf = (projectId: string) =>
-    (host.list("layouts") as { projectId: string; positions: Record<string, { x: number; y: number }>; revision?: number }[]).find(
-      (l) => l.projectId === projectId,
-    );
+    (
+      host.list("layouts") as {
+        projectId: string;
+        positions: Record<string, { x: number; y: number }>;
+        revision?: number;
+      }[]
+    ).find((l) => l.projectId === projectId);
   const layoutRevision = (projectId: string) => {
     const layout = layoutOf(projectId);
     return layout ? (layout.revision ?? 1) : 0;
@@ -573,23 +709,39 @@ export function createAgentControl(host: ControllerHost) {
     const projectId = grant.projectId;
     if (verb === "transcript.read") {
       try {
-        return await host.transcriptRead({ sessionId: grant.sessionId, generation: grant.generation }, args);
+        return await host.transcriptRead(
+          { sessionId: grant.sessionId, generation: grant.generation },
+          args,
+        );
       } catch (error: any) {
         if (error && typeof error.controllerCode === "string")
-          throw new ControllerError(error.controllerCode, String(error.message).slice(0, 500));
+          throw new ControllerError(
+            error.controllerCode,
+            String(error.message).slice(0, 500),
+          );
         throw error;
       }
     }
-    const project = (host.list("projects") as { id: string; name: string }[]).find((p) => p.id === projectId);
+    const project = (
+      host.list("projects") as { id: string; name: string }[]
+    ).find((p) => p.id === projectId);
     if (!project) throw new ControllerError("not_found", "Folder not found");
     if (verb === "status") {
       const root = host.projectRoot(projectId);
       const own = sessions().filter((s) => s.projectId === projectId);
       const running = own.filter((s) => s.status !== "exited");
-      const shown = [...running, ...own.filter((s) => s.status === "exited").slice(-20)].slice(-MAX_LIST_ITEMS);
-      const notes = (host.list("notes") as Note[]).filter((n) => n.projectId === projectId);
+      const shown = [
+        ...running,
+        ...own.filter((s) => s.status === "exited").slice(-20),
+      ].slice(-MAX_LIST_ITEMS);
+      const notes = (host.list("notes") as Note[]).filter(
+        (n) => n.projectId === projectId,
+      );
       const layout = layoutOf(projectId);
-      const nodeIds = new Set([...shown.map((s) => s.attemptId || s.id), ...notes.map((n) => n.id)]);
+      const nodeIds = new Set([
+        ...shown.map((s) => s.attemptId || s.id),
+        ...notes.map((n) => n.id),
+      ]);
       return {
         project: { id: project.id, name: project.name },
         self: { sessionId: grant.sessionId, generation: grant.generation },
@@ -615,7 +767,9 @@ export function createAgentControl(host: ControllerHost) {
         layout: {
           revision: layout ? (layout.revision ?? 1) : 0,
           positions: Object.fromEntries(
-            Object.entries(layout?.positions || {}).filter(([id]) => nodeIds.has(id)),
+            Object.entries(layout?.positions || {}).filter(([id]) =>
+              nodeIds.has(id),
+            ),
           ),
         },
       };
@@ -623,53 +777,78 @@ export function createAgentControl(host: ControllerHost) {
     if (verb === "open") {
       const provider = argString(args, "provider", true)!;
       if (!["claude", "codex", "shell"].includes(provider))
-        throw new ControllerError("bad_request", "--provider must be claude, codex or shell");
+        throw new ControllerError(
+          "bad_request",
+          "--provider must be claude, codex or shell",
+        );
       const rel = argString(args, "path", false);
-      if (rel !== undefined && (rel.length > 4096 || rel.includes("\0") || path.isAbsolute(rel)))
-        throw new ControllerError("bad_request", "--path must be relative to the folder");
-      if (!requestId) throw new ControllerError("bad_request", "--request-id is required for open");
+      if (
+        rel !== undefined &&
+        (rel.length > 4096 || rel.includes("\0") || path.isAbsolute(rel))
+      )
+        throw new ControllerError(
+          "bad_request",
+          "--path must be relative to the folder",
+        );
+      if (!requestId)
+        throw new ControllerError(
+          "bad_request",
+          "--request-id is required for open",
+        );
       // One open at a time per source session, so the fan-out check holds.
       const previous = opening.get(grant.sessionId) || Promise.resolve();
-      const run = previous.catch(() => {}).then(async () => {
-        const key = `ctl:${grant.sessionId}:open:${requestId}`;
-        const known = host.db.prepare("SELECT 1 FROM receipts WHERE key=?").get(key);
-        if (!known && openChildren(grant.sessionId) >= grant.openLimit)
-          throw new ControllerError("open_limit", `This grant may keep at most ${grant.openLimit} opened sessions running`, {
-            openLimit: grant.openLimit,
-          });
-        let result: { session: Session };
-        try {
-          // A blank prompt: the new session opens interactively and inherits no grant.
-          result = (await host.invoke("terminal.open", {
-            projectId,
-            provider,
-            ...(rel !== undefined ? { path: rel } : {}),
-            idempotencyKey: key,
-          })) as { session: Session };
-        } catch (error: any) {
-          const message = String(error?.message || error);
-          if (/Idempotency key reused/.test(message))
-            throw new ControllerError("request_id_conflict", "This --request-id was already used for a different open");
-          if (/outcome unknown/i.test(message))
+      const run = previous
+        .catch(() => {})
+        .then(async () => {
+          const key = `ctl:${grant.sessionId}:open:${requestId}`;
+          const known = host.db
+            .prepare("SELECT 1 FROM receipts WHERE key=?")
+            .get(key);
+          if (!known && openChildren(grant.sessionId) >= grant.openLimit)
             throw new ControllerError(
-              "unknown",
-              "The launch outcome is unknown; run awctl status before retrying with the same --request-id",
-              {},
-              "unknown",
+              "open_limit",
+              `This grant may keep at most ${grant.openLimit} opened sessions running`,
+              {
+                openLimit: grant.openLimit,
+              },
             );
-          throw new ControllerError("open_failed", message.slice(0, 500));
-        }
-        const child = result.session;
-        if (!children.has(grant.sessionId)) children.set(grant.sessionId, new Set());
-        children.get(grant.sessionId)!.add(child.id);
-        return {
-          session: publicSession(child, host.projectRoot(projectId)),
-          deduplicated: !!known,
-          layoutRevision: layoutRevision(projectId),
-          summary: `Opened ${provider} (${child.status})${known ? " (repeat)" : ""}`,
-          ids: [child.id],
-        };
-      });
+          let result: { session: Session };
+          try {
+            // A blank prompt: the new session opens interactively and inherits no grant.
+            result = (await host.invoke("terminal.open", {
+              projectId,
+              provider,
+              ...(rel !== undefined ? { path: rel } : {}),
+              idempotencyKey: key,
+            })) as { session: Session };
+          } catch (error: any) {
+            const message = String(error?.message || error);
+            if (/Idempotency key reused/.test(message))
+              throw new ControllerError(
+                "request_id_conflict",
+                "This --request-id was already used for a different open",
+              );
+            if (/outcome unknown/i.test(message))
+              throw new ControllerError(
+                "unknown",
+                "The launch outcome is unknown; run awctl status before retrying with the same --request-id",
+                {},
+                "unknown",
+              );
+            throw new ControllerError("open_failed", message.slice(0, 500));
+          }
+          const child = result.session;
+          if (!children.has(grant.sessionId))
+            children.set(grant.sessionId, new Set());
+          children.get(grant.sessionId)!.add(child.id);
+          return {
+            session: publicSession(child, host.projectRoot(projectId)),
+            deduplicated: !!known,
+            layoutRevision: layoutRevision(projectId),
+            summary: `Opened ${provider} (${child.status})${known ? " (repeat)" : ""}`,
+            ids: [child.id],
+          };
+        });
       opening.set(grant.sessionId, run);
       return run;
     }
@@ -680,9 +859,13 @@ export function createAgentControl(host: ControllerHost) {
       return host.serialize(() => {
         const { key, prior } = receipt(grant, verb, requestId, digest);
         if (prior) {
-          const note = (host.list("notes") as Note[]).find((n) => n.id === prior.noteId);
+          const note = (host.list("notes") as Note[]).find(
+            (n) => n.id === prior.noteId,
+          );
           return {
-            note: note ? { id: note.id, title: note.title, revision: note.revision ?? 1 } : { id: prior.noteId },
+            note: note
+              ? { id: note.id, title: note.title, revision: note.revision ?? 1 }
+              : { id: prior.noteId },
             deduplicated: true,
             layoutRevision: layoutRevision(projectId),
             summary: "Note already created (repeat)",
@@ -690,7 +873,10 @@ export function createAgentControl(host: ControllerHost) {
           };
         }
         if (grant.notesCreated >= GRANT_LIMITS.maxNotes)
-          throw new ControllerError("note_limit", `This grant may create at most ${GRANT_LIMITS.maxNotes} notes`);
+          throw new ControllerError(
+            "note_limit",
+            `This grant may create at most ${GRANT_LIMITS.maxNotes} notes`,
+          );
         const stamp = new Date().toISOString();
         const note: Note = {
           id: crypto.randomUUID(),
@@ -724,11 +910,28 @@ export function createAgentControl(host: ControllerHost) {
     if (verb === "note.update") {
       const noteId = argString(args, "note", true)!;
       const revision = revisionArg(args);
-      const title = args.title === undefined ? undefined : plainTitle(argString(args, "title", true)!);
-      const body = args.body === undefined ? undefined : plainBody(argString(args, "body", true)!);
+      const title =
+        args.title === undefined
+          ? undefined
+          : plainTitle(argString(args, "title", true)!);
+      const body =
+        args.body === undefined
+          ? undefined
+          : plainBody(argString(args, "body", true)!);
       if (title === undefined && body === undefined)
-        throw new ControllerError("bad_request", "Give --title, --body or --body-file");
-      const digest = sha(JSON.stringify(["note.update", noteId, revision, title ?? null, body ?? null]));
+        throw new ControllerError(
+          "bad_request",
+          "Give --title, --body or --body-file",
+        );
+      const digest = sha(
+        JSON.stringify([
+          "note.update",
+          noteId,
+          revision,
+          title ?? null,
+          body ?? null,
+        ]),
+      );
       return host.serialize(() => {
         const { key, prior } = receipt(grant, verb, requestId, digest);
         if (prior)
@@ -738,19 +941,30 @@ export function createAgentControl(host: ControllerHost) {
             summary: "Note already updated (repeat)",
             ids: [noteId],
           };
-        const note = (host.list("notes") as Note[]).find((n) => n.id === noteId && n.projectId === projectId);
-        if (!note) throw new ControllerError("not_found", "No such note in this folder");
+        const note = (host.list("notes") as Note[]).find(
+          (n) => n.id === noteId && n.projectId === projectId,
+        );
+        if (!note)
+          throw new ControllerError("not_found", "No such note in this folder");
         const current = note.revision ?? 1;
         // Never overwrite an edit the agent has not seen.
         if (revision !== current)
-          throw new ControllerError("stale_revision", "The note changed since that revision; read it again with awctl status", {
-            currentRevision: current,
-          });
+          throw new ControllerError(
+            "stale_revision",
+            "The note changed since that revision; read it again with awctl status",
+            {
+              currentRevision: current,
+            },
+          );
         if (title !== undefined) note.title = title;
         if (body !== undefined) note.body = body;
         note.revision = current + 1;
         note.updatedAt = new Date().toISOString();
-        const result = { id: note.id, title: note.title, revision: note.revision };
+        const result = {
+          id: note.id,
+          title: note.title,
+          revision: note.revision,
+        };
         host.db.exec("BEGIN IMMEDIATE");
         try {
           host.put("notes", note);
@@ -761,7 +975,11 @@ export function createAgentControl(host: ControllerHost) {
           throw error;
         }
         host.changed();
-        return { note: result, summary: `Updated note "${note.title.slice(0, 60)}"`, ids: [note.id] };
+        return {
+          note: result,
+          summary: `Updated note "${note.title.slice(0, 60)}"`,
+          ids: [note.id],
+        };
       });
     }
     // canvas.place
@@ -769,27 +987,59 @@ export function createAgentControl(host: ControllerHost) {
     const revision = revisionArg(args);
     const coordinate = (key: "x" | "y") => {
       const v = args[key];
-      if (typeof v !== "number" || !Number.isFinite(v) || Math.abs(v) > GRANT_LIMITS.coordinate)
-        throw new ControllerError("bad_request", `--${key} must be a number within ±${GRANT_LIMITS.coordinate}`);
+      if (
+        typeof v !== "number" ||
+        !Number.isFinite(v) ||
+        Math.abs(v) > GRANT_LIMITS.coordinate
+      )
+        throw new ControllerError(
+          "bad_request",
+          `--${key} must be a number within ±${GRANT_LIMITS.coordinate}`,
+        );
       return Math.round(v * 100) / 100;
     };
     const position = { x: coordinate("x"), y: coordinate("y") };
-    const digest = sha(JSON.stringify(["canvas.place", requested, revision, position]));
+    const digest = sha(
+      JSON.stringify(["canvas.place", requested, revision, position]),
+    );
     return host.serialize(() => {
       const { key, prior } = receipt(grant, verb, requestId, digest);
       if (prior)
-        return { ...prior, deduplicated: true, summary: "Already placed (repeat)", ids: [prior.node] };
+        return {
+          ...prior,
+          deduplicated: true,
+          summary: "Already placed (repeat)",
+          ids: [prior.node],
+        };
       // Task attempts keep their attempt-keyed node id; folder sessions use the session id.
-      const note = (host.list("notes") as Note[]).find((n) => n.id === requested && n.projectId === projectId);
-      const session = sessions().find((s) => (s.id === requested || s.attemptId === requested) && s.projectId === projectId);
-      const nodeId = note ? note.id : session ? session.attemptId || session.id : undefined;
-      if (!nodeId) throw new ControllerError("not_found", "No such canvas node in this folder");
+      const note = (host.list("notes") as Note[]).find(
+        (n) => n.id === requested && n.projectId === projectId,
+      );
+      const session = sessions().find(
+        (s) =>
+          (s.id === requested || s.attemptId === requested) &&
+          s.projectId === projectId,
+      );
+      const nodeId = note
+        ? note.id
+        : session
+          ? session.attemptId || session.id
+          : undefined;
+      if (!nodeId)
+        throw new ControllerError(
+          "not_found",
+          "No such canvas node in this folder",
+        );
       const layout = layoutOf(projectId);
       const current = layout ? (layout.revision ?? 1) : 0;
       if (revision !== current)
-        throw new ControllerError("stale_revision", "The canvas layout changed since that revision; read it again with awctl status", {
-          currentRevision: current,
-        });
+        throw new ControllerError(
+          "stale_revision",
+          "The canvas layout changed since that revision; read it again with awctl status",
+          {
+            currentRevision: current,
+          },
+        );
       const next = {
         projectId,
         positions: { ...(layout?.positions || {}), [nodeId]: position },
@@ -806,7 +1056,11 @@ export function createAgentControl(host: ControllerHost) {
         throw error;
       }
       host.changed();
-      return { ...result, summary: `Placed ${nodeId.slice(0, 8)} at ${position.x},${position.y}`, ids: [nodeId] };
+      return {
+        ...result,
+        summary: `Placed ${nodeId.slice(0, 8)} at ${position.x},${position.y}`,
+        ids: [nodeId],
+      };
     });
   }
 
@@ -818,7 +1072,8 @@ export function createAgentControl(host: ControllerHost) {
     async close() {
       closed = true;
       clearInterval(sweepTimer);
-      for (const grant of [...grants.values()]) forget(grant, "Workspace core stopped");
+      for (const grant of [...grants.values()])
+        forget(grant, "Workspace core stopped");
       if (server) {
         const s = server;
         server = undefined;

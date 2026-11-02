@@ -44,7 +44,10 @@ try {
   await page.waitForFunction(() => !!window.workspace);
   const p1 = await command("project.add", { path: repo });
   const p2 = await command("project.add", { path: repo2 });
-  await page.locator(".folder-list button").filter({ hasText: "alpha" }).click();
+  await page
+    .locator(".folder-list button")
+    .filter({ hasText: "alpha" })
+    .click();
   // Tasks are optional planning on the board; the folder itself needs none.
   await page.getByRole("button", { name: "Open Shell here" }).waitFor();
   await page.getByRole("button", { name: "Board", exact: true }).click();
@@ -71,13 +74,21 @@ try {
   checks.push("create and edit task with revision; task sheet status");
   await page.getByLabel("Status for Verified workflow").selectOption("ready");
   // The async status write moves the card between columns; finish it before dragging.
-  await waitFor(() => document.querySelector('select[aria-label="Status for Verified workflow"]')?.closest(".board-column")?.querySelector("header strong")?.textContent === "Ready");
+  await waitFor(
+    () =>
+      document
+        .querySelector('select[aria-label="Status for Verified workflow"]')
+        ?.closest(".board-column")
+        ?.querySelector("header strong")?.textContent === "Ready",
+  );
   await page.getByRole("button", { name: "Close task details" }).click();
   const card = page.locator(".board-card");
   const target = page.locator(".board-column").filter({
     has: page.locator("header strong").filter({ hasText: "In review" }),
   });
-  await card.dragTo(target);
+  await page
+    .getByRole("button", { name: "Drag task Verified workflow", exact: true })
+    .dragTo(target, { targetPosition: { x: 50, y: 65 } });
   await waitFor(
     () =>
       document.querySelector(
@@ -295,18 +306,29 @@ try {
   );
   for (const attemptLabel of ["#1", "#2"]) {
     await page.getByRole("button", { name: "Board", exact: true }).click();
-    await page.locator(".attempt-row").filter({ hasText: attemptLabel }).click();
+    await page
+      .locator(".attempt-row")
+      .filter({ hasText: attemptLabel })
+      .click();
     await page.locator(".session-view").waitFor();
     await page.locator(".terminal-connection").waitFor({ state: "detached" });
   }
-  assert.equal((await snapshot()).sessions.filter((s) => s.status === "running").length, 2);
+  assert.equal(
+    (await snapshot()).sessions.filter((s) => s.status === "running").length,
+    2,
+  );
   checks.push(
     "second attempt bound to isolated worktree; attempt switching preserves distinct sessions",
   );
 
   await page.locator(".folder-list button").filter({ hasText: "beta" }).click();
-  await page.getByText("Open an agent or a shell here", { exact: true }).waitFor();
-  await page.locator(".folder-list button").filter({ hasText: "alpha" }).click();
+  await page
+    .getByText("Open an agent or a shell here", { exact: true })
+    .waitFor();
+  await page
+    .locator(".folder-list button")
+    .filter({ hasText: "alpha" })
+    .click();
   await page.getByRole("button", { name: "Canvas", exact: true }).click();
   await page.getByLabel("Canvas note").waitFor();
   assert.equal(
@@ -314,7 +336,9 @@ try {
     "Persisted verification note",
   );
   checks.push("multiple-project switching; persisted notes and layout");
-  await page.waitForFunction(()=>document.querySelectorAll(".terminal-connection").length===0);
+  await page.waitForFunction(
+    () => document.querySelectorAll(".terminal-connection").length === 0,
+  );
   await page.screenshot({ path: path.join(fixture, "final.png") });
   const plain = path.join(fixture, "plain-folder");
   await mkdir(plain);
@@ -356,7 +380,12 @@ try {
 } catch (error) {
   await page.screenshot({ path: path.join(fixture, "failure.png") });
   console.error(
-    JSON.stringify({ passed: false, fixture, checks, error: String(error) }),
+    JSON.stringify({
+      passed: false,
+      fixture,
+      checks,
+      error: String(error.stack || error),
+    }),
   );
   process.exitCode = 1;
 } finally {

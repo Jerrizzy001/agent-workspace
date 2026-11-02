@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import Editor, { loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
 import EditorWorker from "monaco-editor/editor/editor.worker.js?worker";
@@ -12,12 +13,16 @@ export default function CodeEditor({
   path,
   readOnly,
   onChange,
+  onSave,
 }: {
   content: string;
   path: string;
   readOnly: boolean;
   onChange: (v: string) => void;
+  onSave?: () => void;
 }) {
+  const saveRef = useRef(onSave);
+  saveRef.current = onSave;
   const extension = path.split(".").pop();
   const language =
     extension === "diff"
@@ -35,6 +40,11 @@ export default function CodeEditor({
                 : "plaintext";
   return (
     <Editor
+      onMount={(editor) => {
+        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () =>
+          saveRef.current?.(),
+        );
+      }}
       height="100%"
       theme="vs-dark"
       language={language}

@@ -205,6 +205,11 @@ test("persistent core, file conflict, worktree and session ownership", async () 
       first.session.backendName + "-neighbor",
       "/bin/sh",
     ]);
+    await call("session.input", {
+      ...session,
+      data: "printf 'END_CAPTURE_OK\\n'\r",
+    });
+    await new Promise((r) => setTimeout(r, 150));
     await call("session.terminate", session);
     assert.doesNotThrow(() =>
       execFileSync(
@@ -219,10 +224,9 @@ test("persistent core, file conflict, worktree and session ownership", async () 
         { stdio: "ignore" },
       ),
     );
-    await assert.rejects(
-      call("session.capture", session),
-      /find session|no such session/,
-    );
+    const finalScreen = await call("session.capture", session);
+    assert.equal(finalScreen.saved, true);
+    assert.match(finalScreen.data, /END_CAPTURE_OK/);
     assert.equal(
       (await call("snapshot")).sessions.find(
         (s: any) => s.id === other.session.id,
@@ -486,7 +490,10 @@ test("legacy socket upgrade preserves old shell identity and independently targe
     // Real older sockets must remain discoverable beyond an arbitrary scan prefix.
     for (let i = 0; i < 70; i++)
       fs.writeFileSync(
-        path.join(isolatedSockets, `aw-${i.toString(16).padStart(20, "0")}.sock`),
+        path.join(
+          isolatedSockets,
+          `aw-${i.toString(16).padStart(20, "0")}.sock`,
+        ),
         "stale socket fixture",
       );
     const sid = crypto.randomUUID(),

@@ -65,6 +65,8 @@ export function Board({
       report(e);
     }
   }
+  const [attachId, setAttachId] = useState("");
+  const [attaching, setAttaching] = useState(false);
   const selected = tasks.find((t) => t.id === selectedTaskId);
   const team = useTeamBoard(projectId, tasks);
   const teamOffline = !!team.status?.connected && !team.status.online;
@@ -80,8 +82,9 @@ export function Board({
             {modeSwitch}
           </div>
           <p>
-            Optional planning. Sessions opened from a folder don't need a task;
-            use tasks when you want to track work and its attempts.
+            Track a piece of work, then attach an existing agent or start a new
+            one. Task stage is your plan; session badges show whether a process
+            is running.
           </p>
         </div>
         <button className="button primary small" onClick={onNewTask}>
@@ -107,12 +110,16 @@ export function Board({
               <header>
                 <span className={"status-dot " + column.id} />
                 <strong>{column.label}</strong>
-                <span>{tasks.filter((t) => t.status === column.id).length}</span>
+                <span>
+                  {tasks.filter((t) => t.status === column.id).length}
+                </span>
               </header>
               {tasks
                 .filter((t) => t.status === column.id)
                 .map((t) => {
-                  const count = attempts.filter((a) => a.taskId === t.id).length;
+                  const count = attempts.filter(
+                    (a) => a.taskId === t.id,
+                  ).length;
                   const live = attempts.filter(
                     (a) => a.taskId === t.id && a.status === "running",
                   ).length;
@@ -120,7 +127,8 @@ export function Board({
                     <article
                       key={t.id}
                       className={
-                        "board-card" + (t.id === selectedTaskId ? " selected" : "")
+                        "board-card" +
+                        (t.id === selectedTaskId ? " selected" : "")
                       }
                       draggable
                       onDragStart={(e) =>
@@ -128,13 +136,28 @@ export function Board({
                       }
                     >
                       <button
+                        className="board-drag-handle"
+                        draggable
+                        aria-label={"Drag task " + t.title}
+                        title="Drag to another work stage"
+                        onDragStart={(e) => {
+                          e.dataTransfer.effectAllowed = "move";
+                          e.dataTransfer.setData("text/plain", t.id);
+                        }}
+                      >
+                        Move
+                      </button>
+                      <button
                         className="card-title"
                         onClick={() => onSelectTask(t.id)}
                       >
                         {t.title}
                       </button>
                       {t.description ? <p>{t.description}</p> : null}
-                      <TeamCardMeta entry={team.entries[t.id]} offline={teamOffline} />
+                      <TeamCardMeta
+                        entry={team.entries[t.id]}
+                        offline={teamOffline}
+                      />
                       <footer>
                         <span>
                           {count} {count === 1 ? "attempt" : "attempts"}
@@ -168,7 +191,9 @@ export function Board({
           <aside className="task-sheet" aria-label="Task details">
             <header>
               <div>
-                <div className="eyebrow">TASK · {statusLabel(selected.status)}</div>
+                <div className="eyebrow">
+                  TASK · {statusLabel(selected.status)}
+                </div>
                 <h2 className="task-title">{selected.title}</h2>
               </div>
               <button
@@ -180,13 +205,18 @@ export function Board({
               </button>
             </header>
             <div className="task-sheet-actions">
-              <button className="button ghost small" onClick={() => onEditTask(selected)}>
+              <button
+                className="button ghost small"
+                onClick={() => onEditTask(selected)}
+              >
                 Edit
               </button>
               <select
                 aria-label="Task workflow status"
                 value={selected.status}
-                onChange={(e) => void move(selected, e.target.value as TaskStatus)}
+                onChange={(e) =>
+                  void move(selected, e.target.value as TaskStatus)
+                }
               >
                 {columns.map((c) => (
                   <option value={c.id} key={c.id}>
@@ -230,6 +260,50 @@ export function Board({
               <Plus size={14} />
               Start an attempt
             </button>
+            <form
+              className="attach-session"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const s = sessions.find((s) => s.id === attachId);
+                if (!s) return;
+                setAttaching(true);
+                try {
+                  await window.workspace.invoke("session.task", {
+                    sessionId: s.id,
+                    generation: s.generation,
+                    taskId: selected.id,
+                  });
+                  setAttachId("");
+                } catch (e) {
+                  report(e);
+                } finally {
+                  setAttaching(false);
+                }
+              }}
+            >
+              <label>
+                Attach existing session
+                <select
+                  aria-label="Attach existing session"
+                  value={attachId}
+                  onChange={(e) => setAttachId(e.target.value)}
+                >
+                  <option value="">Choose a session…</option>
+                  {sessions
+                    .filter(
+                      (s) => s.projectId === selected.projectId && !s.attemptId,
+                    )
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.title || providerName(s.provider)} · {s.status}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <button className="button" disabled={!attachId || attaching}>
+                Attach session
+              </button>
+            </form>
             <TaskTeamSection
               task={selected}
               entry={team.entries[selected.id]}
@@ -485,7 +559,11 @@ export function AttemptModal({
                 maxLength={150}
               />
               <datalist id={provider + "-attempt-models"}>
-                <option value={provider === "claude" ? "claude-opus-4-6" : "gpt-6.1-sol"} />
+                <option
+                  value={
+                    provider === "claude" ? "claude-opus-4-6" : "gpt-6.1-sol"
+                  }
+                />
               </datalist>
               <span className="form-hint">
                 Blank uses your CLI's configured default model.

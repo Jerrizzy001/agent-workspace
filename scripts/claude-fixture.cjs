@@ -21,13 +21,29 @@ const crypto = require("node:crypto");
 const { execSync } = require("node:child_process");
 
 const args = process.argv.slice(2);
+if (args[0] === "auth" && args[1] === "status") {
+  console.log(
+    args.includes("--help")
+      ? "--json Output authentication status"
+      : JSON.stringify({
+          loggedIn: true,
+          email: "fixture@example.invalid",
+          authMethod: "fixture",
+          accessToken: "NEVER_RETURN_FIXTURE_TOKEN",
+        }),
+  );
+  process.exit(0);
+}
+
 if (args[0] === "--help") {
   process.stdout.write(
     [
       "Usage: claude [options] [command] [prompt]",
       "  --model <model>",
       "  -r, --resume [value]     Resume a conversation by session ID",
-      process.env.CLAUDE_FIXTURE_NO_FORK ? "" : "  --fork-session           When resuming, create a new session ID",
+      process.env.CLAUDE_FIXTURE_NO_FORK
+        ? ""
+        : "  --fork-session           When resuming, create a new session ID",
       "  --session-id <uuid>",
       "  --settings <file-or-json>",
       "",
@@ -35,10 +51,13 @@ if (args[0] === "--help") {
   );
   process.exit(0);
 }
-const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+const configDir =
+  process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
 let control = {};
 try {
-  control = JSON.parse(fs.readFileSync(process.env.CLAUDE_FIXTURE_CONTROL, "utf8"));
+  control = JSON.parse(
+    fs.readFileSync(process.env.CLAUDE_FIXTURE_CONTROL, "utf8"),
+  );
 } catch {}
 const mode = control.mode || "normal";
 if (process.env.CLAUDE_FIXTURE_LOG)
@@ -58,17 +77,28 @@ const flag = (name) => {
   const at = args.indexOf(name);
   return at >= 0 && at + 1 < args.length ? args[at + 1] : undefined;
 };
-const settings = flag("--settings") ? JSON.parse(flag("--settings")) : { hooks: {} };
+const settings = flag("--settings")
+  ? JSON.parse(flag("--settings"))
+  : { hooks: {} };
 const resumed = flag("--resume");
 const forking = args.includes("--fork-session");
 const dash = args.indexOf("--");
 const prompt = dash >= 0 ? args[dash + 1] : undefined;
-const id = forking ? crypto.randomUUID() : resumed || flag("--session-id") || crypto.randomUUID();
-const folder = path.join(configDir, "projects", process.cwd().replace(/[^A-Za-z0-9]/g, "-"));
+const id = forking
+  ? crypto.randomUUID()
+  : resumed || flag("--session-id") || crypto.randomUUID();
+const folder = path.join(
+  configDir,
+  "projects",
+  process.cwd().replace(/[^A-Za-z0-9]/g, "-"),
+);
 const transcript = path.join(folder, id + ".jsonl");
 fs.mkdirSync(folder, { recursive: true });
 // Claude's own settings file, so a profile folder is no longer empty.
-fs.writeFileSync(path.join(configDir, "fixture-settings.json"), JSON.stringify({ fixture: true }) + "\n");
+fs.writeFileSync(
+  path.join(configDir, "fixture-settings.json"),
+  JSON.stringify({ fixture: true }) + "\n",
+);
 if (forking) {
   // Copy the original conversation, as a branch starts from it.
   const projects = path.join(configDir, "projects");
@@ -96,14 +126,22 @@ const run = (event, input) => {
   for (const entry of settings.hooks?.[event] || [])
     for (const hook of entry.hooks || [])
       try {
-        execSync(hook.command, { input: JSON.stringify(input), stdio: ["pipe", "ignore", "ignore"], shell: "/bin/sh" });
+        execSync(hook.command, {
+          input: JSON.stringify(input),
+          stdio: ["pipe", "ignore", "ignore"],
+          shell: "/bin/sh",
+        });
       } catch {}
 };
 if (mode === "exit-before-report") {
   process.stderr.write("fixture claude: failed before starting\n");
   process.exit(4);
 }
-const base = { session_id: id, transcript_path: transcript, cwd: process.cwd() };
+const base = {
+  session_id: id,
+  transcript_path: transcript,
+  cwd: process.cwd(),
+};
 if (mode !== "no-report")
   run("SessionStart", {
     ...base,
@@ -126,13 +164,34 @@ const record = (type, text) =>
     }) + "\n",
   );
 function turn(text) {
-  run("UserPromptSubmit", { ...base, hook_event_name: "UserPromptSubmit", prompt: text });
+  run("UserPromptSubmit", {
+    ...base,
+    hook_event_name: "UserPromptSubmit",
+    prompt: text,
+  });
   record("user", text);
+  if (text === "/fixture-error") {
+    record("assistant", "Fixture API error: requested model unavailable");
+    process.stdout.write("Fixture API error: requested model unavailable\r\n");
+    run("StopFailure", {
+      ...base,
+      hook_event_name: "StopFailure",
+      error: "model_not_found",
+    });
+    return;
+  }
+
   record("assistant", `Fixture reply to: ${text}`);
-  if (mode === "partial-line") fs.appendFileSync(transcript, '{"type":"assistant","message":{"role":"assis');
+  if (mode === "partial-line")
+    fs.appendFileSync(
+      transcript,
+      '{"type":"assistant","message":{"role":"assis',
+    );
   run("Stop", { ...base, hook_event_name: "Stop" });
 }
-process.stdout.write(`fixture claude ${id.slice(0, 8)} (${forking ? "branch" : resumed ? "resumed" : "new"})\r\n`);
+process.stdout.write(
+  `fixture claude ${id.slice(0, 8)} (${forking ? "branch" : resumed ? "resumed" : "new"})\r\n`,
+);
 if (prompt) turn(prompt);
 let typed = "";
 process.stdin.setEncoding("utf8");
