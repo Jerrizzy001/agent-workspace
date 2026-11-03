@@ -55,6 +55,7 @@
 }
 .profile-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: center;
   border: 1px solid var(--line-strong);
@@ -98,6 +99,41 @@
 }
 .danger-text {
   color: var(--danger);
+}
+.profile-remove {
+  flex-basis: 100%;
+  display: grid;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.profile-remove p {
+  margin: 0;
+  color: var(--text);
+}
+.modal .profile-remove-data {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  font-weight: 450;
+  color: var(--text-2);
+}
+.profile-remove-data input {
+  margin-top: 3px;
+}
+.profile-remove-data small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-3);
+  font: 11px/1.4 var(--mono);
+  overflow-wrap: anywhere;
+}
+.profile-remove-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
 }
 .profile-add {
   display: flex;

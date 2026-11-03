@@ -164,6 +164,29 @@ export function SessionView({
     generation: session.generation,
   };
   const name = providerName(session.provider);
+  // The core ends a session only for an attached viewer. When this view's
+  // terminal could not attach, a short-lived viewer lets End still work.
+  async function end(viewer: string | null) {
+    const temporary = viewer ? null : createId();
+    try {
+      if (temporary)
+        await window.workspace.invoke("session.attach", {
+          ...identity,
+          viewerId: temporary,
+          cols: 80,
+          rows: 24,
+        });
+      await window.workspace.invoke("session.terminate", {
+        ...identity,
+        viewerId: viewer || temporary,
+      });
+    } finally {
+      if (temporary)
+        void window.workspace
+          .invoke("session.detach", { ...identity, viewerId: temporary })
+          .catch(() => {});
+    }
+  }
   // A CLI that failed at startup has nothing to resume; offer a fresh start instead.
   const resumable =
     session.status === "exited" &&
@@ -381,7 +404,6 @@ export function SessionView({
               <button
                 className="button danger small"
                 title="End this terminal process"
-                disabled={!viewerId}
                 onClick={() => {
                   if (
                     confirm(
@@ -389,9 +411,7 @@ export function SessionView({
                     )
                   ) {
                     onEnded(session);
-                    void window.workspace
-                      .invoke("session.terminate", { ...identity, viewerId })
-                      .catch(report);
+                    void end(viewerId).catch(report);
                   }
                 }}
               >

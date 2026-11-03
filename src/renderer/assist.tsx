@@ -109,7 +109,11 @@ export function AssistSettings() {
   return createPortal(
     <div
       className="modal-backdrop"
-      onKeyDown={(e) => e.key === "Escape" && closeAssistSettings()}
+      onKeyDown={(e) => {
+        if (e.key !== "Escape") return;
+        e.preventDefault();
+        closeAssistSettings();
+      }}
     >
       <section
         className="modal assist-settings"
@@ -254,7 +258,11 @@ function Backdrop({
   return createPortal(
     <div
       className="modal-backdrop"
-      onKeyDown={(e) => e.key === "Escape" && onClose()}
+      onKeyDown={(e) => {
+        if (e.key !== "Escape") return;
+        e.preventDefault();
+        onClose();
+      }}
     >
       <section
         className="modal assist-dialog"

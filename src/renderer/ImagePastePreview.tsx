@@ -23,7 +23,14 @@ export function ImagePastePreview({
 }) {
   // Portaled so a terminal inside a transformed canvas node still gets a full-window dialog.
   return createPortal(
-    <div className="modal-backdrop" onKeyDown={(e) => e.key === "Escape" && onCancel()}>
+    <div
+      className="modal-backdrop"
+      onKeyDown={(e) => {
+        if (e.key !== "Escape") return;
+        e.preventDefault();
+        onCancel();
+      }}
+    >
       <form
         className="modal image-paste"
         role="dialog"

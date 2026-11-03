@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import {
   CheckCircle2,
@@ -72,6 +72,16 @@ export function ProfilesPanel({
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [checked, setChecked] = useState<Record<string, ProfileView>>({});
+  // One inline confirmation at a time. Keeping the folder is the default.
+  const [removing, setRemoving] = useState<{
+    id: string;
+    deleteData: boolean;
+  } | null>(null);
+  const removeButtons = useRef(new Map<string, HTMLButtonElement>());
+  const cancelRemove = (id: string) => {
+    setRemoving(null);
+    requestAnimationFrame(() => removeButtons.current.get(id)?.focus());
+  };
   const api = window.workspace.profiles!;
   useEffect(() => {
     void refreshProfiles();
@@ -259,38 +269,94 @@ export function ProfilesPanel({
                     <RefreshCw size={12} /> Check folder
                   </button>
                   <button
+                    ref={(el) => {
+                      if (el) removeButtons.current.set(p.id, el);
+                      else removeButtons.current.delete(p.id);
+                    }}
                     className="button ghost small danger-text"
                     disabled={!!busy || p.openSessions > 0}
+                    aria-expanded={removing?.id === p.id}
                     title={
                       p.openSessions
                         ? "End the sessions using this profile first"
                         : "Remove this profile"
                     }
-                    onClick={() => {
-                      if (
-                        !confirm(
-                          `Remove the profile "${p.label}"? Ended sessions that used it can no longer be resumed.`,
-                        )
-                      )
-                        return;
-                      const deleteData = confirm(
-                        `Also delete its folder?\n\n${p.location}\n\nThis deletes Claude's data for this profile, including any sign-in it stored there. Cancel keeps the folder.`,
-                      );
-                      void act("remove:" + p.id, async () => {
-                        const result = await api.remove({
-                          profileId: p.id,
-                          deleteData,
-                        });
-                        if (result.keptData)
-                          setError(
-                            `Removed. Its folder was kept: ${result.keptData}`,
-                          );
-                      });
-                    }}
+                    onClick={() =>
+                      removing?.id === p.id
+                        ? cancelRemove(p.id)
+                        : setRemoving({ id: p.id, deleteData: false })
+                    }
                   >
                     <Trash2 size={12} /> Remove
                   </button>
                 </div>
+                {removing?.id === p.id ? (
+                  <div
+                    className="profile-remove"
+                    role="group"
+                    aria-label={`Remove ${p.label}`}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Escape") return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      cancelRemove(p.id);
+                    }}
+                  >
+                    <p>
+                      Remove the profile “{p.label}”? Ended sessions that used
+                      it can no longer be resumed.
+                    </p>
+                    <label className="profile-remove-data">
+                      <input
+                        type="checkbox"
+                        checked={removing.deleteData}
+                        onChange={(e) =>
+                          setRemoving({
+                            id: p.id,
+                            deleteData: e.target.checked,
+                          })
+                        }
+                      />
+                      <span>
+                        Also delete its folder, including the Claude sign-in
+                        stored there. This can’t be undone.
+                        <small>{p.location}</small>
+                      </span>
+                    </label>
+                    <div className="profile-remove-actions">
+                      <button
+                        className="button small"
+                        autoFocus
+                        onClick={() => cancelRemove(p.id)}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="button danger small"
+                        disabled={!!busy}
+                        onClick={() => {
+                          const { deleteData } = removing;
+                          setRemoving(null);
+                          void act("remove:" + p.id, async () => {
+                            const result = await api.remove({
+                              profileId: p.id,
+                              deleteData,
+                            });
+                            if (result.keptData)
+                              setError(
+                                `Removed. Its folder was kept: ${result.keptData}`,
+                              );
+                          });
+                        }}
+                      >
+                        <Trash2 size={12} />
+                        {removing.deleteData
+                          ? "Remove and delete folder"
+                          : "Remove profile"}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </li>
             );
           })}

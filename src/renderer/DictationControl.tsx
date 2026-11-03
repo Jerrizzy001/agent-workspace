@@ -324,7 +324,10 @@ export function DictationSettings() {
     <div
       className="modal-backdrop"
       onKeyDown={(e) => {
-        if (e.key === "Escape") closeDictationSettings();
+        if (e.key === "Escape") {
+          e.preventDefault();
+          closeDictationSettings();
+        }
         // Space on a focused button would otherwise activate it behind this chord.
         if (isDictationShortcut(e)) e.preventDefault();
       }}

@@ -1,10 +1,11 @@
 import { createId } from "./id";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { ClipboardImagePreview, Session } from "../shared/contracts";
 import { shellEscapePath } from "../shared/terminal-paste";
 import { ImagePastePreview } from "./ImagePastePreview";
+import { focusOutside } from "./modal-accessibility";
 import {
   getAppearance,
   subscribeAppearance,
@@ -41,6 +42,7 @@ export function TerminalView({
   onHandoffInserted?: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const hintId = useId();
   useEffect(
     () =>
       subscribeAppearance(() => {
@@ -266,9 +268,22 @@ export function TerminalView({
     terminalRef.current = terminal;
     const fit = new FitAddon();
     terminal.loadAddon(fit);
-    terminal.open(host.current);
-    // The dictation shortcut is the only key combination taken from the terminal.
+    const element = host.current;
+    terminal.open(element);
+    terminal.textarea?.setAttribute("aria-describedby", hintId);
+    // Two key combinations are taken from the terminal: F6 / Shift+F6, which
+    // move focus out because the shell keeps Tab, and the dictation shortcut.
     terminal.attachCustomKeyEventHandler((event) => {
+      if (
+        event.key === "F6" &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey
+      ) {
+        event.preventDefault();
+        if (event.type === "keydown") focusOutside(element, event.shiftKey);
+        return false;
+      }
       if (!dictationAvailable() || !isDictationShortcut(event)) return true;
       event.preventDefault();
       if (event.type === "keydown" && !event.repeat) toggleDictation.current();
@@ -276,7 +291,6 @@ export function TerminalView({
     });
     // A paste that carries only an image becomes the image-path flow; text
     // pastes are left to the terminal untouched.
-    const element = host.current;
     const onPaste = (event: ClipboardEvent) => {
       const data = event.clipboardData;
       if (
@@ -555,6 +569,10 @@ export function TerminalView({
         </div>
       ) : null}
       <div className="terminal-host" ref={host} />
+      <span id={hintId} className="sr-only">
+        Tab goes to the program. Press F6 to move to the next control outside
+        the terminal, or Shift+F6 to the previous one.
+      </span>
       {imagePaste ? (
         <ImagePastePreview
           preview={imagePaste.preview}

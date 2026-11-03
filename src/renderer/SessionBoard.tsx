@@ -671,7 +671,7 @@ function LiveCard({
           <button
             className="icon-button"
             aria-label="Close live card"
-            title="Close (Esc outside the terminal)"
+            title="Close (Esc; in the terminal, press F6 first)"
             onClick={close}
           >
             <X size={17} />

@@ -115,42 +115,78 @@ export function LaunchBar({
     <div className="launch-bar">
       <div className="launch-target">
         <span className="launch-label">Opens in</span>
-        <ol className="crumbs target-crumbs" aria-label="Where new sessions open">
-          <li>
-            <button
-              onClick={() => onTarget("")}
-              aria-current={!segments.length ? "location" : undefined}
-              title={project.path}
-            >
-              {git?.available ? <FolderGit2 size={14} /> : <Folder size={14} />}
-              {project.name}
-            </button>
-          </li>
-          {segments.map((segment, index) => (
-            <li key={index}>
-              <ChevronRight size={13} aria-hidden="true" />
-              <button
-                onClick={() => onTarget(segments.slice(0, index + 1).join("/"))}
-                aria-current={
-                  index === segments.length - 1 ? "location" : undefined
-                }
-              >
-                {segment}
-              </button>
-            </li>
-          ))}
-          {segments.length ? (
-            <li>
-              <button
-                className="icon-button tiny"
-                aria-label="Open at the folder root instead"
-                title="Use the folder root"
-                onClick={() => onTarget("")}
-              >
-                <X size={12} />
-              </button>
-            </li>
-          ) : null}
+        <ol
+          className="crumbs target-crumbs"
+          aria-label="Where new sessions open"
+        >
+          {choices.worktreePath ? (
+            <>
+              <li>
+                <button
+                  aria-current="location"
+                  title={`${choices.worktreePath} · change in Launch options`}
+                  onClick={() => setOptionsOpen(true)}
+                >
+                  <GitBranch size={14} />
+                  {where}
+                </button>
+              </li>
+              <li>
+                <button
+                  className="icon-button tiny"
+                  aria-label="Open in the main folder instead"
+                  title="Use the main folder"
+                  onClick={() => onChoices({ ...choices, worktreePath: "" })}
+                >
+                  <X size={12} />
+                </button>
+              </li>
+            </>
+          ) : (
+            <>
+              <li>
+                <button
+                  onClick={() => onTarget("")}
+                  aria-current={!segments.length ? "location" : undefined}
+                  title={project.path}
+                >
+                  {git?.available ? (
+                    <FolderGit2 size={14} />
+                  ) : (
+                    <Folder size={14} />
+                  )}
+                  {project.name}
+                </button>
+              </li>
+              {segments.map((segment, index) => (
+                <li key={index}>
+                  <ChevronRight size={13} aria-hidden="true" />
+                  <button
+                    onClick={() =>
+                      onTarget(segments.slice(0, index + 1).join("/"))
+                    }
+                    aria-current={
+                      index === segments.length - 1 ? "location" : undefined
+                    }
+                  >
+                    {segment}
+                  </button>
+                </li>
+              ))}
+              {segments.length ? (
+                <li>
+                  <button
+                    className="icon-button tiny"
+                    aria-label="Open at the folder root instead"
+                    title="Use the folder root"
+                    onClick={() => onTarget("")}
+                  >
+                    <X size={12} />
+                  </button>
+                </li>
+              ) : null}
+            </>
+          )}
         </ol>
         {git ? (
           <span

@@ -37,6 +37,7 @@ import type {
   Task,
 } from "../shared/contracts";
 import { ReviewPanel, type ReviewSummary } from "./ReviewPanel";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { CanvasView } from "./CanvasView";
 import { RemoteAccessPanel } from "./RemoteAccessPanel";
 import { SSHProjectsPanel, hostStateLabel } from "./SSHProjectsPanel";
@@ -177,6 +178,47 @@ export default function App() {
     });
   };
   const [drawer, setDrawer] = useState(false);
+  const drawerPanel = useRef<HTMLElement>(null);
+  // On narrow layouts the open drawer covers the page: focus moves into it,
+  // the page behind is inert, Escape closes it and focus goes back.
+  useEffect(() => {
+    if (!drawer) return;
+    const narrow = window.matchMedia("(max-width: 900px)");
+    const panel = drawerPanel.current;
+    if (!narrow.matches || !panel) {
+      setDrawer(false);
+      return;
+    }
+    const opener = document.activeElement as HTMLElement | null;
+    const behind = [...(panel.parentElement?.children || [])].filter(
+      (el): el is HTMLElement =>
+        el instanceof HTMLElement &&
+        el !== panel &&
+        !el.classList.contains("drawer-scrim"),
+    );
+    const was = behind.map((el) => el.inert);
+    for (const el of behind) el.inert = true;
+    panel.querySelector<HTMLElement>(".drawer-close")?.focus();
+    const key = (event: KeyboardEvent) => {
+      if (
+        event.key !== "Escape" ||
+        event.defaultPrevented ||
+        document.querySelector('[role="dialog"][aria-modal="true"]')
+      )
+        return;
+      event.preventDefault();
+      setDrawer(false);
+    };
+    const widened = () => !narrow.matches && setDrawer(false);
+    window.addEventListener("keydown", key);
+    narrow.addEventListener("change", widened);
+    return () => {
+      window.removeEventListener("keydown", key);
+      narrow.removeEventListener("change", widened);
+      behind.forEach((el, i) => (el.inert = was[i]!));
+      if (opener?.isConnected && !panel.contains(opener)) opener.focus();
+    };
+  }, [drawer]);
   const [mobilePane, setMobilePane] = useState<"terminal" | "files">(
     "terminal",
   );
@@ -462,7 +504,6 @@ export default function App() {
       setGit(null);
     }
     setReviewOverride(null);
-    setChoices((c) => ({ ...c, worktreePath: tree || "" }));
     setHandoffDraft(
       draft ? { sessionId: s.id, generation: s.generation, text: draft } : null,
     );
@@ -570,6 +611,15 @@ export default function App() {
       setProblem({ provider, message: cap.detail, kind: "missing" });
       return undefined;
     }
+    // The Files panel follows the new session, so a different worktree would
+    // drop the editor's unsaved changes.
+    if (
+      !stay &&
+      reviewOverride === null &&
+      (choices.worktreePath || undefined) !== reviewTree &&
+      !canNavigate()
+    )
+      return undefined;
     const model = provider === "shell" ? "" : choices.models[provider].trim();
     const prompt = provider === "shell" ? "" : choices.prompt;
     return invokeLaunch(
@@ -656,7 +706,8 @@ export default function App() {
     if (
       !confirm(
         `Remove ${project.name} from your folders? Files on disk are not touched, and opening the folder again brings back its history.`,
-      )
+      ) ||
+      !canNavigate()
     )
       return;
     try {
@@ -775,7 +826,11 @@ export default function App() {
           onClick={() => setDrawer(false)}
         />
       ) : null}
-      <aside className="sidebar" aria-label="Folders and sessions">
+      <aside
+        ref={drawerPanel}
+        className="sidebar"
+        aria-label="Folders and sessions"
+      >
         <div className="sidebar-head">
           <BrandMark />
           <div className="brand-name">
@@ -1237,217 +1292,236 @@ export default function App() {
                 inert={!!launching}
                 aria-busy={!!launching}
               >
-                {view === "terminals" ? (
-                  <>
-                    {tabs.length ? (
-                      <div
-                        className="session-tabs"
-                        aria-label="Sessions in this folder"
-                      >
-                        {tabs.map((s) => (
-                          <button
-                            key={s.id}
-                            className={
-                              "session-tab tone-" +
-                              sessionState(s).tone +
-                              (s.id === session?.id ? " active" : "")
-                            }
-                            aria-pressed={s.id === session?.id}
-                            title={`${providerName(s.provider)} · ${s.cwd}`}
-                            onClick={() => openSession(s)}
-                          >
-                            <ProviderGlyph provider={s.provider} size={13} />
-                            <span>
-                              {titleOf(s)}
-                              {sessionLocation(s, project) !== "/" ? (
-                                <em>{sessionLocation(s, project)}</em>
-                              ) : null}
-                            </span>
-                            <StatusBadge session={s} compact />
-                          </button>
-                        ))}
-                        <button
-                          className={
-                            "session-tab new-tab" + (!session ? " active" : "")
-                          }
-                          aria-label="New session"
-                          title="Start another session"
-                          onClick={() => setSessionId("")}
+                <ErrorBoundary area="This view" resetKey={view + projectId}>
+                  {view === "terminals" ? (
+                    <>
+                      {tabs.length ? (
+                        <div
+                          className="session-tabs"
+                          aria-label="Sessions in this folder"
                         >
-                          <Plus size={14} />
+                          {tabs.map((s) => (
+                            <button
+                              key={s.id}
+                              className={
+                                "session-tab tone-" +
+                                sessionState(s).tone +
+                                (s.id === session?.id ? " active" : "")
+                              }
+                              aria-pressed={s.id === session?.id}
+                              title={`${providerName(s.provider)} · ${s.cwd}`}
+                              onClick={() => openSession(s)}
+                            >
+                              <ProviderGlyph provider={s.provider} size={13} />
+                              <span>
+                                {titleOf(s)}
+                                {sessionLocation(s, project) !== "/" ? (
+                                  <em>{sessionLocation(s, project)}</em>
+                                ) : null}
+                              </span>
+                              <StatusBadge session={s} compact />
+                            </button>
+                          ))}
+                          <button
+                            className={
+                              "session-tab new-tab" +
+                              (!session ? " active" : "")
+                            }
+                            aria-label="New session"
+                            title="Start another session"
+                            onClick={() => {
+                              // The Files panel follows a worktree session; leaving
+                              // it would drop the editor's unsaved changes.
+                              if (
+                                reviewOverride === null &&
+                                reviewTree &&
+                                !canNavigate()
+                              )
+                                return;
+                              setSessionId("");
+                            }}
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </div>
+                      ) : null}
+                      {session ? (
+                        <SessionView
+                          key={session.id}
+                          session={session}
+                          project={project}
+                          title={titleOf(session)}
+                          onResume={(s) => void resume(s)}
+                          onRestart={(s) => void restart(s)}
+                          onEnded={(s) => endedByUser.current.add(s.id)}
+                          report={report}
+                          sessions={snapshot.sessions}
+                          titleOf={titleOf}
+                          onOpen={openSession}
+                          handoffDraft={
+                            handoffDraft?.sessionId === session.id &&
+                            handoffDraft.generation === session.generation
+                              ? handoffDraft.text
+                              : undefined
+                          }
+                          clearHandoff={() => setHandoffDraft(null)}
+                        />
+                      ) : (
+                        <Launchpad
+                          project={project}
+                          target={target}
+                          worktree={choices.worktreePath}
+                          capabilities={projectCapabilities}
+                          launching={launching}
+                          disabledReason={disabledReason}
+                          onLaunch={(provider) => void launch(provider)}
+                          recent={folderSessions
+                            .filter((s) => !isOpen(s))
+                            .slice(0, 4)}
+                          titleOf={titleOf}
+                          onOpen={openSession}
+                          onResume={(s) => void resume(s)}
+                        />
+                      )}
+                    </>
+                  ) : null}
+                  {view === "board" && boardMode === "sessions" ? (
+                    <SessionBoard
+                      key={projectId}
+                      project={project}
+                      sessions={folderSessions}
+                      boards={snapshot.boardLanes || []}
+                      capabilities={projectCapabilities}
+                      disabledReason={disabledReason}
+                      launching={launching}
+                      titleOf={titleOf}
+                      onLaunch={(provider) => launch(provider, true)}
+                      onResume={(s) => resume(s, true)}
+                      onRestart={(s) => restart(s, true)}
+                      onEnded={(s) => endedByUser.current.add(s.id)}
+                      report={report}
+                      modeSwitch={boardSwitch}
+                    />
+                  ) : null}
+                  {view === "board" && boardMode === "tasks" ? (
+                    <Board
+                      modeSwitch={boardSwitch}
+                      projectId={project?.hostId ? undefined : project?.id}
+                      tasks={tasks}
+                      attempts={attempts}
+                      sessions={snapshot.sessions}
+                      selectedTaskId={taskId}
+                      onSelectTask={setTaskId}
+                      onNewTask={() => {
+                        setModalTask(undefined);
+                        setModal("task");
+                      }}
+                      onEditTask={(t) => {
+                        setModalTask(t);
+                        setModal("edit-task");
+                      }}
+                      onStartAttempt={(t) => {
+                        setModalTask(t);
+                        setModal("attempt");
+                      }}
+                      onOpenSession={(id) => {
+                        const s = snapshot.sessions.find((x) => x.id === id);
+                        if (s) openSession(s);
+                      }}
+                      report={report}
+                    />
+                  ) : null}
+                  {view === "canvas" ? (
+                    <div className="canvas-area">
+                      <div className="canvas-toolbar">
+                        <span>
+                          Arrange your agents and notes. Connect agents to share
+                          a reviewed snapshot; a line never starts work
+                          automatically.
+                        </span>
+                        <button
+                          className="button ghost small"
+                          onClick={() => void addNote()}
+                        >
+                          <FileText size={14} />
+                          Add note
                         </button>
                       </div>
-                    ) : null}
-                    {session ? (
-                      <SessionView
-                        key={session.id}
-                        session={session}
-                        project={project}
-                        title={titleOf(session)}
-                        onResume={(s) => void resume(s)}
-                        onRestart={(s) => void restart(s)}
-                        onEnded={(s) => endedByUser.current.add(s.id)}
+                      <CanvasView
+                        key={projectId}
+                        projectId={projectId}
+                        titleOf={titleOf}
+                        onOpenSession={openSession}
+                        connectRequested={connectRequested}
+                        onConnectHandled={() => setConnectRequested(false)}
+                        attempts={attempts}
+                        sessions={snapshot.sessions.filter(
+                          (s) => s.projectId === projectId,
+                        )}
+                        notes={snapshot.notes.filter(
+                          (n) => n.projectId === projectId,
+                        )}
+                        layout={snapshot.layouts.find(
+                          (l) => l.projectId === projectId,
+                        )}
                         report={report}
-                        sessions={snapshot.sessions}
-                        titleOf={titleOf}
-                        onOpen={openSession}
-                        handoffDraft={
-                          handoffDraft?.sessionId === session.id &&
-                          handoffDraft.generation === session.generation
-                            ? handoffDraft.text
-                            : undefined
-                        }
-                        clearHandoff={() => setHandoffDraft(null)}
+                        onCreate={async (kind) => {
+                          if (kind === "note") return addNote();
+                          const created = await launch(kind, true);
+                          return created
+                            ? created.attemptId || created.id
+                            : undefined;
+                        }}
                       />
-                    ) : (
-                      <Launchpad
-                        project={project}
-                        target={target}
-                        capabilities={projectCapabilities}
-                        launching={launching}
-                        disabledReason={disabledReason}
-                        onLaunch={(provider) => void launch(provider)}
-                        recent={folderSessions
-                          .filter((s) => !isOpen(s))
-                          .slice(0, 4)}
-                        titleOf={titleOf}
-                        onOpen={openSession}
-                        onResume={(s) => void resume(s)}
-                      />
-                    )}
-                  </>
-                ) : null}
-                {view === "board" && boardMode === "sessions" ? (
-                  <SessionBoard
-                    key={projectId}
-                    project={project}
-                    sessions={folderSessions}
-                    boards={snapshot.boardLanes || []}
-                    capabilities={projectCapabilities}
-                    disabledReason={disabledReason}
-                    launching={launching}
-                    titleOf={titleOf}
-                    onLaunch={(provider) => launch(provider, true)}
-                    onResume={(s) => resume(s, true)}
-                    onRestart={(s) => restart(s, true)}
-                    onEnded={(s) => endedByUser.current.add(s.id)}
-                    report={report}
-                    modeSwitch={boardSwitch}
-                  />
-                ) : null}
-                {view === "board" && boardMode === "tasks" ? (
-                  <Board
-                    modeSwitch={boardSwitch}
-                    projectId={project?.hostId ? undefined : project?.id}
-                    tasks={tasks}
-                    attempts={attempts}
-                    sessions={snapshot.sessions}
-                    selectedTaskId={taskId}
-                    onSelectTask={setTaskId}
-                    onNewTask={() => {
-                      setModalTask(undefined);
-                      setModal("task");
-                    }}
-                    onEditTask={(t) => {
-                      setModalTask(t);
-                      setModal("edit-task");
-                    }}
-                    onStartAttempt={(t) => {
-                      setModalTask(t);
-                      setModal("attempt");
-                    }}
-                    onOpenSession={(id) => {
-                      const s = snapshot.sessions.find((x) => x.id === id);
-                      if (s) openSession(s);
-                    }}
-                    report={report}
-                  />
-                ) : null}
-                {view === "canvas" ? (
-                  <div className="canvas-area">
-                    <div className="canvas-toolbar">
-                      <span>
-                        Arrange your agents and notes. Connect agents to share a
-                        reviewed snapshot; a line never starts work
-                        automatically.
-                      </span>
-                      <button
-                        className="button ghost small"
-                        onClick={() => void addNote()}
-                      >
-                        <FileText size={14} />
-                        Add note
-                      </button>
                     </div>
-                    <CanvasView
-                      key={projectId}
-                      projectId={projectId}
-                      titleOf={titleOf}
-                      onOpenSession={openSession}
-                      connectRequested={connectRequested}
-                      onConnectHandled={() => setConnectRequested(false)}
-                      attempts={attempts}
-                      sessions={snapshot.sessions.filter(
-                        (s) => s.projectId === projectId,
-                      )}
-                      notes={snapshot.notes.filter(
-                        (n) => n.projectId === projectId,
-                      )}
-                      layout={snapshot.layouts.find(
-                        (l) => l.projectId === projectId,
-                      )}
-                      report={report}
-                      onCreate={async (kind) => {
-                        if (kind === "note") return addNote();
-                        const created = await launch(kind, true);
-                        return created
-                          ? created.attemptId || created.id
-                          : undefined;
-                      }}
-                    />
-                  </div>
-                ) : null}
+                  ) : null}
+                </ErrorBoundary>
               </div>
               {view === "terminals" ? (
-                <ReviewPanel
-                  key={projectId + (reviewTree || "")}
-                  collapsed={!filesOpen}
-                  onCollapse={collapseFiles}
-                  project={project}
-                  worktreePath={reviewTree}
-                  report={report}
-                  onDirtyChange={setEditorDirty}
-                  refreshRevision={reviewRefresh}
-                  directory={reviewTree ? undefined : target}
-                  onDirectoryChange={
-                    reviewTree
-                      ? undefined
-                      : (path) =>
-                          setTargets((current) => ({
-                            ...current,
-                            [project.id]: path,
-                          }))
-                  }
-                  onOpenWorktree={(tree, provider) => {
-                    if (!canNavigate()) return;
-                    const location =
-                      tree.path === project.path ? "" : tree.path;
-                    setReviewOverride(location);
-                    setChoices((c) => ({ ...c, worktreePath: location }));
-                    if (provider)
-                      void invokeLaunch(provider, createId(), {
-                        projectId: project.id,
-                        provider,
-                        ...(location ? { worktreePath: location } : {}),
-                        ...(provider === "claude" &&
-                        !project.hostId &&
-                        choices.profileId
-                          ? { profileId: choices.profileId }
-                          : {}),
-                      });
-                  }}
-                  onSummary={setGit}
-                />
+                <ErrorBoundary
+                  area="Files"
+                  resetKey={projectId + (reviewTree || "")}
+                >
+                  <ReviewPanel
+                    key={projectId + (reviewTree || "")}
+                    collapsed={!filesOpen}
+                    onCollapse={collapseFiles}
+                    project={project}
+                    worktreePath={reviewTree}
+                    report={report}
+                    onDirtyChange={setEditorDirty}
+                    refreshRevision={reviewRefresh}
+                    directory={reviewTree ? undefined : target}
+                    onDirectoryChange={
+                      reviewTree
+                        ? undefined
+                        : (path) =>
+                            setTargets((current) => ({
+                              ...current,
+                              [project.id]: path,
+                            }))
+                    }
+                    onOpenWorktree={(tree, provider) => {
+                      if (!canNavigate()) return;
+                      const location =
+                        tree.path === project.path ? "" : tree.path;
+                      setReviewOverride(location);
+                      setChoices((c) => ({ ...c, worktreePath: location }));
+                      if (provider)
+                        void invokeLaunch(provider, createId(), {
+                          projectId: project.id,
+                          provider,
+                          ...(location ? { worktreePath: location } : {}),
+                          ...(provider === "claude" &&
+                          !project.hostId &&
+                          choices.profileId
+                            ? { profileId: choices.profileId }
+                            : {}),
+                        });
+                    }}
+                    onSummary={setGit}
+                  />
+                </ErrorBoundary>
               ) : null}
             </div>
           </div>
@@ -1686,10 +1760,7 @@ export default function App() {
         <ProfilesPanel
           project={project}
           onClose={() => setProfilesPanel(false)}
-          onOpened={(s) => {
-            setSessionId(s.id);
-            setView("terminals");
-          }}
+          onOpened={(s) => openSession(s)}
         />
       ) : null}
       {remotePanel ? (
@@ -1708,6 +1779,8 @@ export default function App() {
           onClose={() => setSSHPanel(false)}
           onOpenProject={(added) => {
             setSSHPanel(false);
+            void reload();
+            if (!canNavigate()) return;
             setBrowsing(false);
             setProjectId(added.id);
             setTaskId("");
@@ -1715,7 +1788,6 @@ export default function App() {
             setView("terminals");
             setMobilePane("terminal");
             setSessionId("");
-            void reload();
           }}
         />
       ) : null}
@@ -1726,9 +1798,11 @@ export default function App() {
           close={() => setModal(null)}
           created={(id) => {
             setTaskId(id);
+            setModal(null);
+            // The task is saved either way; only the view switch waits on the editor.
+            if (!canNavigate()) return;
             setView("board");
             setBoardMode("tasks");
-            setModal(null);
           }}
           report={report}
         />
@@ -1920,6 +1994,7 @@ export default function App() {
 function Launchpad({
   project,
   target,
+  worktree,
   capabilities,
   launching,
   disabledReason,
@@ -1931,6 +2006,8 @@ function Launchpad({
 }: {
   project: Project;
   target: string;
+  /** A worktree chosen in Launch options; new sessions open there. */
+  worktree: string;
   capabilities: Snapshot["capabilities"];
   launching: Provider | null;
   disabledReason: string;
@@ -1940,7 +2017,9 @@ function Launchpad({
   onOpen: (s: Session) => void;
   onResume: (s: Session) => void;
 }) {
-  const where = [project.name, target].filter(Boolean).join("/");
+  const where = worktree
+    ? `worktree ${worktree.split("/").pop()}`
+    : [project.name, target].filter(Boolean).join("/");
   return (
     <div className="launchpad">
       <div className="launchpad-card">
