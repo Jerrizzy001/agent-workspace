@@ -1,6 +1,6 @@
 {
   "name": "agent-workspace",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "description": "A desktop and secure remote browser workspace for coding agents",
   "main": "dist/desktop/main.cjs",

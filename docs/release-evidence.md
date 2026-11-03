@@ -1,5 +1,7 @@
 # Agent Workspace 0.4.0 verification evidence
 
+For the subsequent 0.4.1 voice typing change and its current verification, see [voice-typing.md](voice-typing.md). This page preserves the 0.4.0 audit evidence.
+
 Date: 2026-11-02 (America/Toronto), following the November 1 audit. The macOS arm64 app was packaged, exercised in disposable workspaces, installed over the existing local app, and opened successfully. See [the finding-by-finding repair map](ux-repairs.md) and [machine-readable results](screenshots/ux-repairs/verification.json). Earlier evidence is retained in [release-evidence-0.3.0.md](release-evidence-0.3.0.md).
 
 ## Verification

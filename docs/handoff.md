@@ -1,6 +1,6 @@
-# Current handoff: 0.4.0 UX repairs
+# Current handoff: 0.4.1 voice typing
 
-The current work is described in [ux-repairs.md](ux-repairs.md), with current validation in [release-evidence.md](release-evidence.md). The schema is now 9. The sections below record the earlier 0.3.0 feature handoff; do not use their old platform-validation statements as current evidence.
+The latest change is described in [voice-typing.md](voice-typing.md). The earlier audit repairs are in [ux-repairs.md](ux-repairs.md), with their validation in [release-evidence.md](release-evidence.md). The schema remains 9. The sections below record the earlier 0.3.0 feature handoff; do not use their old platform-validation statements as current evidence.
 
 ---
 

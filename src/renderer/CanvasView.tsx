@@ -27,7 +27,7 @@ import type {
   TranscriptLinkView,
 } from "../shared/contracts";
 import { TerminalView } from "./TerminalView";
-import { DictationButton } from "./DictationControl";
+import { DictationToolbar } from "./DictationControl";
 import { dictationAvailable } from "./dictation";
 import { registerLeaveGuard } from "./leaveWorkspace";
 import { providerName, providers } from "./sessions";
@@ -204,13 +204,6 @@ function WorkspaceNode({ data }: NodeProps<Node<CanvasData>>) {
         </span>
         {data.session ? (
           <span className="canvas-card-actions nodrag">
-            {dictationAvailable() && data.session.status === "running" ? (
-              <DictationButton
-                compact
-                viewerId={viewerId}
-                onToggle={() => setDictationToggle((value) => value + 1)}
-              />
-            ) : null}
             <StatusBadge session={data.session} />
           </span>
         ) : (
@@ -307,6 +300,13 @@ function WorkspaceNode({ data }: NodeProps<Node<CanvasData>>) {
           note={data.note}
           saveNote={data.saveNote}
           onFlushReady={registerFlush}
+        />
+      ) : null}
+      {data.session?.status === "running" && dictationAvailable() ? (
+        <DictationToolbar
+          compact
+          viewerId={viewerId}
+          onToggle={() => setDictationToggle((value) => value + 1)}
         />
       ) : null}
     </div>
@@ -463,11 +463,16 @@ export function CanvasView({
     if (!flowReady || !nodes.length || fitted.current) return;
     let cancelled = false;
     const timer = setTimeout(() => {
-      void flow.current?.fitView({ padding: 0.16, maxZoom: 0.9, minZoom: 0.65 }).then(applied => {
-        if (!cancelled && applied) fitted.current = true;
-      });
+      void flow.current
+        ?.fitView({ padding: 0.16, maxZoom: 0.9, minZoom: 0.65 })
+        .then((applied) => {
+          if (!cancelled && applied) fitted.current = true;
+        });
     }, 80);
-    return () => { cancelled = true; clearTimeout(timer); };
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [flowReady, nodes.length]);
   const history = useRef<Record<string, { x: number; y: number }>[]>([]);
   const future = useRef<Record<string, { x: number; y: number }>[]>([]);
@@ -803,7 +808,7 @@ export function CanvasView({
         <ReactFlow<Node<CanvasData>, Edge>
           onInit={(instance) => {
             flow.current = instance;
-          setFlowReady(true);
+            setFlowReady(true);
           }}
           nodes={nodes}
           nodeTypes={nodeTypes}

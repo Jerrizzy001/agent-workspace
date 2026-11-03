@@ -21,7 +21,7 @@ import type { Project, Session } from "../shared/contracts";
 import { TerminalView } from "./TerminalView";
 import { providerName, sessionLocation, sessionState } from "./sessions";
 import { ProviderGlyph, StatusBadge } from "./ui";
-import { DictationButton } from "./DictationControl";
+import { DictationToolbar } from "./DictationControl";
 import { dictationAvailable, isDictationShortcut } from "./dictation";
 import { AgentControlButton } from "./AgentControl";
 import { profileLabel, profilesAvailable, useProfiles } from "./ProfilesPanel";
@@ -110,9 +110,14 @@ export function SessionView({
   useEffect(() => {
     if (!dictationAvailable() || session.status !== "running") return;
     const onKey = (event: KeyboardEvent) => {
-      if (!isDictationShortcut(event) || event.repeat) return;
+      if (!isDictationShortcut(event) || event.repeat || event.defaultPrevented)
+        return;
       const target = event.target as Element | null;
-      if (target?.closest?.(".xterm, input, textarea, [contenteditable]"))
+      if (
+        target?.closest?.(
+          '.xterm, input, textarea, [contenteditable], [role="dialog"], [inert]',
+        )
+      )
         return;
       event.preventDefault();
       setDictationToggle((value) => value + 1);
@@ -345,12 +350,6 @@ export function SessionView({
           {session.status === "running" ? (
             <>
               {/* Pasted images stay on this computer. */}
-              {dictationAvailable() ? (
-                <DictationButton
-                  viewerId={viewerId}
-                  onToggle={() => setDictationToggle((value) => value + 1)}
-                />
-              ) : null}
               {window.workspace.clipboardImage && !session.hostId ? (
                 <button
                   className="button ghost small"
@@ -502,6 +501,12 @@ export function SessionView({
           dictationToggle={dictationToggle}
         />
       </div>
+      {dictationAvailable() && session.status === "running" ? (
+        <DictationToolbar
+          viewerId={viewerId}
+          onToggle={() => setDictationToggle((value) => value + 1)}
+        />
+      ) : null}
     </section>
   );
 }

@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Copy, Download, Mic, Square, X } from "lucide-react";
+import { Copy, Download, Mic, Settings2, Square, X } from "lucide-react";
 import {
   clearDictationError,
   dictationErrorText,
   closeDictationSettings,
   dictationShortcutLabel,
   dismissLeftover,
+  isDictationShortcut,
+  openDictationSettings,
   refreshDictationStatus,
-  stopDictation,
   useDictation,
 } from "./dictation";
 
@@ -19,9 +20,9 @@ const clock = (ms: number) => {
 };
 
 /**
- * Microphone control for a terminal header (desktop owner only). While that
+ * Microphone control beside a terminal's input (desktop owner only). While that
  * terminal receives dictation it becomes the recording indicator: pulsing
- * dot, elapsed time and Stop. It sits in the header, never over terminal text.
+ * dot, elapsed time and Stop. It never covers terminal text.
  */
 export function DictationButton({
   viewerId,
@@ -44,20 +45,16 @@ export function DictationButton({
   if (!on)
     return (
       <button
-        className={
-          compact
-            ? "icon-button dictation-toggle"
-            : "button ghost small dictation-toggle"
-        }
+        className="button small dictation-toggle"
         title={`Dictate into this terminal: words are typed as you pause, never submitted (${dictationShortcutLabel})`}
-        aria-label="Dictate"
+        aria-label="Voice typing"
         aria-pressed={false}
         disabled={!viewerId}
         onMouseDown={(event) => event.preventDefault()}
         onClick={onToggle}
       >
-        <Mic size={13} />
-        {compact ? null : "Dictate"}
+        <Mic size={15} />
+        Voice typing
       </button>
     );
   const label =
@@ -77,7 +74,9 @@ export function DictationButton({
       <span className="dictation-dot" aria-hidden="true" />
       {state.phase === "listening" && state.startedAt ? (
         <>
-          <span className="sr-only">{label}</span>
+          <span className={compact ? "sr-only" : "dictation-label"}>
+            {label}
+          </span>
           <span className="dictation-time">{clock(now - state.startedAt)}</span>
         </>
       ) : compact ? (
@@ -91,12 +90,57 @@ export function DictationButton({
         aria-pressed={true}
         disabled={state.phase === "finishing"}
         onMouseDown={(event) => event.preventDefault()}
-        onClick={() => void stopDictation()}
+        onClick={onToggle}
       >
         <Square size={9} />
-        {compact ? null : "Stop"}
+        Stop
       </button>
     </span>
+  );
+}
+
+/** Kept below the terminal so voice input is discoverable beside the prompt. */
+export function DictationToolbar({
+  viewerId,
+  onToggle,
+  compact = false,
+}: {
+  viewerId: string | null;
+  onToggle: () => void;
+  compact?: boolean;
+}) {
+  const state = useDictation();
+  return (
+    <div
+      className={
+        "terminal-voice-bar nodrag nowheel" + (compact ? " compact" : "")
+      }
+      role="group"
+      aria-label="Voice typing controls"
+    >
+      <DictationButton
+        viewerId={viewerId}
+        onToggle={onToggle}
+        compact={compact}
+      />
+      <span className="terminal-voice-help">
+        {viewerId
+          ? compact
+            ? "Press Enter to send"
+            : "Speak to type here. Press Enter to send."
+          : "Connecting terminal…"}
+      </span>
+      <kbd className="terminal-voice-shortcut">{dictationShortcutLabel}</kbd>
+      <button
+        className="icon-button"
+        aria-label="Voice typing settings"
+        title="Speech model and microphone settings"
+        disabled={state.phase !== "idle"}
+        onClick={() => openDictationSettings()}
+      >
+        <Settings2 size={15} />
+      </button>
+    </div>
   );
 }
 
@@ -157,6 +201,7 @@ export function DictationNotices() {
 export function DictationSettings() {
   const state = useDictation();
   const [micTest, setMicTest] = useState("");
+  const [micTesting, setMicTesting] = useState(false);
   const [level, setLevel] = useState(0);
   const micCleanup = useRef<(() => void) | null>(null);
   const micTicket = useRef(0);
@@ -165,6 +210,7 @@ export function DictationSettings() {
     micCleanup.current?.();
     micCleanup.current = null;
     setLevel(0);
+    setMicTesting(false);
   };
   useEffect(() => {
     if (!state.settingsOpen) stopMic();
@@ -177,6 +223,7 @@ export function DictationSettings() {
   async function testMic() {
     stopMic();
     const ticket = micTicket.current;
+    setMicTesting(true);
     setMicTest("Requesting microphone access…");
     let stream: MediaStream | undefined;
     try {
@@ -222,10 +269,12 @@ export function DictationSettings() {
       read();
     } catch {
       stream?.getTracks().forEach((t) => t.stop());
-      if (ticket === micTicket.current)
+      if (ticket === micTicket.current) {
+        setMicTesting(false);
         setMicTest(
           "Microphone unavailable. Check system microphone permission and your input device, then try again.",
         );
+      }
     }
   }
   const [busy, setBusy] = useState(false);
@@ -274,7 +323,11 @@ export function DictationSettings() {
   return createPortal(
     <div
       className="modal-backdrop"
-      onKeyDown={(e) => e.key === "Escape" && closeDictationSettings()}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") closeDictationSettings();
+        // Space on a focused button would otherwise activate it behind this chord.
+        if (isDictationShortcut(e)) e.preventDefault();
+      }}
     >
       <section
         className="modal dictation-settings"
@@ -299,9 +352,11 @@ export function DictationSettings() {
           <p className="dictation-callout">{state.settingsNotice}</p>
         ) : null}
         <p className="muted">
-          Press <kbd>{dictationShortcutLabel}</kbd> or the microphone button on
-          a terminal and speak English. Each phrase is typed into that terminal
-          when you pause. Nothing is submitted: press Enter yourself.
+          Open a running Claude, Codex or shell session from the sidebar, then
+          click <strong>Voice typing</strong> below its terminal. You can also
+          press <kbd>{dictationShortcutLabel}</kbd> in the terminal. Speak
+          English; each phrase is typed when you pause. Press Enter yourself to
+          send.
         </p>
         <p className="muted">
           Audio stays in memory on this computer and is transcribed here; it is
@@ -314,10 +369,13 @@ export function DictationSettings() {
               ? "Speech model ready · English"
               : "Download a speech model to begin"}
           </strong>
-          <p>Check your microphone here without typing into a terminal.</p>
+          <p>
+            This is only a microphone test. To type into your AI, close settings
+            and use Voice typing below the terminal.
+          </p>
           <button
             className="button"
-            disabled={state.phase !== "idle"}
+            disabled={state.phase !== "idle" || micTesting}
             onClick={() => void testMic()}
           >
             Test microphone
@@ -325,21 +383,25 @@ export function DictationSettings() {
           {micTest ? (
             <div role="status">
               <p>{micTest}</p>
-              <meter
-                aria-label="Microphone input level"
-                min={0}
-                max={100}
-                value={level}
-              />
-              <button
-                className="button small"
-                onClick={() => {
-                  stopMic();
-                  setMicTest("Microphone test stopped.");
-                }}
-              >
-                Stop test
-              </button>
+              {micTesting ? (
+                <>
+                  <meter
+                    aria-label="Microphone input level"
+                    min={0}
+                    max={100}
+                    value={level}
+                  />
+                  <button
+                    className="button small"
+                    onClick={() => {
+                      stopMic();
+                      setMicTest("Microphone test stopped.");
+                    }}
+                  >
+                    Stop test
+                  </button>
+                </>
+              ) : null}
             </div>
           ) : null}
         </section>

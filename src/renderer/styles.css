@@ -3155,9 +3155,39 @@ kbd {
   gap: 6px;
   cursor: default;
 }
-.canvas-card-actions .dictation-toggle {
-  width: 24px;
-  height: 24px;
+.terminal-voice-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  gap: 8px 12px;
+  padding: 9px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-2);
+}
+.terminal-voice-bar .dictation-toggle {
+  border: 1px solid var(--accent);
+  color: var(--text);
+  background: var(--surface-2);
+  flex-shrink: 0;
+}
+.terminal-voice-help {
+  flex: 1;
+  font-size: 12px;
+  min-width: 100px;
+}
+.terminal-voice-shortcut {
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.terminal-voice-bar.compact {
+  padding: 6px 10px;
+  gap: 8px;
+}
+.terminal-voice-bar.compact .terminal-voice-shortcut {
+  display: none;
 }
 .dictation-indicator {
   display: inline-flex;

@@ -32,6 +32,7 @@ export const sshAvailable = () =>
   });
 const repo = path.resolve(import.meta.dirname, "..");
 const tsxCli = path.join(repo, "node_modules", "tsx", "dist", "cli.mjs");
+const shellQuote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
 
 async function freePort() {
   return await new Promise<number>((resolve, reject) => {
@@ -208,7 +209,7 @@ export async function startSshFixture(prefix = "aw-ssh-"): Promise<SshFixture> {
       fs.writeFileSync(
         launcher,
         options.body ??
-          `#!/bin/sh\nexport PATH=${options.extraPath ? options.extraPath + ":" : ""}$PATH\nexec ${process.execPath} ${tsxCli} ${repo}/src/server/stdio-host.ts "$@"\n`,
+          `#!/bin/sh\nexport PATH=${options.extraPath ? shellQuote(options.extraPath + ":") : ""}"$PATH"\nexec ${shellQuote(process.execPath)} ${shellQuote(tsxCli)} ${shellQuote(path.join(repo, "src/server/stdio-host.ts"))} "$@"\n`,
         { mode: 0o755 },
       );
     },

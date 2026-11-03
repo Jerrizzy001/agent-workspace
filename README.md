@@ -4,7 +4,7 @@ An independently authored desktop and remote browser app for running coding agen
 
 ![Folder browser](docs/screenshots/desktop/folder-browser.png)
 
-Version **0.4.0** addresses the end-to-end UX audit. See [the repair map and evidence](docs/ux-repairs.md). Continuing development? Start with [docs/handoff.md](docs/handoff.md).
+Version **0.4.1** puts a clearly labeled **Voice typing** control below every running desktop terminal. See [voice typing verification](docs/voice-typing.md) and [the earlier audit repair map](docs/ux-repairs.md). Continuing development? Start with [docs/handoff.md](docs/handoff.md).
 
 ## Using it
 
@@ -20,7 +20,7 @@ Version **0.4.0** addresses the end-to-end UX audit. See [the repair map and evi
 
 **Accounts:** A profile is a configuration folder, not a guarantee of independent credentials. **Check account** runs the installed Claude CLI's authentication-status command and displays only its reported identity and sign-in status; tokens are never returned or saved by this check. macOS Keychain and environment-level credentials may be shared across profiles. Sign-in still happens in Claude's own terminal.
 
-**Voice and images:** Local English voice dictation types phrases without Enter; **Test microphone** checks input for ten seconds without saving audio or typing text. Models are downloaded explicitly in voice settings. **Paste image** previews a clipboard image, saves a private PNG, and inserts its escaped path without Enter. Remote browsers cannot access the host microphone or clipboard.
+**Voice and images:** Open a running Claude, Codex or shell session and click **Voice typing** in the bar below its terminal (also available on Canvas). Speak English; phrases are typed at pauses, and you press Enter yourself to send. Click **Stop** to finish, or use ⌘⇧Space on Mac / Ctrl+Shift+Space elsewhere. The settings button beside Voice typing opens model setup and a ten-second **Test microphone**, which only checks input and does not type. Models are downloaded explicitly. **Paste image** previews a clipboard image, saves a private PNG, and inserts its escaped path without Enter. Remote browsers cannot access the host microphone or clipboard.
 
 **Agent permissions:** **More actions → Agent control**, or a canvas card's **Actions**, offers read-only context and canvas-organization presets plus individual permissions. Access is scoped to one session and folder. Agents use the local `awctl` utility; it cannot type into terminals, terminate processes, change files/Git, or grant more permissions. Opened child sessions inherit no grant. Unknown mutation outcomes retain the original request ID for reconciliation.
 
@@ -69,7 +69,7 @@ The local fixture runners use disposable repositories and isolated app data. `np
 
 `npm test` includes a folder-launch test that uses fixture CLIs in real tmux. It covers blank interactive launch, folder isolation, an idempotent retry, hook-driven needs-you status, saved startup-failure output and resume. Browser scripts accept `WORKSPACE_BROWSER=/path/to/chromium` instead of installed Chrome. `npm run make-icons` regenerates the app and browser icons from the brand mark. Current verification evidence is in [docs/release-evidence.md](docs/release-evidence.md).
 
-`npm run verify:dictation` drives dictation with Chromium's fake microphone playing a WAV synthesised by `espeak-ng`. By default it installs the real tiny.en model through the settings dialog. Set `WORKSPACE_TEST_DICTATION_ARCHIVE` to a local copy of the release asset to skip the network (the pinned checksum still applies), or set `WORKSPACE_VERIFY_DICTATION_FIXTURE=1` to use a fixture transcriber. `WORKSPACE_TEST_REAL_DICTATION=1 npm test` adds an opt-in test that installs tiny.en and transcribes a synthesised clip.
+`npm run verify:dictation` drives dictation with a WAV synthesised by `espeak-ng` or macOS `say`. On macOS it feeds an in-memory microphone stream after the real permission check, because the packaged audio-service sandbox refuses Chromium's file input; the sandbox remains enabled. Set `WORKSPACE_VERIFY_DICTATION_CAPTURE=native` to use Chromium's file device. By default the test installs the real tiny.en model through the settings dialog. Set `WORKSPACE_TEST_DICTATION_ARCHIVE` to a local copy of the release asset to skip the network (the pinned checksum still applies), or set `WORKSPACE_VERIFY_DICTATION_FIXTURE=1` to use a fixture transcriber. `WORKSPACE_TEST_REAL_DICTATION=1 npm test` adds an opt-in test that installs tiny.en and transcribes a synthesised clip.
 
 Dictation uses these third-party components:
 

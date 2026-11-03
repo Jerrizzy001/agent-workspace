@@ -52,6 +52,8 @@ export function TerminalView({
   const toggleDictation = useRef(() => {});
   toggleDictation.current = () => {
     if (!dictationAvailable()) return;
+    // A click or keyboard activation should leave Enter directed to the prompt.
+    terminalRef.current?.focus();
     const viewer = viewerRef.current;
     if (dictationActiveFor(viewer)) {
       void stopDictation();
