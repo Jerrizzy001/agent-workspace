@@ -23,7 +23,7 @@ const repo = path.join(fixture, "alpha");
 const home = path.join(fixture, "home");
 const bin = path.join(fixture, "bin");
 const log = path.join(fixture, "claude.jsonl");
-const screenshots = path.resolve("docs/screenshots/desktop");
+const screenshots = path.resolve(process.env.WORKSPACE_SCREENSHOT_DIR || "docs/screenshots/desktop");
 await mkdir(repo);
 await mkdir(home);
 await mkdir(bin);

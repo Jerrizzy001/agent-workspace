@@ -7,7 +7,7 @@ import type {
   TranscriptLinkView,
   TranscriptPreview,
 } from "../shared/contracts";
-import { errorText } from "./sessions";
+import { errorText, sessionState } from "./sessions";
 import { profileLabel, useProfiles } from "./ProfilesPanel";
 import "./profiles.css";
 
@@ -22,9 +22,9 @@ const kib = (bytes: number) =>
   bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KiB`;
 
 /**
- * Desktop owner only: share a bounded, reviewed export of this session's
- * Claude conversation with one other running session, and see or revoke the
- * links this session gave or received.
+ * Desktop owner only: choose a Claude source from this folder and share its
+ * reviewed export with a running session. The session that opened the dialog
+ * stays the anchor for incoming/outgoing history; a recipient can start here too.
  */
 export function TranscriptLinksPanel({
   session,
@@ -44,10 +44,48 @@ export function TranscriptLinksPanel({
   onOpenSession?: (session: Session, draft?: string) => void;
 }) {
   const profiles = useProfiles();
+  const sources = sessions.filter(
+    (s) =>
+      s.provider === "claude" &&
+      !s.hostId &&
+      !!s.conversationId &&
+      !s.profileSetup &&
+      s.projectId === session.projectId,
+  );
+  const [sourceId, setSourceId] = useState(() =>
+    sources.some((s) => s.id === session.id)
+      ? session.id
+      : sources.length === 1
+        ? sources[0].id
+        : "",
+  );
+  const source = sources.find((s) => s.id === sourceId);
+  // Bind a preview to its precise conversation, including changes arriving
+  // from another window while this dialog is open. A stale preview cannot submit.
+  const sourceKey = source
+    ? JSON.stringify([
+        source.id,
+        source.generation,
+        source.conversationId,
+        source.profileId ?? "",
+      ])
+    : "";
   const [links, setLinks] = useState<TranscriptLinkView[] | null>(null);
-  const [preview, setPreview] = useState<TranscriptPreview | null>(null);
+  const [review, setReview] = useState<{
+    sourceKey: string;
+    preview: TranscriptPreview;
+  } | null>(null);
+  const preview = review?.sourceKey === sourceKey ? review.preview : null;
   const [redactions, setRedactions] = useState<[number, number][]>([]);
-  const [recipientId, setRecipientId] = useState(initialRecipientId);
+  const [recipientId, setRecipientId] = useState(
+    () =>
+      initialRecipientId ||
+      (!sources.some((s) => s.id === session.id) &&
+      session.status === "running" &&
+      !session.hostId
+        ? session.id
+        : ""),
+  );
   const [consent, setConsent] = useState(false);
   const [allowRead, setAllowRead] = useState(false);
   const [connected, setConnected] = useState<{
@@ -93,18 +131,27 @@ export function TranscriptLinksPanel({
   };
   const recipients = sessions.filter(
     (s) =>
-      s.id !== session.id &&
+      s.id !== source?.id &&
       s.status === "running" &&
       !s.hostId &&
       s.projectId === session.projectId,
   );
   const recipient = recipients.find((s) => s.id === recipientId);
   const crossProfile =
-    !!recipient && (recipient.profileId ?? "") !== (session.profileId ?? "");
-  const shareable =
-    session.provider === "claude" &&
-    !session.hostId &&
-    !!session.conversationId;
+    !!source &&
+    !!recipient &&
+    (recipient.profileId ?? "") !== (source.profileId ?? "");
+  const chooseSource = (id: string) => {
+    setSourceId(id);
+    setReview(null);
+    setRedactions([]);
+    setConsent(false);
+    setAllowRead(false);
+    setConnected(null);
+    setNotice("");
+    setError("");
+    if (recipientId === id) setRecipientId("");
+  };
   const label = (profileId?: string) =>
     profileLabel(profileId, profiles) ?? "Default";
   const redact = () => {
@@ -159,10 +206,39 @@ export function TranscriptLinksPanel({
           stops future reads; it cannot take back text already read.
         </p>
         <ol className="connection-steps" aria-label="Connection steps">
-          <li>Choose source</li>
-          <li>Preview and redact</li>
-          <li>Choose recipient and approve</li>
+          <li aria-current={!source ? "step" : undefined}>Choose source</li>
+          <li aria-current={source && !preview ? "step" : undefined}>
+            Preview and redact
+          </li>
+          <li aria-current={preview ? "step" : undefined}>
+            Choose recipient and approve
+          </li>
         </ol>
+        {sources.length ? (
+          <div className="transcript-source-picker">
+            <label>
+              Claude conversation
+              <select
+                aria-label="Claude conversation"
+                value={sourceId}
+                disabled={!!busy}
+                onChange={(e) => chooseSource(e.target.value)}
+              >
+                <option value="">Choose a Claude conversation…</option>
+                {sources.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {titleOf(s)} · {sessionState(s).label} · {time(s.createdAt)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {recipient ? (
+              <p>
+                Receiving session: <strong>{titleOf(recipient)}</strong>
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         {notice ? (
           <p role="status" className="notice">
             {notice}
@@ -241,73 +317,75 @@ export function TranscriptLinksPanel({
                       {l.revokedAt ? ` · revoked ${time(l.revokedAt)}` : ""}
                     </span>
                     <div className="link-actions">
-                    {!l.revokedAt &&
-                    byId.get(l.recipient.sessionId)?.status === "running" &&
-                    byId.get(l.recipient.sessionId)?.generation ===
-                      l.recipient.generation ? (
-                      <button
-                        className="button small"
-                        disabled={!!busy}
-                        title="Allow reading of snapshots already linked to this recipient. New access lasts 15 minutes; existing permissions and expiry are kept."
-                        onClick={() =>
-                          void act("read:" + l.id, async () => {
-                            const recipient = byId.get(l.recipient.sessionId)!;
-                            const enabled =
-                              await window.workspace.agentControl!.allowTranscript(
+                      {!l.revokedAt &&
+                      byId.get(l.recipient.sessionId)?.status === "running" &&
+                      byId.get(l.recipient.sessionId)?.generation ===
+                        l.recipient.generation ? (
+                        <button
+                          className="button small"
+                          disabled={!!busy}
+                          title="Allow reading of snapshots already linked to this recipient. New access lasts 15 minutes; existing permissions and expiry are kept."
+                          onClick={() =>
+                            void act("read:" + l.id, async () => {
+                              const recipient = byId.get(
+                                l.recipient.sessionId,
+                              )!;
+                              const enabled =
+                                await window.workspace.agentControl!.allowTranscript(
+                                  {
+                                    sessionId: recipient.id,
+                                    generation: recipient.generation,
+                                  },
+                                );
+                              if (!enabled.grant)
+                                throw new Error(
+                                  "Reading is unavailable for this session. Check its terminal and try again.",
+                                );
+                              setNotice(
+                                `Reading enabled for ${titleOf(recipient)} until ${new Date(enabled.grant.expiresAt).toLocaleTimeString()}. No prompt was submitted.`,
+                              );
+                              onChanged?.();
+                            })
+                          }
+                        >
+                          Enable recipient reading
+                        </button>
+                      ) : null}
+                      {!l.revokedAt ? (
+                        <button
+                          className="button ghost small danger-text"
+                          disabled={!!busy}
+                          onClick={() =>
+                            void act("revoke:" + l.id, async () => {
+                              await window.workspace.invoke(
+                                "transcript.revoke",
                                 {
-                                  sessionId: recipient.id,
-                                  generation: recipient.generation,
+                                  linkId: l.id,
                                 },
                               );
-                            if (!enabled.grant)
-                              throw new Error(
-                                "Reading is unavailable for this session. Check its terminal and try again.",
-                              );
-                            setNotice(
-                              `Reading enabled for ${titleOf(recipient)} until ${new Date(enabled.grant.expiresAt).toLocaleTimeString()}. No prompt was submitted.`,
-                            );
-                            onChanged?.();
-                          })
-                        }
-                      >
-                        Enable recipient reading
-                      </button>
-                    ) : null}
-                    {!l.revokedAt ? (
-                      <button
-                        className="button ghost small danger-text"
-                        disabled={!!busy}
-                        onClick={() =>
-                          void act("revoke:" + l.id, async () => {
-                            await window.workspace.invoke("transcript.revoke", {
-                              linkId: l.id,
-                            });
-                            await refresh();
-                            onChanged?.();
-                          })
-                        }
-                      >
-                        Revoke
-                      </button>
-                    ) : null}
+                              await refresh();
+                              onChanged?.();
+                            })
+                          }
+                        >
+                          Revoke
+                        </button>
+                      ) : null}
                     </div>
                   </li>
                 );
               })}
             </ul>
           ) : (
-            <p className="muted">
-              No connections yet. Start by previewing a Claude conversation
-              below.
-            </p>
+            <p className="muted">No connections yet.</p>
           )}
         </section>
-        {shareable ? (
+        {source ? (
           <section
             className="transcript-share"
             aria-label="Share this conversation"
           >
-            <h3>Share this conversation</h3>
+            <h3>Share {titleOf(source)}’s conversation</h3>
             {!preview ? (
               <div>
                 <button
@@ -316,15 +394,18 @@ export function TranscriptLinksPanel({
                   onClick={() =>
                     void act("preview", async () => {
                       setRedactions([]);
-                      setPreview(
+                      setAllowRead(false);
+                      setConsent(false);
+                      setConnected(null);
+                      const preview =
                         await window.workspace.invoke<TranscriptPreview>(
                           "transcript.preview",
                           {
-                            sessionId: session.id,
-                            generation: session.generation,
+                            sessionId: source.id,
+                            generation: source.generation,
                           },
-                        ),
-                      );
+                        );
+                      setReview({ sourceKey, preview });
                     })
                   }
                 >
@@ -430,8 +511,8 @@ export function TranscriptLinksPanel({
                           await window.workspace.invoke<TranscriptLinkView>(
                             "transcript.link",
                             {
-                              sessionId: session.id,
-                              generation: session.generation,
+                              sessionId: source.id,
+                              generation: source.generation,
                               recipientSessionId: recipient!.id,
                               recipientGeneration: recipient!.generation,
                               textHash: preview.textHash,
@@ -444,7 +525,7 @@ export function TranscriptLinksPanel({
                         // Once the link exists, never retry creation implicitly. A
                         // capability failure is shown as a blocked connection to repair.
                         setConnected({ link, recipient: recipient! });
-                        setPreview(null);
+                        setReview(null);
                         setRedactions([]);
                         setRecipientId("");
                         await refresh();
@@ -497,7 +578,7 @@ export function TranscriptLinksPanel({
                     />
                     <span>
                       This session uses profile{" "}
-                      <strong>{label(session.profileId)}</strong>; the receiving
+                      <strong>{label(source.profileId)}</strong>; the receiving
                       one uses{" "}
                       <strong>
                         {recipient!.provider === "shell"
@@ -514,9 +595,9 @@ export function TranscriptLinksPanel({
           </section>
         ) : (
           <p className="muted">
-            {session.provider === "claude"
-              ? "This session's Claude conversation is not known yet, so it cannot be shared."
-              : "This session can receive context. To connect it, choose a Claude source card on Canvas, then choose this session as the recipient."}
+            {sources.length
+              ? "Choose the Claude conversation above, then preview the text you want this agent to use."
+              : "No Claude conversation is available in this folder yet. Open Claude in this folder, send your first message, then return here to share it."}
           </p>
         )}
       </section>
