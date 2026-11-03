@@ -7,6 +7,7 @@ import {
   GitCommitHorizontal,
   Check,
   Minus,
+  PanelRightClose,
   Sparkles,
 } from "lucide-react";
 import {
@@ -32,6 +33,8 @@ export interface ReviewSummary {
   message?: string;
 }
 type Props = {
+  collapsed?: boolean;
+  onCollapse?: () => void;
   project: Project;
   worktreePath?: string;
   report: (e: unknown) => void;
@@ -58,6 +61,8 @@ function gitProblem(reason: unknown) {
   return "Git review is unavailable for this folder: " + text;
 }
 export function ReviewPanel({
+  collapsed = false,
+  onCollapse,
   project,
   worktreePath,
   report,
@@ -287,7 +292,10 @@ export function ReviewPanel({
     }
   }
   return (
-    <aside className="review-panel">
+    <aside
+      className={"review-panel" + (collapsed ? " panel-collapsed" : "")}
+      aria-label="Files and changes"
+    >
       <div className="panel-tabs">
         {(["files", "changes", "worktrees"] as const).map((t) => (
           <button
@@ -313,6 +321,16 @@ export function ReviewPanel({
         >
           <RefreshCw size={14} />
         </button>
+        {onCollapse && !selected && !diff ? (
+          <button
+            className="icon-button panel-collapse"
+            aria-label="Collapse files panel"
+            title="Collapse files panel"
+            onClick={onCollapse}
+          >
+            <PanelRightClose size={16} />
+          </button>
+        ) : null}
       </div>
       <div className="branch-line">
         <span className={"tiny-dot" + (loadError ? " neutral" : "")} />
@@ -564,6 +582,16 @@ export function ReviewPanel({
               ) : null}
             </span>
             <div>
+              {onCollapse ? (
+                <button
+                  className="icon-button"
+                  aria-label="Collapse files panel"
+                  title="Collapse files panel"
+                  onClick={onCollapse}
+                >
+                  <PanelRightClose size={16} />
+                </button>
+              ) : null}
               <button
                 className="button small"
                 onClick={() => setExpanded((v) => !v)}

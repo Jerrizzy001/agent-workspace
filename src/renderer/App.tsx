@@ -14,6 +14,8 @@ import {
   Mic,
   Sparkles,
   Network,
+  PanelLeft,
+  PanelLeftClose,
   PanelRight,
   PanelRightClose,
   Plus,
@@ -23,6 +25,7 @@ import {
   Smartphone,
   Users,
   SquareTerminal,
+  SunMoon,
   X,
 } from "lucide-react";
 import type {
@@ -69,6 +72,7 @@ import {
   shortPath,
 } from "./sessions";
 import { BrandMark, ProviderGlyph, StatusBadge } from "./ui";
+import { AppearanceSettings } from "./AppearanceSettings";
 
 const initial: Snapshot = {
   projects: [],
@@ -149,6 +153,29 @@ export default function App() {
   const [filesOpen, setFilesOpen] = useState(
     () => stored("files", "1") !== "0",
   );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => stored("sidebar") === "collapsed",
+  );
+  const sidebarRestore = useRef<HTMLButtonElement>(null);
+  const sidebarCollapse = useRef<HTMLButtonElement>(null);
+  const filesToggle = useRef<HTMLButtonElement>(null);
+  const mobileFiles = useRef<HTMLButtonElement>(null);
+  const toggleSidebar = (collapsed: boolean) => {
+    setSidebarCollapsed(collapsed);
+    requestAnimationFrame(() =>
+      (collapsed ? sidebarRestore : sidebarCollapse).current?.focus(),
+    );
+  };
+  const collapseFiles = () => {
+    setFilesOpen(false);
+    setMobilePane("terminal");
+    requestAnimationFrame(() => {
+      (window.matchMedia("(min-width: 901px)").matches
+        ? filesToggle
+        : mobileFiles
+      ).current?.focus();
+    });
+  };
   const [drawer, setDrawer] = useState(false);
   const [mobilePane, setMobilePane] = useState<"terminal" | "files">(
     "terminal",
@@ -242,6 +269,10 @@ export default function App() {
   useEffect(() => store("project", projectId), [projectId]);
   useEffect(() => store("session", sessionId), [sessionId]);
   useEffect(() => store("files", filesOpen ? "1" : "0"), [filesOpen]);
+  useEffect(
+    () => store("sidebar", sidebarCollapsed ? "collapsed" : "open"),
+    [sidebarCollapsed],
+  );
   useEffect(() => store("board", boardMode), [boardMode]);
 
   const project = projects.find((p) => p.id === projectId);
@@ -730,6 +761,7 @@ export default function App() {
     <div
       className={
         "app-shell " +
+        (sidebarCollapsed ? "sidebar-collapsed " : "") +
         (drawer ? "drawer-open " : "") +
         (mobilePane === "files" && view === "terminals"
           ? "mobile-files"
@@ -752,6 +784,15 @@ export default function App() {
               {isRemoteBrowser ? "Remote workspace" : "This computer"}
             </small>
           </div>
+          <button
+            ref={sidebarCollapse}
+            className="icon-button desktop-only"
+            aria-label="Collapse folders and sessions"
+            title="Collapse sidebar"
+            onClick={() => toggleSidebar(true)}
+          >
+            <PanelLeftClose size={17} />
+          </button>
           <button
             className="drawer-close icon-button"
             aria-label="Close folders and sessions"
@@ -938,6 +979,17 @@ export default function App() {
       </aside>
       <main className="main">
         <header className="topbar">
+          {sidebarCollapsed ? (
+            <button
+              ref={sidebarRestore}
+              className="icon-button desktop-only"
+              aria-label="Show folders and sessions"
+              title="Show sidebar"
+              onClick={() => toggleSidebar(false)}
+            >
+              <PanelLeft size={19} />
+            </button>
+          ) : null}
           <button
             className="mobile-menu icon-button"
             aria-label="Open folders and sessions"
@@ -1012,14 +1064,14 @@ export default function App() {
             ) : null}
             {project && !showBrowser && view === "terminals" ? (
               <button
+                ref={filesToggle}
                 className="icon-button desktop-only"
                 aria-label="Toggle files panel"
                 aria-pressed={filesOpen}
-                title="Files and changes"
-                onClick={() => {
-                  if (filesOpen && !canNavigate()) return;
-                  setFilesOpen((open) => !open);
-                }}
+                title={filesOpen ? "Collapse files panel" : "Show files panel"}
+                onClick={() =>
+                  filesOpen ? collapseFiles() : setFilesOpen(true)
+                }
               >
                 {filesOpen ? (
                   <PanelRightClose size={17} />
@@ -1028,6 +1080,14 @@ export default function App() {
                 )}
               </button>
             ) : null}
+            <button
+              className="icon-button desktop-only"
+              aria-label="Appearance settings"
+              title="Appearance: Light, Dark or System"
+              onClick={() => setSettingsPanel(true)}
+            >
+              <SunMoon size={17} />
+            </button>
             {project && !showBrowser ? (
               <div className="menu-anchor">
                 <button
@@ -1348,9 +1408,11 @@ export default function App() {
                   </div>
                 ) : null}
               </div>
-              {view === "terminals" && (filesOpen || mobilePane === "files") ? (
+              {view === "terminals" ? (
                 <ReviewPanel
                   key={projectId + (reviewTree || "")}
+                  collapsed={!filesOpen}
+                  onCollapse={collapseFiles}
                   project={project}
                   worktreePath={reviewTree}
                   report={report}
@@ -1402,7 +1464,7 @@ export default function App() {
             view === "terminals" && mobilePane === "terminal" ? "active" : ""
           }
           onClick={() => {
-            if (canNavigate()) {
+            if (view === "terminals" || canNavigate()) {
               setView("terminals");
               setMobilePane("terminal");
             }
@@ -1412,11 +1474,12 @@ export default function App() {
           <span>Terminal</span>
         </button>
         <button
+          ref={mobileFiles}
           className={
             view === "terminals" && mobilePane === "files" ? "active" : ""
           }
           onClick={() => {
-            if (canNavigate()) {
+            if (view === "terminals" || canNavigate()) {
               setView("terminals");
               setMobilePane("files");
               setReviewRefresh((value) => value + 1);
@@ -1498,6 +1561,7 @@ export default function App() {
               Set up accounts and optional tools. Your folders and running
               sessions stay where they are.
             </p>
+            <AppearanceSettings />
             {power && !isRemoteBrowser ? (
               <label
                 className="keep-awake"
@@ -1685,6 +1749,18 @@ export default function App() {
         <Palette
           close={() => setModal(null)}
           items={[
+            {
+              id: "appearance",
+              label: "Appearance · Light / white mode, Dark or System",
+              run: () => setSettingsPanel(true),
+            },
+            {
+              id: "sidebar",
+              label: sidebarCollapsed
+                ? "Show folders and sessions"
+                : "Collapse folders and sessions",
+              run: () => toggleSidebar(!sidebarCollapsed),
+            },
             {
               id: "settings",
               label: "Settings and connections",

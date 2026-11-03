@@ -6,6 +6,11 @@ import type { ClipboardImagePreview, Session } from "../shared/contracts";
 import { shellEscapePath } from "../shared/terminal-paste";
 import { ImagePastePreview } from "./ImagePastePreview";
 import {
+  getAppearance,
+  subscribeAppearance,
+  terminalThemes,
+} from "./appearance";
+import {
   dictationActiveFor,
   dictationAvailable,
   dictationTargetLost,
@@ -36,6 +41,17 @@ export function TerminalView({
   onHandoffInserted?: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  useEffect(
+    () =>
+      subscribeAppearance(() => {
+        const terminal = terminalRef.current;
+        if (!terminal) return;
+        const { resolved } = getAppearance();
+        terminal.options.theme = terminalThemes[resolved];
+        terminal.options.minimumContrastRatio = resolved === "light" ? 4.5 : 1;
+      }),
+    [],
+  );
   // The attached viewer, or null; image paste rechecks it before typing.
   const viewerRef = useRef<string | null>(null);
   const onViewerRef = useRef(onViewer);
@@ -244,22 +260,8 @@ export function TerminalView({
         '"JetBrains Mono", "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace',
       lineHeight: 1.4,
       scrollback: 5000,
-      theme: {
-        background: "#0d1015",
-        foreground: "#d8dee9",
-        cursor: "#8fb4ff",
-        cursorAccent: "#0d1015",
-        selectionBackground: "#2c3a55",
-        black: "#232832",
-        red: "#f07f86",
-        green: "#8fd19e",
-        yellow: "#f0c674",
-        blue: "#82aaff",
-        magenta: "#c3a6ff",
-        cyan: "#7fd4d4",
-        white: "#d8dee9",
-        brightBlack: "#5c6577",
-      },
+      theme: terminalThemes[getAppearance().resolved],
+      minimumContrastRatio: getAppearance().resolved === "light" ? 4.5 : 1,
     });
     terminalRef.current = terminal;
     const fit = new FitAddon();

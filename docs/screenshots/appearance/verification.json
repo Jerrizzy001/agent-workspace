@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "fixture": "/private/var/folders/c8/n091_9297kz0dtp0vbsk1lzm0000gn/T/aw-appearance-xUKRYi",
+  "checks": [
+    "Both panel headers collapse; restore controls stay reachable; terminal expands without remounting or submitting its input",
+    "Light and Dark update the existing terminal; System follows media changes; typed input and process identity are preserved",
+    "Collapsing and restoring preserves unsaved editor text without a discard prompt; Monaco follows the theme; expanded editor uses the freed sidebar space",
+    "Canvas, its controls and embedded terminals follow appearance without restarting their terminal views",
+    "Appearance and both collapsed-panel choices survive quit/reopen; the same shell PID and generation remain alive",
+    "The narrow layout still opens its folder drawer and returns from Files to Terminal when desktop panels were saved collapsed"
+  ]
+}

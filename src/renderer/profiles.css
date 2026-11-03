@@ -130,8 +130,8 @@
   max-width: 260px;
 }
 .lineage-chip.unknown {
-  color: #e6c86e;
-  border-color: #e6c86e;
+  color: var(--warning-text);
+  border-color: var(--warning-text);
 }
 .modal.transcript-links {
   width: min(760px, 100%);
@@ -196,7 +196,7 @@
   color: var(--text-3);
 }
 .transcript-meta .partial {
-  color: #e6c86e;
+  color: var(--warning-text);
 }
 .transcript-meta .complete {
   color: var(--done);

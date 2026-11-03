@@ -1,6 +1,6 @@
-# Current handoff: 0.4.2 transcript connections
+# Current handoff: 0.4.3 layout and appearance
 
-The latest change is described in [transcript-connect.md](transcript-connect.md); 0.4.1 voice controls are documented in [voice-typing.md](voice-typing.md). The earlier audit repairs are in [ux-repairs.md](ux-repairs.md), with their validation in [release-evidence.md](release-evidence.md). The schema remains 9. The sections below record the earlier 0.3.0 feature handoff; do not use their old platform-validation statements as current evidence.
+The latest change is described in [appearance-and-panels.md](appearance-and-panels.md). Earlier 0.4.x changes are documented in [transcript-connect.md](transcript-connect.md) and [voice-typing.md](voice-typing.md). The audit repairs are in [ux-repairs.md](ux-repairs.md), with their validation in [release-evidence.md](release-evidence.md). The schema remains 9. The sections below record the earlier 0.3.0 feature handoff; do not use their old platform-validation statements as current evidence.
 
 ---
 

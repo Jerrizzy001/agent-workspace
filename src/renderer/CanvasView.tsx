@@ -27,6 +27,7 @@ import type {
   TranscriptLinkView,
 } from "../shared/contracts";
 import { TerminalView } from "./TerminalView";
+import { useAppearance } from "./appearance";
 import { DictationToolbar } from "./DictationControl";
 import { dictationAvailable } from "./dictation";
 import { registerLeaveGuard } from "./leaveWorkspace";
@@ -368,6 +369,7 @@ export function CanvasView({
   connectRequested?: boolean;
   onConnectHandled?: () => void;
 }) {
+  const appearance = useAppearance();
   const [nodes, setNodes] = useState<Node<CanvasData>[]>([]);
   const liveNodes = useRef(nodes);
   liveNodes.current = nodes;
@@ -834,9 +836,9 @@ export function CanvasView({
                     },
                     label: `${titleOf(source.data.session!)} → ${titleOf(target.data.session!)} · ${!allowedReaders.has(l.recipient.sessionId) ? "Reading paused" : l.reads ? `Snapshot · read ${l.reads}×` : "Snapshot · not read yet"}`,
                     markerEnd: { type: MarkerType.ArrowClosed },
-                    style: { stroke: "#8b9dff", strokeWidth: 2 },
-                    labelStyle: { fill: "#e7ebf3" },
-                    labelBgStyle: { fill: "#191e28" },
+                    style: { stroke: "var(--accent)", strokeWidth: 2 },
+                    labelStyle: { fill: "var(--text)" },
+                    labelBgStyle: { fill: "var(--surface-2)" },
                   } satisfies Edge,
                 ]
               : [];
@@ -875,11 +877,14 @@ export function CanvasView({
           defaultViewport={{ x: 20, y: 90, zoom: 0.8 }}
           minZoom={0.2}
           maxZoom={1.5}
-          colorMode="dark"
+          colorMode={appearance.resolved}
         >
-          <Background gap={24} size={1} color="#262d3a" />
+          <Background gap={24} size={1} color="var(--canvas-dot)" />
           <Controls showInteractive={false} />
-          <MiniMap nodeColor="#3a4560" maskColor="#0b0d12bb" />
+          <MiniMap
+            nodeColor="var(--canvas-node)"
+            maskColor="var(--canvas-mask)"
+          />
         </ReactFlow>
       </div>
       {menu ? (

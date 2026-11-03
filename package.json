@@ -1,6 +1,6 @@
 {
   "name": "agent-workspace",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "private": true,
   "description": "A desktop and secure remote browser workspace for coding agents",
   "main": "dist/desktop/main.cjs",
@@ -21,6 +21,7 @@
     "verify:agent-control": "node scripts/verify-agent-control.mjs",
     "verify:accounts": "node scripts/verify-accounts.mjs",
     "verify:transcript-connect": "node scripts/verify-transcript-connect.mjs",
+    "verify:appearance": "node scripts/verify-appearance.mjs",
     "verify:ssh": "node scripts/verify-ssh.mjs",
     "verify:keep-awake": "node scripts/verify-keep-awake.mjs",
     "verify:terminal": "node scripts/verify-terminal-modes.mjs",

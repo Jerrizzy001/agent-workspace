@@ -2,6 +2,7 @@ import { useRef } from "react";
 import Editor, { loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
 import EditorWorker from "monaco-editor/editor/editor.worker.js?worker";
+import { useAppearance } from "./appearance";
 self.MonacoEnvironment = {
   getWorker() {
     return new EditorWorker();
@@ -21,6 +22,7 @@ export default function CodeEditor({
   onChange: (v: string) => void;
   onSave?: () => void;
 }) {
+  const { resolved } = useAppearance();
   const saveRef = useRef(onSave);
   saveRef.current = onSave;
   const extension = path.split(".").pop();
@@ -46,7 +48,7 @@ export default function CodeEditor({
         );
       }}
       height="100%"
-      theme="vs-dark"
+      theme={resolved === "light" ? "vs" : "vs-dark"}
       language={language}
       key={path + String(readOnly)}
       path={path}

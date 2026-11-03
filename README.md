@@ -4,7 +4,7 @@ An independently authored desktop and remote browser app for running coding agen
 
 ![Folder browser](docs/screenshots/desktop/folder-browser.png)
 
-Version **0.4.2** lets you connect a Claude conversation directly from the receiving Codex terminal. See [connection verification](docs/transcript-connect.md), [voice typing verification](docs/voice-typing.md), and [the earlier audit repair map](docs/ux-repairs.md). Continuing development? Start with [docs/handoff.md](docs/handoff.md).
+Version **0.4.3** adds collapsible side panels and **Light / Dark / System** appearance. See [layout and appearance verification](docs/appearance-and-panels.md), [connection verification](docs/transcript-connect.md), [voice typing verification](docs/voice-typing.md), and [the earlier audit repair map](docs/ux-repairs.md). Continuing development? Start with [docs/handoff.md](docs/handoff.md).
 
 ## Using it
 
@@ -19,6 +19,8 @@ Version **0.4.2** lets you connect a Claude conversation directly from the recei
 9. **Set up optional tools.** Open **Settings & connections** for voice, suggestions, accounts, SSH, teams and phone access. Command search (`⌘K` / `Ctrl+K`) finds these actions too.
 
 **Accounts:** A profile is a configuration folder, not a guarantee of independent credentials. **Check account** runs the installed Claude CLI's authentication-status command and displays only its reported identity and sign-in status; tokens are never returned or saved by this check. macOS Keychain and environment-level credentials may be shared across profiles. Sign-in still happens in Claude's own terminal.
+
+**Layout and appearance:** The button beside the Agent Workspace name collapses the left sidebar; its restore button appears at the top-left. The button beside Refresh in Files collapses the right panel; the top toolbar restores it. Open editors have the same collapse control. Collapsing preserves the selected file and unsaved text. Use the sun/moon button in the top toolbar, or **Settings & connections → Appearance**, to choose **Light**, **Dark** or **System**. App surfaces, terminals, the editor and Canvas follow the theme. These preferences are saved on this device; terminal sessions keep running.
 
 **Voice and images:** Open a running Claude, Codex or shell session and click **Voice typing** in the bar below its terminal (also available on Canvas). Speak English; phrases are typed at pauses, and you press Enter yourself to send. Click **Stop** to finish, or use ⌘⇧Space on Mac / Ctrl+Shift+Space elsewhere. The settings button beside Voice typing opens model setup and a ten-second **Test microphone**, which only checks input and does not type. Models are downloaded explicitly. **Paste image** previews a clipboard image, saves a private PNG, and inserts its escaped path without Enter. Remote browsers cannot access the host microphone or clipboard.
 
