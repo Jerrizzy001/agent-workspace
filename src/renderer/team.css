@@ -14,20 +14,18 @@
 }
 .modal.team-panel header p {
   color: var(--text-3);
-  font-size: 12px;
+  font-size: var(--text-small);
   margin: 9px 0 0;
   line-height: 1.55;
 }
 .team-panel h3 {
   margin: 0 0 8px;
-  font-size: 13px;
+  font-size: var(--text-body);
 }
 .team-panel h4 {
   margin: 12px 0 6px;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-2);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 .team-warning {
   display: flex;
@@ -35,9 +33,9 @@
   border: 1px solid var(--line-strong);
   border-left: 3px solid var(--danger);
   background: var(--danger-soft);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 9px 11px;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-2);
 }
 .team-warning p {
@@ -54,7 +52,7 @@
 .team-folder-publish label {
   display: grid;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-2);
 }
 .team-connect input,
@@ -98,17 +96,17 @@
   background: var(--done);
 }
 .team-sync-label {
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-3);
 }
 .team-error {
   color: var(--danger);
-  font-size: 12px;
+  font-size: var(--text-small);
   margin: 0;
 }
 .team-notice {
   color: var(--text-2);
-  font-size: 12px;
+  font-size: var(--text-small);
   margin: 0;
   border-left: 3px solid var(--needs);
   padding-left: 8px;
@@ -124,7 +122,7 @@
   display: flex;
   gap: 12px;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-2);
 }
 .team-folder-row span {
@@ -162,7 +160,7 @@
   text-align: left;
   padding: 9px 11px;
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text);
 }
 .team-project-row:hover,
@@ -179,7 +177,7 @@
 }
 .team-shared-tasks small {
   color: var(--text-3);
-  font-size: 12px;
+  font-size: var(--text-small);
 }
 .team-project-head {
   display: flex;
@@ -195,7 +193,7 @@
   gap: 10px;
   align-items: center;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 7px 10px;
 }
 .team-members li > div {
@@ -205,7 +203,7 @@
 }
 .team-members small {
   color: var(--text-3);
-  font-size: 12px;
+  font-size: var(--text-small);
 }
 .team-invite {
   margin-top: 10px;
@@ -222,22 +220,22 @@
   align-items: center;
   flex-wrap: wrap;
   margin-top: 8px;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-2);
 }
 .team-invitation code {
   user-select: text;
   color: var(--accent);
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: var(--text-small);
 }
 .team-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--text-small);
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 0 6px;
   color: var(--text-2);
   white-space: nowrap;
@@ -263,7 +261,7 @@
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
-  font-size: 12px;
+  font-size: var(--text-small);
   padding: 6px 0;
 }
 .team-outbox-row small {
@@ -284,7 +282,7 @@
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-2);
 }
 .team-assignee label {
@@ -294,21 +292,21 @@
 }
 .team-assignee small {
   flex-basis: 100%;
-  font-size: 12px;
+  font-size: var(--text-small);
 }
 .team-thread-title {
   display: flex;
   gap: 6px;
   align-items: center;
   margin: 4px 0 0;
-  font-size: 12px;
+  font-size: var(--text-small);
   text-transform: none;
   letter-spacing: 0;
   color: var(--text);
 }
 .team-comment {
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 8px 10px;
 }
 .team-comment.pending {
@@ -318,7 +316,7 @@
   display: flex;
   gap: 8px;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-3);
 }
 .team-comment header strong {
@@ -334,7 +332,7 @@
 }
 .team-comment-body {
   margin: 5px 0 0;
-  font-size: 12.5px;
+  font-size: var(--text-small);
   color: var(--text-2);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -359,12 +357,12 @@
   gap: 6px;
 }
 .team-empty {
-  font-size: 12px;
+  font-size: var(--text-small);
   padding: 4px 0;
 }
 .team-task-description {
   white-space: pre-wrap;
-  font-size: 12.5px;
+  font-size: var(--text-small);
   color: var(--text-2);
   margin: 0;
 }
@@ -374,7 +372,7 @@
   flex-wrap: wrap;
   align-items: center;
   margin-top: 6px;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-3);
 }
 .board-card .team-card-meta span {
@@ -404,7 +402,7 @@
   overflow: auto;
   background: var(--surface-2);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 10px;
   font: 12px/1.5 var(--mono);
   white-space: pre-wrap;
@@ -414,7 +412,7 @@
 .team-preview ul {
   margin: 6px 0 0;
   padding-left: 18px;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-2);
 }
 @media (max-width: 640px) {

@@ -1,0 +1,334 @@
+# Agent Workspace: full UI and UX redesign plan
+
+Drafted 2026-11-17 against `codex/ux-repair` (v0.4.3). Rulebook: the `better-*` skills from
+[jakubkrehel/skills](https://github.com/jakubkrehel/skills) (typography, layout, colors, UI
+polish, writing, accessibility). Evidence comes from `src/renderer/*.css`, `App.tsx`,
+`LaunchBar.tsx`, `SessionBoard.tsx` and the screenshots in `docs/screenshots/`.
+
+Status: direction B (Native Mac) chosen. Phases 0 and 1 implemented on `redesign/native-mac`;
+see §8.
+
+---
+
+## 1. Why it reads as "robotic" and "AI-made"
+
+The font is not the problem: the app already renders SF Pro (`-apple-system` leads the stack at
+`styles.css:52`). The robotic feel comes from how every layer is used. Specifically:
+
+| # | Symptom | Evidence | Skill rule it breaks |
+|---|---|---|---|
+| 1 | **No type scale.** 141 rules at `12px`, 34 at `12.5px`, plus `13`, `13.5`, `14`, `15`, `16`, `18`, `19`, `22`, `26px`. Root is `13px`. Everything is the same small grey size, so nothing leads. | `grep font-size src/renderer/*.css` | Typography: small named scale, size+weight carry hierarchy |
+| 2 | **Uppercase tracked eyebrows** ("FOLDERS", "SESSIONS", "READY IN STOREFRONT", "NEEDS YOU"). This is the single strongest generated-UI tell. | `App.tsx:2177`, sidebar headings | Typography: fewer sizes and weights; Writing: natural case |
+| 3 | **Boxes inside boxes.** 88 `border: 1px` rules. Board lanes are bordered, cards inside are bordered, the canvas toolbar is a bordered box under a bordered header under a bordered title bar. | `board-sessions.png`, `light-canvas.png` | Layout: group with space first, lines last; UI: shadows for elevation, borders only for structure |
+| 4 | **Spacing has no system.** 75 distinct padding values; gaps of 2, 4, 5, 6, 7, 8, 9, 10, 12px. | `grep padding/gap` | Layout: one spacing step per nesting level; between-group gap ≥ 2× within-group |
+| 5 | **Radius has no system.** 14 different radii (4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 999, 50%…) and nested surfaces share the same radius. | `grep border-radius` | UI: outer radius = inner + padding |
+| 6 | **The default "AI dev tool" palette.** Blue-black `#0b0d12` with a periwinkle accent `#8b9dff`. Ten-plus hues compete: three provider colours, four status colours, branch purple, accent. Shell green and Done green are the same meaning-slot. | `styles.css:3-50` | Colors: one neutral + one accent ramp; one colour, one meaning; status ≥15° from accent |
+| 7 | **The three-card feature grid.** Icon tile + bold title + grey sentence, ×3, centred, under an eyebrow and a headline. The same launch buttons also sit in the header right above it. | `launchpad.png`, `App.tsx:2175-2222` | Layout: one primary action per view |
+| 8 | **Explainer copy everywhere.** "Nothing is sent until you type. Sessions keep running…", "Every session in this folder is a card. Moving a card only files it…", "Arrange your agents and notes… a line never starts work automatically." Reassurance sentences narrating the system read like generated text. | `App.tsx:2220`, `SessionBoard.tsx:176`, `CanvasView.tsx` | Writing: delete every word that does no work; persistent info never lives in empty states |
+| 9 | **Two to four rows of chrome before content.** Title bar (name + full temp path), then "Opens in" row with the folder again + branch + launch buttons, then (Canvas) a description row, a toolbar box and an undo row. ~116–270px of chrome. | `launchpad.png`, `light-canvas.png` | Layout: order by importance; keep controls in one stable zone |
+| 10 | **Monospace as decoration.** Folder names, card subtitles ("alpha" on every card), tool chips (`tmux` `git` `claude`) are set in mono. Repeating the current folder on every card adds noise. | `board-sessions.png` | Typography: rarely more than needed; mono for code and identifiers only |
+| 11 | **Flat, uniform text buttons.** "Move to…", "Resume", "New here", "Open terminal", "Connect", "Actions" all look alike and sit on every card at once. | `board-sessions.png`, `light-canvas.png` | Layout: secondary actions behind a menu after 3; Colors: fill exactly one action per view |
+| 12 | **Motion and polish gaps.** One `prefers-reduced-motion` block for the whole app; no press feedback; no shared easing or durations. | `styles.css:3358` | UI: transitions with exact values, gated behind reduced motion |
+
+---
+
+## 2. Design principles for the new version
+
+1. **The terminal is the product.** Chrome gets out of its way: one header row, everything else
+   in the sidebar, an inspector, or the command bar.
+2. **Quiet by default, colour only for meaning.** Greys carry 90% of the interface. Colour appears
+   only for status that needs you (needs input, failed) and the one primary action.
+3. **Group with space, not lines.** Borders survive only on inputs, dividers that space can't
+   carry, and selected states.
+4. **Say less.** Labels are nouns, buttons are verbs, help text appears where a decision is made,
+   never as ambient narration.
+5. **One way to do each thing.** Launch lives in one place per view. Card actions live in one menu.
+
+---
+
+## 3. Foundations (design tokens)
+
+All tokens move into a new `src/renderer/tokens.css`, imported first. Components reference
+semantic tokens only; primitives never appear in component CSS.
+
+### 3.1 Typography
+
+**Chosen direction: B, Native Mac** (decided 2026-11-17).
+
+| Role | Face | Why |
+|---|---|---|
+| Interface | **SF Pro** via `system-ui, -apple-system` | The face every first-party Mac app uses; Chromium switches between the Text and Display cuts by size automatically. Falls back to Segoe UI / Roboto in the remote browser |
+| Code, paths, terminal | **SF Mono** via `ui-monospace, "SF Mono", Menlo` | Same metrics family as SF Pro, so mixed lines sit on one baseline. Terminal font stays user-overridable |
+
+The fonts don't change much from today. What changes is how they're used: the scale, the
+weights and where mono appears.
+
+**Scale** (follows the macOS text styles; rem-based with the root at 16px so browser zoom works):
+
+| Token | macOS style | Size | Line-height | Weight | Used for |
+|---|---|---|---|---|---|
+| `--text-caption` | Subheadline | 0.6875rem / 11px | 1.35 | 400 | Timestamps, counts, kbd hints |
+| `--text-small` | Callout | 0.75rem / 12px | 1.35 | 400 | Secondary metadata, helper text |
+| `--text-body` | Body | 0.8125rem / 13px | 1.4 | 400 | Default UI text, list rows, buttons |
+| `--text-headline` | Headline | 0.8125rem / 13px | 1.4 | 600 | Window title, card titles, list emphasis |
+| `--text-heading` | Title 3 | 0.9375rem / 15px | 1.3 | 600 | Panel and dialog titles |
+| `--text-title` | Title 1 | 1.375rem / 22px | 1.2 | 700 | Empty-state and first-run headline only |
+
+Control heights follow AppKit: 22px small, 28px regular, 32px large. Sidebar rows 28px, list
+rows 24px, unified toolbar 52px.
+
+Rules: five sizes in daily use, never `12.5px`/`13.5px`. Emphasis is a weight step (400→500),
+not a size change. No uppercase eyebrows; section headings in the sidebar become 12px/500
+sentence-case in `--text-tertiary`. `tabular-nums` on counts, timers, durations, line numbers.
+`text-wrap: balance` on headings, `pretty` on paragraphs. Inputs render at 16px on touch
+viewports (remote/mobile).
+
+### 3.2 Colour
+
+Replace the blue-black + periwinkle system with **macOS system colours**:
+
+- **Neutrals are the macOS window greys, with no blue tint.** Dark: window `#1e1e1e`, content
+  `#252525`, raised `#2d2d2d`. Light: window `#f5f5f5`, content `#ffffff`, raised `#ffffff`
+  with a shadow ring. Text uses solid equivalents of `labelColor` / `secondaryLabelColor`
+  (measured to 4.5:1, never the native 25% tertiary, which fails).
+- **The accent is the user's own macOS accent colour.** Electron
+  `systemPreferences.getAccentColor()` sends it to the renderer at startup and on change; the
+  remote browser falls back to system blue (`#007aff` light, `#0a84ff` dark). Text on an accent
+  fill picks white or black by measured contrast, so Yellow and Graphite accents still pass.
+  The accent marks focus rings, the selected item in focused lists, toggles, links and the one
+  primary button per view.
+- **Status uses the macOS system colours, only where the product shows it:** `attention`
+  (needs input, systemOrange), `danger` (failed, destructive, systemRed), `running` (a small
+  systemGreen dot, not a pill). Done and ended are neutral grey. Light-mode values are darkened
+  where needed to pass 4.5:1 as text.
+- **Sidebar** is translucent (`vibrancy: 'sidebar'`), with the selected row as a grey rounded
+  rectangle, as in Finder.
+- **Providers keep identity through their glyph,** not colour washes. Claude/Codex/Shell icons
+  keep a single brand tint each, used on the 16px glyph only. Shell becomes neutral so it no
+  longer collides with green "done".
+- Semantic token names: `--bg-app`, `--bg-sidebar`, `--bg-surface`, `--bg-hover`,
+  `--bg-selected`, `--border-subtle`, `--border-field`, `--text-primary`, `--text-secondary`,
+  `--text-tertiary`, `--action-primary-bg`, `--action-primary-text`, `--accent`,
+  `--status-attention`, `--status-danger`, `--provider-claude`, etc. Every pair re-measured for
+  4.5:1 (text) and 3:1 (field borders, focus) in both themes before merge.
+- One theme mechanism: keep `data-theme` and drop any parallel `prefers-color-scheme` colour
+  blocks. Suppress transitions during theme switch.
+
+### 3.3 Spacing
+
+4px base, nine steps: `--space-1` 4 · `2` 8 · `3` 12 · `4` 16 · `5` 20 · `6` 24 · `8` 32 ·
+`10` 40 · `12` 48. Within a group 8px, between groups 16–24px, between page sections 32px. Every
+existing padding and gap is mapped onto these; the 75 one-off values go away.
+
+### 3.4 Radius and elevation
+
+- Three radii: `--radius-sm` 6px (inputs, buttons, chips), `--radius-md` 10px (cards, menus,
+  popovers), `--radius-lg` 14px (dialogs, canvas nodes). Pills only for the status dot and
+  counters. Nested surfaces follow outer = inner + padding.
+- Elevation by layered shadow, not borders: `--shadow-border` (1px ring + soft lift) for cards
+  and menus, `--shadow-overlay` for dialogs and the command palette. Dark mode uses a single white
+  8% ring. `border: 1px solid transparent` under rings for forced-colours mode.
+
+### 3.5 Motion
+
+Shared tokens: `--ease-out: cubic-bezier(0.2, 0, 0, 1)`, `--dur-fast: 150ms`,
+`--dur-base: 200ms`, `--dur-enter: 300ms`. Buttons press to `scale(0.96)` over 150ms (never when
+disabled). Menus/popovers enter with opacity + 4px translate; exits shorter. Row hover and tab
+switches are instant or ≤150ms on background-colour only. Everything that moves sits behind
+`prefers-reduced-motion: no-preference`, with an opacity fallback. Hover styling behind
+`@media (hover: hover)` for the phone remote. Never `transition: all`.
+
+### 3.6 Icons
+
+Keep `lucide-react` (one library). Standardise on 16px at `stroke-width 1.5` beside 13px text,
+20px for empty states. Outline by default, filled for the active state. `currentColor` only.
+
+---
+
+## 4. Layout and information architecture
+
+### 4.1 App shell
+
+```
+┌────────────┬──────────────────────────────────────────────┬──────────────┐
+│ Sidebar    │ Header: folder ▾  branch  ·  [Terminals|Board|Canvas]  ⌘K  + New ▾ │
+│            ├──────────────────────────────────────────────┤ Inspector    │
+│ Folders    │                                              │ Files /      │
+│ Sessions   │                Main view                     │ Changes /    │
+│            │                                              │ Worktrees    │
+│ ─────────  │                                              │ (collapsible)│
+│ status     │                                              │              │
+└────────────┴──────────────────────────────────────────────┴──────────────┘
+```
+
+- **One header row (44px)** replaces today's two. Left: folder name as a menu (switch folder, copy
+  path, reveal in Finder) with the branch beside it as a small chip. The full temp path moves into
+  that menu and a tooltip. Centre-left: view switcher as a segmented control. Right: search
+  (`⌘K`) and a single **New** split button (primary ink fill): click = last-used provider, caret
+  = Claude / Codex / Shell / launch options. This is the view's one primary action.
+- **Sidebar** on macOS uses native vibrancy (`BrowserWindow` `vibrancy: 'sidebar'`) with a
+  translucent background; in the browser build it falls back to `--bg-sidebar`. Section labels
+  become sentence-case "Folders" / "Sessions". Session rows: provider glyph, name, one line of
+  secondary text (state in words: "Needs input", "Working", "Idle 4m"), live dot only when
+  running. "Needs you" sessions sort to the top with an amber dot and label, not a separate
+  uppercase section.
+- **Sidebar footer** shrinks to one row: connection status dot + "Local" and a settings gear. The
+  `tmux` `git` `claude` `codex` chips move into Settings → Environment, shown only when something
+  is missing.
+- **Inspector** (right panel) keeps Files / Changes / Worktrees as tabs with an underline
+  indicator, no filled tab pill.
+
+### 4.2 Launch / empty folder
+
+Replace the eyebrow + headline + three feature cards + disclaimer with a compact launcher:
+
+- Title: the folder name at `--text-title`; under it, branch and change count in secondary text.
+- A short vertical list of three rows (Claude, Codex, Shell): glyph, name, keyboard shortcut
+  (`⌘1/2/3`) right-aligned, one-line status only when something is wrong ("Not installed:
+  set up"). The rows are the launch targets; no duplicate buttons in the header for this view.
+- "Recent in this folder": last 3 ended sessions with Resume, so the empty state points forward.
+- Delete the disclaimer sentence. If "nothing is sent until you type" needs saying, it lives once
+  in first-run onboarding.
+
+### 4.3 Terminals / session view
+
+- Terminal fills the main area edge to edge with 12px inner padding; no card frame around it.
+- A slim session bar above the terminal (36px): provider glyph + session name (inline rename),
+  status text, then right-aligned icon buttons: Connect agents, Interrupt, overflow menu (End,
+  Branch, Agent control, Export). Destructive "End" lives in the menu with a confirmation that
+  names the session.
+- The bottom input bar (voice typing, paste image, "Press Enter to send") becomes a single row
+  with icon buttons and tooltips; "Press Enter to send" becomes a faint kbd hint only while voice
+  typing is active.
+- Session tabs (when several are open) as a tab strip in the session bar, not separate cards.
+
+### 4.4 Board
+
+- Lanes lose their borders and backgrounds; the lane is a column title (name + count in
+  tabular-nums) over a gutter. Cards get `--shadow-border` and a 10px radius.
+- Card content: glyph + name; one line "Working · 2m" / "Needs input" (amber dot + label) /
+  "Ended"; no folder repeated (the whole board is one folder). All card actions (Move to,
+  Resume, New here, Open) move into a hover/focus-revealed overflow menu plus drag. Clicking the
+  card opens the session.
+- "Needs you" cards get a 2px amber inline-start bar, not a full amber outline and tinted fill.
+- Remove the explainer sentence under "Board"; put the one fact that matters ("moving a card
+  never stops the process") in the empty-lane hint and the help popover.
+- Sessions / Tasks toggle becomes a segmented control beside the title.
+
+### 4.5 Canvas
+
+- Collapse description row, toolbar box and undo row into one floating toolbar, bottom centre:
+  Add ▾ (terminal, note), Connect agents, Show ended toggle, Undo / Redo, zoom. Hidden & archived
+  goes into the Add menu.
+- Canvas nodes: 14px radius, shadow ring, title bar with glyph + name + status dot; Open, Connect
+  and Actions collapse into a header overflow menu. Connection handles appear on hover/focus only.
+- Lighter dot grid; minimap restyled to the neutral ramp, and the "React Flow" attribution placed
+  where it does not compete.
+
+### 4.6 Files and Changes
+
+- File tree rows at 28px with 16px indent steps, chevrons, file-type glyphs in neutral. Path
+  header becomes a breadcrumb.
+- Changes: staged/unstaged as two grouped lists with counts, commit box pinned at the bottom with
+  a single primary "Commit" button. Diff view uses the neutral ramp with muted add/remove tints.
+
+### 4.7 Settings & connections
+
+- One settings window/sheet with a left nav (General, Appearance, Voice, Accounts, Connections:
+  SSH / Remote access / Team, Workspace data, Environment). Each page uses grouped "inset" lists
+  (label left, control right) like macOS System Settings, instead of stacked bordered cards.
+- Merge the five feature stylesheets (`profiles.css`, `ssh-hosts.css`, `remote-access.css`,
+  `team.css`, `agent-control.css`) onto shared form, list and dialog primitives.
+
+### 4.8 Dialogs, menus, command palette, toasts
+
+- Shared primitives in `ui.tsx`: `Dialog`, `Menu`, `Popover`, `Tooltip`, `SegmentedControl`,
+  `Button` (primary/secondary/ghost/danger, sm/md), `IconButton`, `Field`, `Toast`.
+- Dialog titles name action + object ("End 'Second shell'?"); buttons are verb + object.
+- Undo toasts for reversible actions (hide, archive, move) instead of confirmations.
+
+### 4.9 Remote browser / phone
+
+- Same tokens; bottom navigation with 44px targets; inputs at 16px; safe-area insets with
+  `viewport-fit=cover`; hover styles only on hover-capable pointers.
+
+---
+
+## 5. Copy pass
+
+Run `better-writing` across every user-facing string:
+
+- Cut ambient explainers (`App.tsx:2220`, `SessionBoard.tsx:176`, Canvas description) and move any
+  essential fact to where the decision happens.
+- Sentence case everywhere; verb-first buttons; one term per concept (decide "session" vs
+  "terminal", "end" vs "terminate", "folder" vs "project" and apply it everywhere).
+- Status vocabulary: Working, Needs input, Idle, Ended, Failed.
+- Errors say what failed and how to fix it, next to where it failed.
+
+The `scripts/verify-*.mjs` and `smoke-ui.mjs` runners select by visible text and accessible names,
+so every rename lands in the same change as its script update.
+
+---
+
+## 6. Execution order
+
+Each phase is shippable and verified before the next. Screenshots for every phase go in
+`docs/screenshots/redesign/` (light + dark, 1440 and 900 widths, phone).
+
+| Phase | Scope | Done when |
+|---|---|---|
+| 0. Inventory | Contrast-measure current pairs; list every colour literal, font-size, radius, padding; capture baseline screenshots of every view and dialog | Baseline in `docs/screenshots/redesign/before/` |
+| 1. Tokens | `tokens.css` (type, colour, space, radius, shadow, motion), bundle fonts, remap existing variables onto new semantic tokens so the app re-skins without layout changes | Typecheck + `verify:appearance` pass; all pairs measured in both themes |
+| 2. Primitives | Button, IconButton, SegmentedControl, Menu, Dialog, Field, Tooltip, Toast in `ui.tsx`; replace ad-hoc buttons | `smoke:ui`, `verify:ux` pass |
+| 3. Shell | One-row header, New split button, sidebar redesign + vibrancy, footer, inspector tabs | `verify:workflows`, `verify:lifecycle` pass; keyboard walk of the shell |
+| 4. Views | Launcher, session view, Board, Canvas, Files/Changes | `verify:board`, `verify:transcript-connect`, `verify:dictation`, `verify:image-paste` pass |
+| 5. Settings & panels | Settings window, SSH, remote, team, profiles, agent control on shared primitives; delete per-feature CSS | `verify:ssh`, `verify:remote-desktop`, `verify:team`, `verify:accounts`, `verify:agent-control` pass |
+| 6. Copy + motion | Writing pass, motion tokens, reduced-motion audit | All verify scripts updated and passing |
+| 7. Mobile + review | Remote/phone layout, 320px and 200% zoom, RTL smoke; full `better-interface` review of the finished UI | `verify:mobile`, `verify:mobile-webkit` pass; review has no HIGH findings |
+
+`styles.css` (4,256 lines) is split along the way into `tokens.css`, `base.css`, `shell.css`
+and one file per view, so old rules are deleted rather than overridden.
+
+---
+
+## 7. Decisions needed before Phase 1
+
+1. **Visual direction:** decided, **B. Native Mac**.
+   - **A. Workbench:** IBM Plex Sans + Plex Mono, warm graphite neutrals, ink
+     primary button, one cobalt accent. Calm, technical, distinctly un-generic.
+   - **B. Native Mac:** keep SF Pro + SF Mono, sidebar vibrancy, macOS system accent colour via
+     Electron `systemPreferences.getAccentColor()`. Feels like a first-party Mac app; least
+     custom.
+   - **C. Editorial:** a serif (e.g. Newsreader) for view titles and empty states over a grotesk
+     body (e.g. Hanken Grotesk), warmer paper tones. Most personality, least "tool".
+2. **Density:** comfortable (13px body, 32px rows) as above, or compact (12px body, 28px rows).
+3. **Default theme:** keep dark-first, or make System the default.
+4. **Terminology:** "session" or "terminal" as the main noun; "folder" or "project".
+
+---
+
+## 8. Progress
+
+### Phase 0: baseline (done)
+- `scripts/capture-ui.mjs <dir>` captures launchpad, session, Board, Canvas and Settings in dark
+  and light at 1440×900. Baseline: `docs/screenshots/redesign/before/`.
+
+### Phase 1: tokens (done)
+- `src/renderer/tokens.css`: macOS greys, system accent, SF type scale, spacing, control heights,
+  radii, shadows and motion. Legacy variable names alias the new semantic tokens so the existing
+  CSS re-skins without layout changes. The old token blocks in `styles.css` are deleted.
+- `src/shared/accent-colors.ts` + `installSystemAccent` in `src/desktop/main.ts`: the macOS accent
+  colour is injected as CSS at load and on change. Fill, on-fill text and text variants are derived
+  to pass 4.5:1 for all eight macOS accents (`tests/accent-colors.test.ts`).
+- Every text token measured at ≥ 4.5:1 and field borders ≥ 3:1 against every surface in both
+  themes.
+- All 204 literal font sizes mapped onto five tokens; weights onto 400/500/600/700; 94 literal radii
+  onto three tokens; 25 old-palette `rgba()` literals onto `color-mix()` of tokens, so light mode
+  no longer uses dark-mode tints.
+- Uppercase tracked labels removed; negative tracking kept only on 22px titles; launchpad and
+  pairing accent glows removed.
+- Terminal, Monaco editor, window background and `theme-color` moved to the new greys and SF Mono.
+- Screenshots: `docs/screenshots/redesign/phase-1/`.
+
+Not done in Phase 1, by design: spacing values (moved per component in Phases 2–4), sidebar
+vibrancy (Phase 3), the default theme (still Dark).

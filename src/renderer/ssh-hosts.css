@@ -15,7 +15,7 @@
 }
 .modal.ssh-hosts header p {
   color: var(--text-3);
-  font-size: 12px;
+  font-size: var(--text-small);
   margin: 9px 0 0;
 }
 .modal.ssh-hosts footer {
@@ -24,7 +24,7 @@
 .ssh-intro,
 .ssh-notice {
   color: var(--text-2);
-  font-size: 12px;
+  font-size: var(--text-small);
   line-height: 1.6;
 }
 .ssh-host-list {
@@ -60,7 +60,7 @@
   white-space: nowrap;
 }
 .ssh-state {
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-2);
 }
 .ssh-dot {
@@ -80,7 +80,7 @@
 .ssh-meta {
   margin: 0;
   color: var(--text-3);
-  font-size: 12px;
+  font-size: var(--text-small);
 }
 .ssh-tools {
   display: flex;
@@ -90,7 +90,7 @@
 .ssh-tools span {
   font: 10.5px var(--mono);
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 1px 6px;
   color: var(--text-2);
 }
@@ -113,9 +113,9 @@
   gap: 9px;
   border: 1px solid var(--line-strong);
   border-left: 3px solid var(--needs);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 9px 11px;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-2);
 }
 .ssh-problem.danger {
@@ -139,7 +139,7 @@
 .ssh-fingerprints code {
   user-select: text;
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--text-small);
   overflow-wrap: anywhere;
 }
 .ssh-add-wrap {
@@ -147,7 +147,7 @@
   padding-top: 14px;
 }
 .ssh-add-wrap > summary {
-  font-size: 13px;
+  font-size: var(--text-body);
   font-weight: 600;
   cursor: pointer;
   color: var(--text);
@@ -159,12 +159,12 @@
 }
 .ssh-add h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-body);
 }
 .ssh-add label {
   display: grid;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-2);
 }
 .ssh-add input {
@@ -181,7 +181,7 @@
 }
 .ssh-add summary,
 .ssh-help summary {
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-2);
   cursor: pointer;
 }
@@ -195,7 +195,7 @@
 }
 .ssh-help {
   margin-top: 16px;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-2);
   line-height: 1.6;
 }
@@ -204,7 +204,7 @@
 }
 .ssh-help code,
 .ssh-intro code {
-  font-size: 12px;
+  font-size: var(--text-small);
   overflow-wrap: anywhere;
 }
 .ssh-browser {
@@ -218,7 +218,7 @@
 }
 .ssh-browser-head code {
   flex: 1;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -234,7 +234,7 @@
   margin: 0;
   padding: 4px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   max-height: 300px;
   overflow-y: auto;
 }
@@ -244,10 +244,10 @@
   gap: 8px;
   align-items: center;
   padding: 7px 8px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   text-align: left;
   color: var(--text-2);
-  font-size: 12.5px;
+  font-size: var(--text-small);
 }
 .ssh-entries button:hover:not(:disabled) {
   background: var(--surface-2);
@@ -258,12 +258,12 @@
 }
 .ssh-entries em {
   font-style: normal;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--done);
 }
 .ssh-empty {
   color: var(--text-3);
-  font-size: 12px;
+  font-size: var(--text-small);
   padding: 8px;
 }
 .ssh-browser-foot {
@@ -273,16 +273,16 @@
   flex-wrap: wrap;
 }
 .ssh-browser-foot .muted {
-  font-size: 12px;
+  font-size: var(--text-small);
 }
 .host-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-3);
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 0 5px;
   flex: none;
   max-width: 110px;
@@ -298,7 +298,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-2);
 }
 .host-connection > span:last-child {

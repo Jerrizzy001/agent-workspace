@@ -276,7 +276,7 @@ export function TerminalView({
       disableStdin: true,
       fontSize: 13,
       fontFamily:
-        '"JetBrains Mono", "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace',
+        'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace',
       lineHeight: 1.4,
       scrollback: 5000,
       theme: terminalThemes[getAppearance().resolved],

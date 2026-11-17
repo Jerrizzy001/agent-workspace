@@ -9,18 +9,18 @@
 .profiles-intro,
 .profiles-foot {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--text-small);
   line-height: 1.55;
   color: var(--text-2);
 }
 .profiles-support summary {
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-2);
   cursor: pointer;
 }
 .profiles-support p {
   margin: 6px 0 0;
-  font-size: 12px;
+  font-size: var(--text-small);
   line-height: 1.55;
   color: var(--text-2);
 }
@@ -30,20 +30,20 @@
   align-items: flex-start;
   margin: 0;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border-left: 3px solid var(--needs);
   background: var(--surface-2);
-  font-size: 12px;
+  font-size: var(--text-small);
   line-height: 1.5;
   color: var(--text-2);
 }
 .profiles-error {
   margin: 0;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--danger-soft);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--text-small);
   overflow-wrap: anywhere;
 }
 .profile-list {
@@ -82,7 +82,7 @@
   display: inline-flex;
   gap: 5px;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-2);
 }
 .profile-state.state-ready svg {
@@ -106,7 +106,7 @@
   gap: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--line);
-  font-size: 12.5px;
+  font-size: var(--text-small);
   line-height: 1.5;
 }
 .profile-remove p {
@@ -117,7 +117,7 @@
   flex-direction: row;
   align-items: flex-start;
   gap: 8px;
-  font-weight: 450;
+  font-weight: 400;
   color: var(--text-2);
 }
 .profile-remove-data input {
@@ -149,10 +149,10 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--accent);
   border: 1px solid var(--accent);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 0 5px;
   max-width: 120px;
   overflow: hidden;
@@ -179,13 +179,13 @@
 }
 .transcript-links p {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--text-small);
   line-height: 1.55;
   color: var(--text-2);
 }
 .transcript-links h3 {
   margin: 0 0 6px;
-  font-size: 13px;
+  font-size: var(--text-body);
 }
 .link-list {
   list-style: none;
@@ -202,7 +202,7 @@
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   padding: 9px 12px;
-  font-size: 12px;
+  font-size: var(--text-small);
 }
 .link-row.revoked,
 .link-row.revoked :is(strong, .muted) {
@@ -210,7 +210,7 @@
 }
 .link-row .muted {
   grid-column: 1;
-  font-size: 12px;
+  font-size: var(--text-small);
 }
 .link-row button {
   grid-column: 2;
@@ -229,7 +229,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px 14px;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-3);
 }
 .transcript-meta .partial {
@@ -267,7 +267,7 @@
 .redaction-list button {
   font: 11px var(--mono);
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 1px 6px;
   color: var(--text-2);
 }
@@ -286,7 +286,7 @@
 .transcript-source-picker {
   padding: 14px;
   border: 1px solid var(--line-strong);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--surface-2);
 }
 .transcript-source-picker label {
@@ -300,7 +300,7 @@
 }
 .transcript-source-picker p {
   margin: 10px 0 0;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-2);
 }
 .connection-steps [aria-current="step"] {

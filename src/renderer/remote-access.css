@@ -12,7 +12,7 @@
 }
 .modal.remote-access header p {
   color: var(--text-3);
-  font-size: 12px;
+  font-size: var(--text-small);
   margin: 9px 0 0;
 }
 .modal.remote-access fieldset {
@@ -51,7 +51,7 @@
   align-items: center;
   margin: 20px 0 10px;
   color: var(--text-2);
-  font-size: 12px;
+  font-size: var(--text-small);
 }
 .remote-dot {
   width: 7px;
@@ -65,7 +65,7 @@
 .remote-detail,
 .modal.remote-access li {
   color: var(--text-2);
-  font-size: 12px;
+  font-size: var(--text-small);
   line-height: 1.7;
 }
 .remote-detail {
@@ -80,9 +80,9 @@
 .remote-files button,
 .remote-actions button {
   border: 1px solid var(--line-strong);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: var(--text-small);
   display: flex;
   gap: 6px;
   align-items: center;
@@ -91,7 +91,7 @@
   margin: 20px 0;
   padding: 16px;
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 .remote-pair output {
   display: block;
@@ -102,10 +102,10 @@
 }
 .remote-pair .remote-secret {
   margin-top: 10px;
-  font-size: 16px;
+  font-size: var(--text-heading);
   padding: 10px;
   background: var(--bg);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 .remote-actions {
   margin-bottom: 12px;
@@ -114,7 +114,7 @@
   margin: 22px 0 12px;
 }
 .modal.remote-access summary {
-  font-size: 12px;
+  font-size: var(--text-small);
   cursor: pointer;
   color: var(--text-2);
 }
@@ -137,7 +137,7 @@
   margin-bottom: 16px;
 }
 .remote-projects strong {
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text);
 }
 .remote-projects ul {
@@ -152,7 +152,7 @@
   flex-wrap: wrap;
 }
 .modal.remote-access .remote-qr img {
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: #ffffff;
   image-rendering: pixelated;
 }

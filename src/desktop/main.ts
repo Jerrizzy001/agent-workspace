@@ -9,8 +9,10 @@ import {
   screen,
   session,
   shell,
+  systemPreferences,
   utilityProcess,
 } from "electron";
+import { accentCSS, accentTokens } from "../shared/accent-colors";
 import { createTeamDesktop, electronSecretStore } from "./team";
 import path from "node:path";
 import os from "node:os";
@@ -538,6 +540,43 @@ function buildMenu() {
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
+// The macOS accent colour drives the renderer's accent tokens. Injected as
+// CSS so it applies before first paint and updates when the user changes it.
+function systemAccentCSS() {
+  try {
+    const tokens = accentTokens(systemPreferences.getAccentColor());
+    return tokens ? accentCSS(tokens) : undefined;
+  } catch {
+    return undefined; // Not available on this platform: tokens.css fallback.
+  }
+}
+function installSystemAccent(target: BrowserWindow) {
+  let key: string | undefined;
+  const apply = async () => {
+    const css = systemAccentCSS();
+    if (!css || target.isDestroyed()) return;
+    const previous = key;
+    key = await target.webContents.insertCSS(css);
+    if (previous) await target.webContents.removeInsertedCSS(previous);
+  };
+  target.webContents.on("did-finish-load", () => {
+    key = undefined;
+    void apply();
+  });
+  if (process.platform === "darwin") {
+    const id = systemPreferences.subscribeNotification(
+      "AppleColorPreferencesChangedNotification",
+      () => void apply(),
+    );
+    target.on("closed", () => systemPreferences.unsubscribeNotification(id));
+  } else {
+    const onChange = () => void apply();
+    systemPreferences.on("accent-color-changed", onChange);
+    target.on("closed", () =>
+      systemPreferences.off("accent-color-changed", onChange),
+    );
+  }
+}
 let windowState: ReturnType<typeof windowStateFile> | undefined;
 function createWindow() {
   windowState ??= windowStateFile(app.getPath("userData"));
@@ -551,7 +590,7 @@ function createWindow() {
     height: bounds.height,
     minWidth: WINDOW_MIN.width,
     minHeight: WINDOW_MIN.height,
-    backgroundColor: "#0b0d12",
+    backgroundColor: "#1e1e1e",
     title: "Agent Workspace",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -599,6 +638,7 @@ function createWindow() {
     if (template.length)
       Menu.buildFromTemplate(template).popup({ window: window! });
   });
+  installSystemAccent(window);
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (ev, url) => {
     if (url !== window?.webContents.getURL()) ev.preventDefault();
