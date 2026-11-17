@@ -66,7 +66,17 @@ for (const theme of ["dark", "light"]) {
 
     await page.getByRole("button", { name: "Settings and connections", exact: true }).first().click();
     await shot("05-settings");
-    console.log(`${theme}: captured 5 views`);
+    await page.keyboard.press("Escape");
+
+    await page.locator(".session-view summary[title=\"More actions\"]").click();
+    await shot("06-menu");
+    await page.keyboard.press("Escape");
+
+    await page.keyboard.press("Meta+k");
+    await page.keyboard.type("set");
+    await shot("07-palette");
+    await page.keyboard.press("Escape");
+    console.log(`${theme}: captured 7 views`);
   } finally {
     await app.close().catch(() => {});
     await cleanupFixture(fixture);

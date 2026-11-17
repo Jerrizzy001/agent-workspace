@@ -5,7 +5,7 @@ Drafted 2026-11-17 against `codex/ux-repair` (v0.4.3). Rulebook: the `better-*` 
 polish, writing, accessibility). Evidence comes from `src/renderer/*.css`, `App.tsx`,
 `LaunchBar.tsx`, `SessionBoard.tsx` and the screenshots in `docs/screenshots/`.
 
-Status: direction B (Native Mac) chosen. Phases 0 and 1 implemented on `redesign/native-mac`;
+Status: direction B (Native Mac) chosen. Phases 0–2 implemented on `redesign/native-mac`;
 see §8.
 
 ---
@@ -332,3 +332,25 @@ and one file per view, so old rules are deleted rather than overridden.
 
 Not done in Phase 1, by design: spacing values (moved per component in Phases 2–4), sidebar
 vibrancy (Phase 3), the default theme (still Dark).
+
+### Phase 2: primitives (done)
+- Shared controls rebuilt in place in `styles.css` (the app styles by class, so no new React
+  wrappers were needed): `.button` / `.primary` / `.ghost` / `.danger` / `.small` as macOS push
+  buttons (28px, 24px small, shadow ring, no visible border), `.icon-button` 28px, launch buttons
+  matched to them.
+- Segmented control shared by the view switch and Board's Sessions/Tasks; inspector tabs use an
+  accent underline.
+- Menus (`.popover.menu`, lane, canvas, session "More actions") and the command palette highlight
+  the active item in the accent fill, like macOS menus. Dialogs, palette and toasts use the overlay
+  shadow, 12px/10px radii and no borders.
+- Fields 28px with a focus ring from the accent; checkboxes and radios take the accent;
+  inputs are 16px on touch screens.
+- Motion: press scales to 0.96 (never when disabled), hover styles only on hover-capable pointers,
+  dialogs/palette/toasts enter with a short scale-and-fade and fade only under reduced motion.
+- New tokens: `--control-bg`, `--control-ring`, `--ghost-hover`, `--segment-*`, `--menu-bg`,
+  `--focus-ring`; `--control-sm` is 24px.
+- Screenshots (now including a menu and the palette): `docs/screenshots/redesign/phase-2/`.
+
+Known: `verify:ux` failed once in five runs (passed on every re-run); hover rules outside the
+shared controls are still unguarded and move under `@media (hover: hover)` as each view is
+redone.
