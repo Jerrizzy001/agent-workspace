@@ -1,4 +1,6 @@
+import { WorkspaceDataPanel } from "./WorkspaceDataPanel";
 import { createId } from "./id";
+import { endSession } from "./session-actions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell,
@@ -27,8 +29,13 @@ import {
   SquareTerminal,
   SunMoon,
   X,
+  GitBranch,
+  Database,
+  Moon,
 } from "lucide-react";
 import type {
+  ExecutionHostView,
+  MenuAction,
   PowerStatus,
   Project,
   Provider,
@@ -60,6 +67,14 @@ import { AssistSettings, assistAvailable, openAssistSettings } from "./assist";
 import { dictationAvailable, openDictationSettings } from "./dictation";
 import { registerLeaveGuard } from "./leaveWorkspace";
 import { mergeSnapshot } from "./snapshot";
+import { paletteMatches } from "./palette-search";
+import { FirstRunChecklist, installHints } from "./FirstRunChecklist";
+import {
+  SettingsRow,
+  hostsState,
+  useProfilesState,
+  useSettingsStates,
+} from "./settings-state";
 import {
   capability,
   errorText,
@@ -117,10 +132,6 @@ type Toast = {
   title: string;
   detail: string;
   tone: string;
-};
-const installHints: Record<string, string> = {
-  claude: "npm install -g @anthropic-ai/claude-code",
-  codex: "npm install -g @openai/codex",
 };
 
 export default function App() {
@@ -226,6 +237,7 @@ export default function App() {
     "task" | "edit-task" | "attempt" | "palette" | null
   >(null);
   const [settingsPanel, setSettingsPanel] = useState(false);
+  const [dataPanel, setDataPanel] = useState(false);
   const [handoffDraft, setHandoffDraft] = useState<{
     sessionId: string;
     generation: number;
@@ -365,7 +377,10 @@ export default function App() {
       (s.activity === "needs" || s.activity === "error"),
   );
   const openSessions = allSessions.filter(isOpen);
-  const endedSessions = allSessions.filter((s) => !isOpen(s)).slice(0, 12);
+  // Archived (hidden) ended sessions stay on the canvas's "Hidden & archived" list.
+  const endedSessions = allSessions
+    .filter((s) => !isOpen(s) && !s.canvasHidden)
+    .slice(0, 12);
   const projectName = (id: string) =>
     snapshot.projects.find((p) => p.id === id)?.name || "Folder";
   const titleOf = (s: Session) =>
@@ -376,6 +391,17 @@ export default function App() {
       : core === "failed"
         ? "The workspace core stopped. Reopen the app."
         : "Reconnecting to the workspace…";
+  // What a one-click launch will use, shown on the Launchpad cards.
+  const launchProfile =
+    profilesAvailable() && !project?.hostId
+      ? profiles.profiles.find((p) => p.id === choices.profileId)
+      : undefined;
+  const launchChips: Partial<Record<Provider, string>> = {
+    claude: [launchProfile?.label, choices.models.claude.trim()]
+      .filter(Boolean)
+      .join(" · "),
+    codex: choices.models.codex.trim(),
+  };
   const disabledReason =
     coreReason ||
     (project?.hostId && projectHost?.state !== "connected"
@@ -387,6 +413,9 @@ export default function App() {
     new Map<string, Pick<Session, "status" | "activity">>(),
   );
   const endedByUser = useRef(new Set<string>());
+  const [renamingId, setRenamingId] = useState("");
+  const renaming = useRef("");
+  renaming.current = renamingId;
   const visibleSession = useRef("");
   visibleSession.current = view === "terminals" ? session?.id || "" : "";
   const dismissToast = (id: string) =>
@@ -700,19 +729,19 @@ export default function App() {
       return undefined;
     }
   }
-  async function hideProject() {
-    if (!project) return;
+  async function hideProject(target = project) {
+    if (!target) return;
     setFolderMenu(false);
     if (
       !confirm(
-        `Remove ${project.name} from your folders? Files on disk are not touched, and opening the folder again brings back its history.`,
+        `Remove ${target.name} from your folders? Files on disk are not touched, and opening the folder again brings back its history.`,
       ) ||
-      !canNavigate()
+      (target.id === projectId && !canNavigate())
     )
       return;
     try {
-      await window.workspace.invoke("project.hide", { projectId: project.id });
-      setSessionId("");
+      await window.workspace.invoke("project.hide", { projectId: target.id });
+      if (target.id === projectId) setSessionId("");
     } catch (e) {
       report(e);
     }
@@ -747,6 +776,29 @@ export default function App() {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [projectId, browse]);
+  // ---- Application menu (desktop): the same actions as the shortcuts.
+  const menuRef = useRef<(action: MenuAction) => void>(() => {});
+  menuRef.current = (action) => {
+    if (action === "settings") setSettingsPanel(true);
+    else if (action === "palette") setModal("palette");
+    else if (action === "open-folder") browse();
+    else if (action === "new-task" && projectId) {
+      setModalTask(undefined);
+      setModal("task");
+    } else if (action === "view-terminals" && projectId)
+      switchView("terminals");
+    else if (action === "view-board" && projectId) switchView("board");
+    else if (action === "view-canvas" && projectId) switchView("canvas");
+    else if (action === "toggle-sidebar") toggleSidebar(!sidebarCollapsed);
+    else if (action === "toggle-files" && projectId) {
+      if (filesOpen) collapseFiles();
+      else setFilesOpen(true);
+    }
+  };
+  useEffect(
+    () => window.workspace.onMenu?.((action) => menuRef.current(action)),
+    [],
+  );
   useEffect(() => {
     if (!editorDirty) return;
     function preventUnsavedClose(event: BeforeUnloadEvent) {
@@ -779,11 +831,126 @@ export default function App() {
     !isRemoteBrowser &&
     !!window.workspace.browseDirectory &&
     (browsing || !project);
+  // Enter, Escape and blur can all end one rename; only the first counts.
+  async function renameSession(s: Session, title: string | null) {
+    if (renaming.current !== s.id) return;
+    renaming.current = "";
+    setRenamingId("");
+    if (title === null) return;
+    title = title.trim();
+    if (!title || title === titleOf(s)) return;
+    try {
+      await window.workspace.invoke("session.rename", {
+        sessionId: s.id,
+        generation: s.generation,
+        title,
+        titleRevision: s.titleRevision ?? 0,
+      });
+    } catch (e) {
+      report(e);
+    }
+  }
+  // Right-click menus use native menus on the desktop; the remote browser
+  // keeps its own default menu.
+  async function sessionMenu(event: React.MouseEvent, s: Session) {
+    const menu = window.workspace.contextMenu;
+    if (!menu) return;
+    event.preventDefault();
+    const sessionProject = snapshot.projects.find((p) => p.id === s.projectId);
+    const running = s.status === "running";
+    const choice = await menu([
+      { id: "open", label: "Open" },
+      { id: "rename", label: "Rename…" },
+      { type: "separator" },
+      ...(sessionProject
+        ? [{ id: "copy-path", label: "Copy folder path" }]
+        : []),
+      { type: "separator" },
+      running
+        ? { id: "end", label: "End session…" }
+        : { id: "archive", label: "Archive" },
+    ]);
+    if (choice === "open") openSession(s);
+    else if (choice === "rename") setRenamingId(s.id);
+    else if (choice === "copy-path" && sessionProject)
+      void navigator.clipboard
+        ?.writeText(s.worktreePath || sessionProject.path)
+        .catch(() => {});
+    else if (choice === "end") {
+      if (
+        !confirm(
+          `End ${titleOf(s)}? Its process stops and its final screen is saved. The folder and files are unchanged.`,
+        )
+      )
+        return;
+      endedByUser.current.add(s.id);
+      await endSession(s).catch(report);
+    } else if (choice === "archive")
+      await window.workspace
+        .invoke("session.canvas", {
+          sessionId: s.id,
+          generation: s.generation,
+          hidden: true,
+        })
+        .catch(report);
+  }
+  async function folderMenuAt(event: React.MouseEvent, p: Project) {
+    const menu = window.workspace.contextMenu;
+    if (!menu) return;
+    event.preventDefault();
+    const choice = await menu([
+      { id: "open", label: "Open" },
+      { id: "new-task", label: "New task…" },
+      { id: "copy-path", label: "Copy folder path" },
+      { type: "separator" },
+      { id: "remove", label: "Remove from list…" },
+    ]);
+    if (choice === "open") chooseProject(p.id);
+    else if (choice === "new-task") {
+      chooseProject(p.id);
+      setModalTask(undefined);
+      setModal("task");
+    } else if (choice === "copy-path")
+      void navigator.clipboard?.writeText(p.path).catch(() => {});
+    else if (choice === "remove") void hideProject(p);
+  }
   const sidebarSession = (s: Session) => {
     const sessionProject = snapshot.projects.find((p) => p.id === s.projectId);
+    if (renamingId === s.id)
+      return (
+        <form
+          key={s.id}
+          className="session-row renaming"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void renameSession(
+              s,
+              new FormData(event.currentTarget).get("title") as string,
+            );
+          }}
+        >
+          <ProviderGlyph provider={s.provider} />
+          <input
+            name="title"
+            aria-label={`Rename ${titleOf(s)}`}
+            defaultValue={titleOf(s)}
+            maxLength={120}
+            autoFocus
+            onFocus={(event) => event.currentTarget.select()}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                void renameSession(s, null);
+              }
+            }}
+            onBlur={(event) => void renameSession(s, event.currentTarget.value)}
+          />
+        </form>
+      );
     return (
       <button
         key={s.id}
+        onContextMenu={(event) => void sessionMenu(event, s)}
         className={
           "session-row tone-" +
           sessionState(s).tone +
@@ -791,6 +958,11 @@ export default function App() {
             ? " selected"
             : "")
         }
+        aria-label={[
+          titleOf(s),
+          sessionProject?.name || "Folder",
+          sessionState(s).label,
+        ].join(", ")}
         onClick={() => openSession(s)}
       >
         <ProviderGlyph provider={s.provider} />
@@ -856,10 +1028,14 @@ export default function App() {
             <X size={18} />
           </button>
         </div>
-        <button className="command-button" onClick={() => setModal("palette")}>
+        <button
+          className="command-button"
+          aria-keyshortcuts={isMac ? "Meta+K" : "Control+K"}
+          onClick={() => setModal("palette")}
+        >
           <Search size={14} />
           <span>Search and commands</span>
-          <kbd>{modKey} K</kbd>
+          <kbd aria-hidden="true">{modKey} K</kbd>
         </button>
         <section className="side-section" aria-labelledby="folders-heading">
           <header>
@@ -891,7 +1067,18 @@ export default function App() {
                   title={
                     p.hostId ? `${hostOf(p)?.label || "SSH"}:${p.path}` : p.path
                   }
+                  aria-label={[
+                    p.name,
+                    ...(p.hostId ? [`on ${hostOf(p)?.label || "SSH"}`] : []),
+                    ...(waiting ? ["needs you"] : []),
+                    ...(open.length
+                      ? [
+                          `${open.length} open ${open.length === 1 ? "session" : "sessions"}`,
+                        ]
+                      : []),
+                  ].join(", ")}
                   onClick={() => chooseProject(p.id)}
+                  onContextMenu={(event) => void folderMenuAt(event, p)}
                 >
                   {p.hostId ? <Server size={15} /> : <FolderOpen size={15} />}
                   <span>{p.name}</span>
@@ -910,7 +1097,10 @@ export default function App() {
                     </span>
                   ) : null}
                   {waiting ? (
-                    <span className="needs-dot" title="A session needs you" />
+                    <span
+                      className="needs-dot"
+                      title="A session needs you"
+                    ></span>
                   ) : null}
                   {open.length ? (
                     <span className="count-pill">{open.length}</span>
@@ -1179,7 +1369,7 @@ export default function App() {
                     {window.workspace.browseDirectory ? (
                       <button
                         role="menuitem"
-                        onClick={() => void hideProject()}
+                        onClick={() => void hideProject(project)}
                       >
                         Remove from list…
                       </button>
@@ -1199,13 +1389,24 @@ export default function App() {
           </div>
         ) : null}
         {showBrowser ? (
-          <FolderBrowser
-            projects={snapshot.projects}
-            sessions={snapshot.sessions}
-            onOpenFolder={openFolder}
-            onSelectProject={chooseProject}
-            onSystemPicker={() => void systemPicker()}
-          />
+          <div className="browser-with-setup">
+            {!snapshot.projects.length ||
+            snapshot.capabilities.some(
+              (c) => c.name === "tmux" && !c.available,
+            ) ? (
+              <FirstRunChecklist
+                capabilities={snapshot.capabilities}
+                onCheckAgain={reload}
+              />
+            ) : null}
+            <FolderBrowser
+              projects={snapshot.projects}
+              sessions={snapshot.sessions}
+              onOpenFolder={openFolder}
+              onSelectProject={chooseProject}
+              onSystemPicker={() => void systemPicker()}
+            />
+          </div>
         ) : !project ? (
           <div className="empty-state">
             <BrandMark size={44} />
@@ -1218,29 +1419,36 @@ export default function App() {
           </div>
         ) : (
           <div className="workspace">
-            <LaunchBar
-              project={project}
-              target={target}
-              onTarget={(path) =>
-                setTargets((current) => ({ ...current, [project.id]: path }))
-              }
-              capabilities={projectCapabilities}
-              choices={choices}
-              onChoices={(next) => {
-                setChoices(next);
-                try {
-                  localStorage.setItem(
-                    "workspace.launch.models",
-                    JSON.stringify(next.models),
-                  );
-                } catch {}
-              }}
-              onLaunch={(provider) => void launch(provider, view === "canvas")}
-              launching={launching}
-              disabledReason={disabledReason}
-              git={git}
-              onManageProfiles={() => setProfilesPanel(true)}
-            />
+            {/* With a session open the terminal gets the space; "+" brings
+                the Launchpad (and this bar) back. */}
+            {view === "terminals" && session ? null : (
+              <LaunchBar
+                launchers={view !== "terminals"}
+                project={project}
+                target={target}
+                onTarget={(path) =>
+                  setTargets((current) => ({ ...current, [project.id]: path }))
+                }
+                capabilities={projectCapabilities}
+                choices={choices}
+                onChoices={(next) => {
+                  setChoices(next);
+                  try {
+                    localStorage.setItem(
+                      "workspace.launch.models",
+                      JSON.stringify(next.models),
+                    );
+                  } catch {}
+                }}
+                onLaunch={(provider) =>
+                  void launch(provider, view === "canvas")
+                }
+                launching={launching}
+                disabledReason={disabledReason}
+                git={git}
+                onManageProfiles={() => setProfilesPanel(true)}
+              />
+            )}
             {problem ? (
               <LaunchNotice
                 hostLabel={projectHost?.label}
@@ -1309,6 +1517,13 @@ export default function App() {
                                 (s.id === session?.id ? " active" : "")
                               }
                               aria-pressed={s.id === session?.id}
+                              aria-label={[
+                                titleOf(s),
+                                ...(sessionLocation(s, project) !== "/"
+                                  ? [sessionLocation(s, project)]
+                                  : []),
+                                sessionState(s).label,
+                              ].join(", ")}
                               title={`${providerName(s.provider)} · ${s.cwd}`}
                               onClick={() => openSession(s)}
                             >
@@ -1343,6 +1558,20 @@ export default function App() {
                           >
                             <Plus size={14} />
                           </button>
+                          {session && git ? (
+                            <span
+                              className={
+                                "git-chip tabs-git" +
+                                (git.available ? "" : " muted-chip")
+                              }
+                              title={git.message || ""}
+                            >
+                              <GitBranch size={12} aria-hidden="true" />
+                              {git.available
+                                ? `${git.branch || "detached"}${git.changes ? ` · ${git.changes} changed` : ""}`
+                                : "No Git"}
+                            </span>
+                          ) : null}
                         </div>
                       ) : null}
                       {session ? (
@@ -1369,8 +1598,11 @@ export default function App() {
                       ) : (
                         <Launchpad
                           project={project}
+                          host={projectHost}
+                          onOpenHosts={() => setSSHPanel(true)}
                           target={target}
                           worktree={choices.worktreePath}
+                          chips={launchChips}
                           capabilities={projectCapabilities}
                           launching={launching}
                           disabledReason={disabledReason}
@@ -1433,22 +1665,9 @@ export default function App() {
                   ) : null}
                   {view === "canvas" ? (
                     <div className="canvas-area">
-                      <div className="canvas-toolbar">
-                        <span>
-                          Arrange your agents and notes. Connect agents to share
-                          a reviewed snapshot; a line never starts work
-                          automatically.
-                        </span>
-                        <button
-                          className="button ghost small"
-                          onClick={() => void addNote()}
-                        >
-                          <FileText size={14} />
-                          Add note
-                        </button>
-                      </div>
                       <CanvasView
                         key={projectId}
+                        onAddNote={() => void addNote()}
                         projectId={projectId}
                         titleOf={titleOf}
                         onOpenSession={openSession}
@@ -1614,6 +1833,12 @@ export default function App() {
           ))}
         </div>
       ) : null}
+      {dataPanel && !isRemoteBrowser ? (
+        <WorkspaceDataPanel
+          snapshot={snapshot}
+          onClose={() => setDataPanel(false)}
+        />
+      ) : null}
       {settingsPanel ? (
         <div className="modal-backdrop">
           <section
@@ -1636,116 +1861,19 @@ export default function App() {
               sessions stay where they are.
             </p>
             <AppearanceSettings />
-            {power && !isRemoteBrowser ? (
-              <label
-                className="keep-awake"
-                title={
-                  "Prevents this computer from sleeping while a local Claude session reports it is working. " +
-                  "The display can still sleep. Needs input, done, exit or a quiet turn longer than 20 minutes releases it. " +
-                  "Codex and shell sessions cannot report work, so they never keep it awake."
-                }
-              >
-                <input
-                  type="checkbox"
-                  role="switch"
-                  checked={power.enabled}
-                  disabled={powerBusy}
-                  aria-label="Keep awake during Claude work"
-                  onChange={(e) => void togglePower(e.target.checked)}
-                />
-                <span className="keep-awake-text">
-                  Keep awake during Claude work
-                  <span
-                    className="keep-awake-status"
-                    data-active={power.active}
-                  >
-                    {!power.enabled
-                      ? "Off"
-                      : power.active
-                        ? `Keeping awake · ${power.sessions.length} ${power.sessions.length === 1 ? "session" : "sessions"} working`
-                        : "On · idle"}
-                  </span>
-                </span>
-              </label>
-            ) : null}
-            {dictationAvailable() && !isRemoteBrowser ? (
-              <button
-                className="foot-button"
-                aria-label="Voice dictation settings"
-                onClick={() => {
-                  setSettingsPanel(false);
-                  openDictationSettings();
-                }}
-              >
-                <Mic size={14} />
-                Voice dictation
-              </button>
-            ) : null}
-            {assistAvailable() && !isRemoteBrowser ? (
-              <button
-                className="foot-button"
-                aria-label="AI suggestions settings"
-                onClick={() => {
-                  setSettingsPanel(false);
-                  openAssistSettings();
-                }}
-              >
-                <Sparkles size={14} />
-                AI suggestions
-              </button>
-            ) : null}
-            {profilesAvailable() && !isRemoteBrowser ? (
-              <button
-                className="foot-button"
-                aria-label="Claude profiles"
-                onClick={() => {
-                  setSettingsPanel(false);
-                  setProfilesPanel(true);
-                }}
-              >
-                <KeyRound size={14} />
-                Claude profiles
-              </button>
-            ) : null}
-            {window.workspace.ssh && !isRemoteBrowser ? (
-              <button
-                className="foot-button"
-                aria-label="SSH hosts"
-                onClick={() => {
-                  setSettingsPanel(false);
-                  setSSHPanel(true);
-                }}
-              >
-                <Server size={14} />
-                SSH hosts
-              </button>
-            ) : null}
-            {window.workspace.team && !isRemoteBrowser ? (
-              <button
-                className="foot-button"
-                aria-label="Team"
-                onClick={() => {
-                  setSettingsPanel(false);
-                  setTeamPanel(true);
-                }}
-              >
-                <Users size={14} />
-                Team
-              </button>
-            ) : null}
-            {window.workspace.remote ? (
-              <button
-                className="foot-button"
-                aria-label="Remote access settings"
-                onClick={() => {
-                  setSettingsPanel(false);
-                  setRemotePanel(true);
-                }}
-              >
-                <Smartphone size={14} />
-                Remote access
-              </button>
-            ) : null}
+            <SettingsRows
+              hosts={hosts}
+              open={settingsPanel}
+              close={() => setSettingsPanel(false)}
+              power={power}
+              powerBusy={powerBusy}
+              togglePower={(on) => void togglePower(on)}
+              openData={() => setDataPanel(true)}
+              openProfiles={() => setProfilesPanel(true)}
+              openSSH={() => setSSHPanel(true)}
+              openTeam={() => setTeamPanel(true)}
+              openRemote={() => setRemotePanel(true)}
+            />
           </section>
         </div>
       ) : null}
@@ -1826,6 +1954,7 @@ export default function App() {
             {
               id: "appearance",
               label: "Appearance · Light / white mode, Dark or System",
+              keywords: "theme colour color",
               run: () => setSettingsPanel(true),
             },
             {
@@ -1838,6 +1967,7 @@ export default function App() {
             {
               id: "settings",
               label: "Settings and connections",
+              keywords: "preferences options keep awake",
               run: () => setSettingsPanel(true),
             },
             ...(project && profilesAvailable() && !project.hostId
@@ -1845,6 +1975,7 @@ export default function App() {
                   {
                     id: "connect",
                     label: "Connect agents · share context on Canvas",
+                    keywords: "transcript handoff link",
                     run: () => {
                       switchView("canvas");
                       setConnectRequested(true);
@@ -1857,6 +1988,7 @@ export default function App() {
                   {
                     id: "voice",
                     label: "Voice dictation settings · microphone",
+                    keywords: "speech typing mic",
                     run: () => openDictationSettings(),
                   },
                 ]
@@ -1866,6 +1998,7 @@ export default function App() {
                   {
                     id: "assist",
                     label: "AI suggestions settings",
+                    keywords: "assist model name",
                     run: () => openAssistSettings(),
                   },
                 ]
@@ -1875,6 +2008,7 @@ export default function App() {
                   {
                     id: "accounts",
                     label: "Claude accounts and profiles",
+                    keywords: "account login sign in",
                     run: () => setProfilesPanel(true),
                   },
                 ]
@@ -1884,6 +2018,7 @@ export default function App() {
                   {
                     id: "phone",
                     label: "Connect phone · remote access",
+                    keywords: "pair pairing qr mobile browser",
                     run: () => setRemotePanel(true),
                   },
                 ]
@@ -1893,6 +2028,7 @@ export default function App() {
                   {
                     id: "ssh",
                     label: "Connect SSH computer",
+                    keywords: "ssh hosts remote machine server",
                     run: () => setSSHPanel(true),
                   },
                 ]
@@ -1902,6 +2038,7 @@ export default function App() {
                   {
                     id: "team",
                     label: "Join or set up a team",
+                    keywords: "team share collaborate",
                     run: () => setTeamPanel(true),
                   },
                 ]
@@ -1993,8 +2130,11 @@ export default function App() {
 
 function Launchpad({
   project,
+  host,
+  onOpenHosts,
   target,
   worktree,
+  chips,
   capabilities,
   launching,
   disabledReason,
@@ -2005,9 +2145,14 @@ function Launchpad({
   onResume,
 }: {
   project: Project;
+  /** The SSH host of an SSH folder; undefined for local folders. */
+  host?: ExecutionHostView;
+  onOpenHosts: () => void;
   target: string;
   /** A worktree chosen in Launch options; new sessions open there. */
   worktree: string;
+  /** Profile and model each provider will launch with, when set. */
+  chips: Partial<Record<Provider, string>>;
   capabilities: Snapshot["capabilities"];
   launching: Provider | null;
   disabledReason: string;
@@ -2020,47 +2165,63 @@ function Launchpad({
   const where = worktree
     ? `worktree ${worktree.split("/").pop()}`
     : [project.name, target].filter(Boolean).join("/");
+  // An SSH folder whose host is not connected cannot launch anything, so it
+  // gets a Reconnect notice in place of greyed "ready" cards.
+  const offline = !!project.hostId && host?.state !== "connected";
   return (
     <div className="launchpad">
-      <div className="launchpad-card">
-        <p className="eyebrow">Ready in {where}</p>
-        <h2>Open an agent or a shell here</h2>
-        <div className="launchpad-options">
-          {providers.map((provider) => {
-            const cap = capability(capabilities, provider);
-            const missing = !!cap && !cap.available;
-            return (
-              <button
-                key={provider}
-                className={
-                  "launchpad-option launch-" +
-                  provider +
-                  (missing ? " is-missing" : "")
-                }
-                aria-label={`Open ${providerName(provider)} here`}
-                disabled={!!disabledReason || !!launching}
-                onClick={() => onLaunch(provider)}
-              >
-                <ProviderGlyph provider={provider} size={22} />
-                <strong>{providerName(provider)}</strong>
-                <span>
-                  {missing
-                    ? "Not found on this host"
-                    : provider === "claude"
-                      ? "Claude Code, ready for your first message"
-                      : provider === "codex"
-                        ? "Codex CLI, ready for your first message"
-                        : "A terminal in this folder"}
-                </span>
-              </button>
-            );
-          })}
+      {offline ? (
+        <HostOfflineNotice host={host} onOpenHosts={onOpenHosts} />
+      ) : (
+        <div className="launchpad-card">
+          <p className="eyebrow">Ready in {where}</p>
+          <h2>Open an agent or a shell here</h2>
+          <div className="launchpad-options">
+            {providers.map((provider) => {
+              const cap = capability(capabilities, provider);
+              const missing = !!cap && !cap.available;
+              return (
+                <button
+                  key={provider}
+                  className={
+                    "launchpad-option launch-" +
+                    provider +
+                    (missing ? " is-missing" : "")
+                  }
+                  aria-label={`Open ${providerName(provider)} here`}
+                  aria-describedby={`launchpad-${provider}-hint`}
+                  title={disabledReason || undefined}
+                  disabled={!!disabledReason || !!launching}
+                  onClick={() => onLaunch(provider)}
+                >
+                  {launching === provider ? (
+                    <RefreshCw size={22} className="spin" />
+                  ) : (
+                    <ProviderGlyph provider={provider} size={22} />
+                  )}
+                  <strong>{providerName(provider)}</strong>
+                  {chips[provider] && !missing ? (
+                    <small className="launchpad-chip">{chips[provider]}</small>
+                  ) : null}
+                  <span id={`launchpad-${provider}-hint`}>
+                    {missing
+                      ? "Not found on this host"
+                      : provider === "claude"
+                        ? "Claude Code, ready for your first message"
+                        : provider === "codex"
+                          ? "Codex CLI, ready for your first message"
+                          : "A terminal in this folder"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="hint">
+            Nothing is sent until you type. Sessions keep running when you
+            switch folders or views, and after you close the window.
+          </p>
         </div>
-        <p className="hint">
-          Nothing is sent until you type. Sessions keep running when you switch
-          folders or views, and after you close the window.
-        </p>
-      </div>
+      )}
       {recent.length ? (
         <div className="recent-sessions">
           <h3 className="section-label">Recently ended here</h3>
@@ -2085,6 +2246,72 @@ function Launchpad({
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function HostOfflineNotice({
+  host,
+  onOpenHosts,
+}: {
+  host?: ExecutionHostView;
+  onOpenHosts: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const ssh = window.workspace.ssh;
+  const label = host?.label || "This SSH host";
+  const pending =
+    busy || host?.state === "connecting" || host?.state === "reconnecting";
+  return (
+    <div className="launchpad-card host-offline" role="status">
+      <Server size={28} aria-hidden="true" />
+      <p className="eyebrow">SSH folder</p>
+      <h2>
+        {!host
+          ? "This folder's SSH host was removed"
+          : pending
+            ? `Connecting to ${label}…`
+            : `${label} is not connected`}
+      </h2>
+      <p className="muted">
+        {host
+          ? "Sessions on this host keep running there. Connect to start new ones or reopen them."
+          : "Add the host again in SSH hosts to use this folder."}
+      </p>
+      {host?.problem && !pending ? (
+        <p className="notice notice-error">{host.problem.message}</p>
+      ) : null}
+      {error ? <p className="notice notice-error">{error}</p> : null}
+      <div className="host-offline-actions">
+        {host && ssh ? (
+          <button
+            className="button primary"
+            disabled={pending}
+            onClick={async () => {
+              setBusy(true);
+              setError("");
+              try {
+                await ssh.connect(host.id);
+              } catch (e) {
+                setError(e instanceof Error ? e.message : String(e));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {pending ? <RefreshCw size={14} className="spin" /> : null}
+            {pending ? "Connecting…" : "Reconnect"}
+          </button>
+        ) : null}
+        {ssh ? (
+          <button className="button" onClick={onOpenHosts}>
+            SSH hosts…
+          </button>
+        ) : (
+          <p className="muted">Connect it from the desktop app.</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -2172,20 +2399,153 @@ function LaunchNotice({
   );
 }
 
+function SettingsRows({
+  hosts,
+  open,
+  close,
+  power,
+  powerBusy,
+  togglePower,
+  openData,
+  openProfiles,
+  openSSH,
+  openTeam,
+  openRemote,
+}: {
+  hosts: ExecutionHostView[];
+  open: boolean;
+  close: () => void;
+  power: PowerStatus | null;
+  powerBusy: boolean;
+  togglePower: (on: boolean) => void;
+  openData: () => void;
+  openProfiles: () => void;
+  openSSH: () => void;
+  openTeam: () => void;
+  openRemote: () => void;
+}) {
+  const states = useSettingsStates(open);
+  const profilesState = useProfilesState();
+  const go = (next: () => void) => () => {
+    close();
+    next();
+  };
+  return (
+    <div className="settings-rows">
+      {power && !isRemoteBrowser ? (
+        <label
+          className="settings-row keep-awake"
+          title={
+            "Prevents this computer from sleeping while a local Claude or Codex session reports it is working. " +
+            "The display can still sleep. Needs input, done, exit or a quiet turn longer than 20 minutes releases it. " +
+            "Codex needs trusted lifecycle hooks; shell sessions never keep it awake."
+          }
+        >
+          <span className="settings-row-icon" aria-hidden="true">
+            <Moon size={14} />
+          </span>
+          <span className="settings-row-label">
+            Keep awake during agent work
+          </span>
+          <span
+            className="settings-row-state keep-awake-status"
+            data-active={power.active}
+          >
+            {!power.enabled
+              ? "Off"
+              : power.active
+                ? `Keeping awake · ${power.sessions.length} ${power.sessions.length === 1 ? "session" : "sessions"} working`
+                : "On · idle"}
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={power.enabled}
+            disabled={powerBusy}
+            aria-label="Keep awake during agent work"
+            onChange={(e) => togglePower(e.target.checked)}
+          />
+        </label>
+      ) : null}
+      {dictationAvailable() && !isRemoteBrowser ? (
+        <SettingsRow
+          icon={<Mic size={14} />}
+          label="Voice dictation"
+          name="Voice dictation settings"
+          state={states.dictation}
+          onOpen={go(openDictationSettings)}
+        />
+      ) : null}
+      {assistAvailable() && !isRemoteBrowser ? (
+        <SettingsRow
+          icon={<Sparkles size={14} />}
+          label="AI suggestions"
+          name="AI suggestions settings"
+          state={states.assist}
+          onOpen={go(openAssistSettings)}
+        />
+      ) : null}
+      {profilesAvailable() && !isRemoteBrowser ? (
+        <SettingsRow
+          icon={<KeyRound size={14} />}
+          label="Claude profiles"
+          state={profilesState}
+          onOpen={go(openProfiles)}
+        />
+      ) : null}
+      {window.workspace.ssh && !isRemoteBrowser ? (
+        <SettingsRow
+          icon={<Server size={14} />}
+          label="SSH hosts"
+          state={hostsState(hosts)}
+          onOpen={go(openSSH)}
+        />
+      ) : null}
+      {window.workspace.team && !isRemoteBrowser ? (
+        <SettingsRow
+          icon={<Users size={14} />}
+          label="Team"
+          state={states.team}
+          onOpen={go(openTeam)}
+        />
+      ) : null}
+      {window.workspace.remote ? (
+        <SettingsRow
+          icon={<Smartphone size={14} />}
+          label="Remote access"
+          name="Remote access settings"
+          state={states.remote}
+          onOpen={go(openRemote)}
+        />
+      ) : null}
+      {!isRemoteBrowser ? (
+        <SettingsRow
+          icon={<Database size={14} />}
+          label="Workspace data"
+          state="Backups, export and history"
+          onOpen={go(openData)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function Palette({
   items,
   close,
 }: {
-  items: { id: string; label: string; hint?: string; run: () => void }[];
+  items: {
+    id: string;
+    label: string;
+    hint?: string;
+    keywords?: string;
+    run: () => void;
+  }[];
   close: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
-  const matches = items
-    .filter((item) =>
-      item.label.toLowerCase().includes(query.trim().toLowerCase()),
-    )
-    .slice(0, 40);
+  const matches = paletteMatches(items, query).slice(0, 40);
   const run = (index: number) => {
     const item = matches[index];
     if (!item) return;

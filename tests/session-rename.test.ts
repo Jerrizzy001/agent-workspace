@@ -1,3 +1,4 @@
+import { workspaceSocket } from "../src/core/socket.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -64,10 +65,7 @@ test("rename is revision-checked, generation-bound and persists", async () => {
         tmux,
         [
           "-S",
-          path.join(
-            os.tmpdir(),
-            "aw-" + crypto.createHash("sha256").update(dataDir).digest("hex").slice(0, 20) + ".sock",
-          ),
+          workspaceSocket(dataDir),
           "kill-server",
         ],
         { stdio: "ignore" },

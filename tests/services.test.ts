@@ -224,10 +224,10 @@ test("file services enforce symlink/root boundaries and durable optimistic saves
       description: "Saved task",
     });
     const note = await f.call("note.create", { title: "Note", body: "first" });
-    await f.call("note.update", { noteId: note.id, body: "second" });
+    await f.call("note.update", { noteId: note.id, body: "second", revision: note.revision });
     await f.call("layout.save", { positions: { [task.id]: { x: 12, y: 34 } } });
     await assert.rejects(
-      f.call("note.update", { noteId: note.id, body: { bad: true } }),
+      f.call("note.update", { noteId: note.id, body: { bad: true }, revision: 2 }),
       /Invalid body/,
     );
     await assert.rejects(
@@ -238,7 +238,8 @@ test("file services enforce symlink/root boundaries and durable optimistic saves
     const reopened = await createCore({ dataDir: f.dataDir, emit: () => {} });
     try {
       const snapshot: any = await reopened.invoke("snapshot");
-      assert.equal(snapshot.notes[0].body, "second");
+      assert.equal(snapshot.notes[0].bodyLoaded, false);
+      assert.equal(((await reopened.invoke("note.read", { noteId: note.id })) as any).body, "second");
       assert.equal(snapshot.layouts[0].positions[task.id].x, 12);
       assert.equal(snapshot.tasks[0].description, "Saved task");
     } finally {

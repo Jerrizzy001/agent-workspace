@@ -1,3 +1,4 @@
+import { workspaceSocket } from "../src/core/socket.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -50,16 +51,7 @@ const alive = (pid: number) => {
   }
 };
 function socketFor(dataDir: string) {
-  return path.join(
-    os.tmpdir(),
-    "aw-" +
-      crypto
-        .createHash("sha256")
-        .update(fs.realpathSync(dataDir))
-        .digest("hex")
-        .slice(0, 20) +
-      ".sock",
-  );
+  return workspaceSocket(fs.realpathSync(dataDir));
 }
 const scratchDirs = () =>
   fs

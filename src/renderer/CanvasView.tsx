@@ -18,6 +18,7 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { FileText, Redo2, Undo2 } from "lucide-react";
 import type {
   Attempt,
   Layout,
@@ -49,7 +50,60 @@ type CanvasData = {
   move?: (dx: number, dy: number) => void;
   report?: (e: unknown) => void;
 };
-function CanvasNote({
+function CanvasNote(props: {
+  note: Note;
+  saveNote: (note: Note, body: string) => Promise<Note>;
+  onFlushReady?: (flush: (() => Promise<void>) | null) => void;
+}) {
+  const [loaded, setLoaded] = useState<Note | null>(null);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  const { note } = props;
+  useEffect(() => {
+    if (note.bodyLoaded !== false) {
+      setLoaded(note);
+      return;
+    }
+    let active = true;
+    void window.workspace
+      .invoke<Note>("note.read", { noteId: note.id })
+      .then((full) => {
+        if (active) {
+          setLoaded(full);
+          setError("");
+        }
+      })
+      .catch((e) => {
+        if (active) setError(String(e.message || e));
+      });
+    return () => {
+      active = false;
+    };
+  }, [note.id, note.revision, note.bodyLoaded, retry]);
+  if (!loaded || loaded.id !== note.id)
+    return error ? (
+      <button onClick={() => setRetry((n) => n + 1)}>
+        Could not load note. Retry
+      </button>
+    ) : (
+      <span role="status">Loading note…</span>
+    );
+  return (
+    <>
+      {error && <span role="alert">{error}</span>}
+      <CanvasNoteEditor
+        {...props}
+        note={loaded}
+        saveNote={async (current, body) => {
+          const updated = await props.saveNote(current, body);
+          setLoaded(updated);
+          return updated;
+        }}
+      />
+    </>
+  );
+}
+function CanvasNoteEditor({
   note,
   saveNote,
   onFlushReady,
@@ -292,6 +346,7 @@ function WorkspaceNode({ data }: NodeProps<Node<CanvasData>>) {
         <div className="nodrag nowheel terminal-in-node">
           <TerminalView
             session={data.session}
+            label={data.title}
             onViewer={setViewerId}
             dictationToggle={dictationToggle}
           />
@@ -355,7 +410,9 @@ export function CanvasView({
   titleOf,
   connectRequested = false,
   onConnectHandled,
+  onAddNote,
 }: {
+  onAddNote?: () => void;
   projectId: string;
   attempts: Attempt[];
   sessions: Session[];
@@ -385,6 +442,8 @@ export function CanvasView({
     null,
   );
   const [allowedReaders, setAllowedReaders] = useState<Set<string>>(new Set());
+  // Soonest read-grant expiry: grants lapse without any event, so re-check then.
+  const [nextExpiry, setNextExpiry] = useState(0);
   const linkRequest = useRef(0);
   const mounted = useRef(true);
   useEffect(() => {
@@ -425,6 +484,15 @@ export function CanvasView({
       );
       if (!mounted.current || request !== linkRequest.current) return;
       setLinks(mine);
+      setNextExpiry(
+        Math.min(
+          ...states.map((r) =>
+            r.status === "fulfilled" && r.value.state.grant
+              ? Date.parse(r.value.state.grant.expiresAt)
+              : Infinity,
+          ),
+        ),
+      );
       setAllowedReaders(
         new Set(
           states.flatMap((r) =>
@@ -441,9 +509,26 @@ export function CanvasView({
   }, [local, report]);
   useEffect(() => {
     void refreshLinks();
-    const timer = setInterval(() => void refreshLinks(), 5000);
-    return () => clearInterval(timer);
+    return window.workspace.subscribe((event) => {
+      if (event.type === "transcript.changed") void refreshLinks();
+    });
   }, [refreshLinks]);
+  // Links are filtered by each session's generation and drop when one ends;
+  // re-check when that set changes, not on every activity update.
+  const sessionKey = sessions
+    .map((s) => `${s.id}:${s.generation}:${s.status}`)
+    .join(",");
+  useEffect(() => {
+    void refreshLinks();
+  }, [sessionKey, refreshLinks]);
+  useEffect(() => {
+    if (!Number.isFinite(nextExpiry)) return;
+    const timer = setTimeout(
+      () => void refreshLinks(),
+      Math.min(Math.max(nextExpiry - Date.now() + 500, 0), 2 ** 31 - 1),
+    );
+    return () => clearTimeout(timer);
+  }, [nextExpiry, refreshLinks]);
   useEffect(() => {
     if (connectRequested) {
       setChooser(true);
@@ -508,6 +593,7 @@ export function CanvasView({
           noteId: note.id,
           projectId,
           body,
+          revision: note.revision ?? 1,
         })
         .catch((error) => {
           report(error);
@@ -672,6 +758,9 @@ export function CanvasView({
         if (moved) delete placed.current[node.id];
         return {
           ...node,
+          // Keep React Flow's measured size: a node without one is hidden
+          // until remeasured, which drops focus from a note being typed in.
+          ...(shown?.measured ? { measured: shown.measured } : {}),
           position:
             moved ||
             placed.current[node.id] ||
@@ -707,10 +796,11 @@ export function CanvasView({
   }
   return (
     <div className="canvas-container" ref={container}>
-      <div className="canvas-actions">
+      <div className="canvas-actions" role="toolbar" aria-label="Canvas">
         <button
           className="button primary small"
           disabled={!local}
+          title="Share a reviewed snapshot between agents. A line never starts work automatically."
           onClick={() => setChooser(true)}
         >
           Connect agents
@@ -730,6 +820,34 @@ export function CanvasView({
         >
           Add to canvas
         </button>
+        {onAddNote ? (
+          <button className="button ghost small" onClick={onAddNote}>
+            <FileText size={14} />
+            Add note
+          </button>
+        ) : null}
+        <span className="canvas-actions-divider" aria-hidden="true" />
+        <span className="canvas-history" data-version={historyVersion}>
+          <button
+            className="icon-button"
+            aria-label="Undo move"
+            title="Undo move"
+            disabled={!history.current.length}
+            onClick={() => travel(true)}
+          >
+            <Undo2 size={15} />
+          </button>
+          <button
+            className="icon-button"
+            aria-label="Redo move"
+            title="Redo move"
+            disabled={!future.current.length}
+            onClick={() => travel(false)}
+          >
+            <Redo2 size={15} />
+          </button>
+        </span>
+        <span className="canvas-actions-spacer" />
         <label>
           <input
             type="checkbox"
@@ -798,16 +916,10 @@ export function CanvasView({
           ) : null}
         </section>
       ) : null}
-      <div className="canvas-history" data-version={historyVersion}>
-        <button disabled={!history.current.length} onClick={() => travel(true)}>
-          ↶ Undo move
-        </button>
-        <button disabled={!future.current.length} onClick={() => travel(false)}>
-          ↷ Redo
-        </button>
-      </div>
       <div className="canvas-flow">
         <ReactFlow<Node<CanvasData>, Edge>
+          // Credited in the About panel (app menu) instead of on the canvas.
+          proOptions={{ hideAttribution: true }}
           onInit={(instance) => {
             flow.current = instance;
             setFlowReady(true);

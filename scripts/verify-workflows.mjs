@@ -146,10 +146,10 @@ try {
   await page.waitForTimeout(300);
   const moved = await node.getAttribute("style");
   assert.notEqual(moved, before);
-  await page.getByRole("button", { name: "↶ Undo move", exact: true }).click();
+  await page.getByRole("button", { name: "Undo move", exact: true }).click();
   await page.waitForTimeout(200);
   assert.equal(await node.getAttribute("style"), before);
-  await page.getByRole("button", { name: "↷ Redo", exact: true }).click();
+  await page.getByRole("button", { name: "Redo move", exact: true }).click();
   await page.waitForTimeout(200);
   assert.equal(await node.getAttribute("style"), moved);
   await page.screenshot({ path: path.join(fixture, "canvas.png") });

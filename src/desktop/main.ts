@@ -1,9 +1,12 @@
+import { deltaReceiver } from "../shared/deltas";
 import {
   app,
   BrowserWindow,
   dialog,
   ipcMain,
+  Menu,
   safeStorage,
+  screen,
   session,
   shell,
   utilityProcess,
@@ -20,7 +23,14 @@ import {
   previewClipboardImage,
   takeClipboardImage,
 } from "./clipboard-images";
+import type { MenuAction } from "../shared/contracts";
 import { createPowerController } from "./power";
+import {
+  restoreBounds,
+  WINDOW_MIN,
+  windowStateFile,
+  type WindowBounds,
+} from "./window-state";
 import { createDictationService, defaultModelsDir } from "./dictation";
 import type { PowerPolicy } from "./power-policy";
 import { assistOnlyThroughChannel, handleAssist } from "./assist";
@@ -223,7 +233,10 @@ async function invokeCore(
   timeoutMs?: number,
 ): Promise<unknown> {
   validatePayload(command, payload);
-  return coreRequest({ type: "invoke", command, payload }, timeoutMs);
+  return coreRequest(
+    { type: "invoke", command, payload },
+    timeoutMs ?? (command === "git.commit" ? 180_000 : 90_000),
+  );
 }
 /** Internal requests (invoke, attachment) share one result channel and timeout. */
 async function coreRequest(
@@ -295,6 +308,8 @@ function waitForCore() {
   });
 }
 let restarts = 0;
+let stableCoreTimer: ReturnType<typeof setTimeout> | undefined;
+const receiveCore = deltaReceiver();
 let requestId = 0;
 const pending = new Map<
   number,
@@ -302,10 +317,11 @@ const pending = new Map<
 >();
 function event(value: CoreEvent) {
   if (value.type === "core.status") coreStatus = value.status;
-  if (value.type === "snapshot") {
+  const materialized = receiveCore.accept(value);
+  if (materialized?.type === "snapshot") {
     snapshotsSeen++;
     // Only local sessions keep this computer awake; SSH hosts are not covered.
-    power?.setSessions(value.snapshot.sessions.filter((s) => !s.hostId));
+    power?.setSessions(materialized.snapshot.sessions.filter((s) => !s.hostId));
   }
   for (const listener of eventListeners) {
     try {
@@ -362,6 +378,11 @@ function startCore() {
     }
     if (message.type === "ready") {
       ready = true;
+      clearTimeout(stableCoreTimer);
+      stableCoreTimer = setTimeout(() => {
+        restarts = 0;
+      }, 60_000);
+      stableCoreTimer.unref();
       for (const waiter of readyWaiters) waiter.resolve();
       event({ type: "core.status", status: "ready" });
       void syncPower();
@@ -377,6 +398,7 @@ function startCore() {
     }
   });
   core.on("exit", () => {
+    clearTimeout(stableCoreTimer);
     core = null;
     ready = false;
     // Without the core nothing proves an agent is working.
@@ -410,12 +432,125 @@ function startCore() {
     }
   });
 }
+let pendingMenu: MenuAction | undefined;
+function buildMenu() {
+  app.setAboutPanelOptions({
+    applicationName: "Agent Workspace",
+    credits:
+      "Built with Electron, React, React Flow (xyflow, MIT), xterm.js (MIT), " +
+      "Monaco Editor (MIT), sherpa-onnx (Apache-2.0), ONNX Runtime (MIT), " +
+      "Lucide icons (ISC) and node-qrcode (MIT).",
+  });
+  const send = (action: MenuAction) => () => {
+    // A window that is still loading has no listener yet: hold the action
+    // until its renderer reports that it subscribed.
+    if (!window) {
+      pendingMenu = action;
+      createWindow();
+    } else if (window.webContents.isLoading()) pendingMenu = action;
+    else window.webContents.send("workspace:menu", action);
+  };
+  ipcMain.on("workspace:menu-ready", (ev) => {
+    if (ev.sender !== window?.webContents || !pendingMenu) return;
+    ev.sender.send("workspace:menu", pendingMenu);
+    pendingMenu = undefined;
+  });
+  // Shortcuts the renderer already handles are shown, not re-registered, so
+  // the terminal keeps receiving them where it should.
+  const shown = (accelerator: string) => ({
+    accelerator,
+    registerAccelerator: false,
+  });
+  const mac = process.platform === "darwin";
+  const template: Electron.MenuItemConstructorOptions[] = [
+    ...(mac
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: "about" as const },
+              { type: "separator" as const },
+              {
+                label: "Settings…",
+                accelerator: "CmdOrCtrl+,",
+                click: send("settings"),
+              },
+              { type: "separator" as const },
+              { role: "services" as const },
+              { type: "separator" as const },
+              { role: "hide" as const },
+              { role: "hideOthers" as const },
+              { role: "unhide" as const },
+              { type: "separator" as const },
+              { role: "quit" as const },
+            ],
+          },
+        ]
+      : []),
+    {
+      label: "File",
+      submenu: [
+        {
+          label: "Open Folder…",
+          ...shown("CmdOrCtrl+O"),
+          click: send("open-folder"),
+        },
+        { label: "New Task", ...shown("CmdOrCtrl+N"), click: send("new-task") },
+        { type: "separator" },
+        ...(mac
+          ? [{ role: "close" as const }]
+          : [
+              {
+                label: "Settings…",
+                accelerator: "CmdOrCtrl+,",
+                click: send("settings"),
+              },
+              { role: "quit" as const },
+            ]),
+      ],
+    },
+    { role: "editMenu" },
+    {
+      label: "View",
+      submenu: [
+        {
+          label: "Command Palette…",
+          ...shown("CmdOrCtrl+K"),
+          click: send("palette"),
+        },
+        { type: "separator" },
+        { label: "Terminals", click: send("view-terminals") },
+        { label: "Board", click: send("view-board") },
+        { label: "Canvas", click: send("view-canvas") },
+        { type: "separator" },
+        { label: "Toggle Folders and Sessions", click: send("toggle-sidebar") },
+        { label: "Toggle Files and Changes", click: send("toggle-files") },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+        ...(app.isPackaged ? [] : [{ role: "toggleDevTools" as const }]),
+      ],
+    },
+    { role: "windowMenu" },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+let windowState: ReturnType<typeof windowStateFile> | undefined;
 function createWindow() {
+  windowState ??= windowStateFile(app.getPath("userData"));
+  const bounds = restoreBounds(
+    windowState.read(),
+    screen.getAllDisplays().map((d) => d.workArea),
+  );
   window = new BrowserWindow({
-    width: 1480,
-    height: 940,
-    minWidth: 1000,
-    minHeight: 680,
+    ...(bounds.x !== undefined ? { x: bounds.x, y: bounds.y } : {}),
+    width: bounds.width,
+    height: bounds.height,
+    minWidth: WINDOW_MIN.width,
+    minHeight: WINDOW_MIN.height,
     backgroundColor: "#0b0d12",
     title: "Agent Workspace",
     webPreferences: {
@@ -439,6 +574,31 @@ function createWindow() {
     if (response === 1) ev.preventDefault();
     else quitting = false;
   });
+  // Text fields and the terminal (its hidden textarea is editable) get the
+  // standard edit menu. Rows with their own menus cancel the DOM event first,
+  // so this only runs where the renderer did not handle the right-click.
+  window.webContents.on("context-menu", (_ev, params) => {
+    const flags = params.editFlags;
+    const template: Electron.MenuItemConstructorOptions[] = [];
+    if (params.isEditable) {
+      for (const word of params.dictionarySuggestions.slice(0, 4))
+        template.push({
+          label: word,
+          click: () => window?.webContents.replaceMisspelling(word),
+        });
+      if (template.length) template.push({ type: "separator" });
+      template.push(
+        { role: "cut", enabled: flags.canCut },
+        { role: "copy", enabled: flags.canCopy },
+        { role: "paste", enabled: flags.canPaste },
+        { type: "separator" },
+        { role: "selectAll", enabled: flags.canSelectAll },
+      );
+    } else if (params.selectionText.trim())
+      template.push({ role: "copy" }, { role: "selectAll" });
+    if (template.length)
+      Menu.buildFromTemplate(template).popup({ window: window! });
+  });
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (ev, url) => {
     if (url !== window?.webContents.getURL()) ev.preventDefault();
@@ -446,6 +606,28 @@ function createWindow() {
   const dev = process.env.WORKSPACE_DEV_URL;
   if (dev) void window.loadURL(dev);
   else void window.loadFile(path.join(__dirname, "../renderer/index.html"));
+  if (bounds.maximized) window.maximize();
+  // Remember size and place (not while full screen) for the next launch.
+  let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  const saveBounds = () => {
+    const w = window;
+    if (!w || w.isDestroyed() || w.isFullScreen() || w.isMinimized()) return;
+    const b = w.isMaximized() ? w.getNormalBounds() : w.getBounds();
+    const next: WindowBounds = { ...b, maximized: w.isMaximized() };
+    try {
+      windowState?.write(next);
+    } catch {}
+  };
+  const queueSave = () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveBounds, 400);
+  };
+  for (const name of ["resize", "move", "maximize", "unmaximize"] as const)
+    window.on(name as "resize", queueSave);
+  window.on("close", () => {
+    clearTimeout(saveTimer);
+    saveBounds();
+  });
   window.on("closed", () => {
     window = null;
   });
@@ -458,6 +640,11 @@ else {
     window?.focus();
   });
   app.whenReady().then(() => {
+    ipcMain.handle("workspace:sync", async (ev) => {
+      assertOwner(ev);
+      const snapshot = await invokeCore("snapshot");
+      return receiveCore.current() ?? { type: "snapshot", snapshot };
+    });
     ipcMain.handle(
       "workspace:invoke",
       async (ev, command: unknown, payload: unknown = {}) => {
@@ -492,6 +679,37 @@ else {
         return handleAssist(invokeCore, action, value);
       },
     );
+    ipcMain.handle("workspace:contextMenu", (ev, items: unknown) => {
+      assertOwner(ev);
+      if (!Array.isArray(items) || !items.length || items.length > 30)
+        throw new Error("Invalid menu");
+      return new Promise<string | null>((resolve) => {
+        let chosen: string | null = null;
+        const template = items.map(
+          (item): Electron.MenuItemConstructorOptions => {
+            if (item?.type === "separator") return { type: "separator" };
+            if (
+              typeof item?.id !== "string" ||
+              typeof item?.label !== "string" ||
+              item.label.length > 200
+            )
+              throw new Error("Invalid menu item");
+            return {
+              label: item.label,
+              enabled: item.enabled !== false,
+              click: () => {
+                chosen = item.id;
+              },
+            };
+          },
+        );
+        Menu.buildFromTemplate(template).popup({
+          window: window!,
+          // Clicks run before close, so `chosen` is set when this fires.
+          callback: () => setImmediate(() => resolve(chosen)),
+        });
+      });
+    });
     ipcMain.handle("workspace:chooseDirectory", async (ev) => {
       if (
         ev.sender !== window?.webContents ||
@@ -754,6 +972,14 @@ else {
           if (!gateway) throw new Error("Enable remote access first");
           return gateway.pairingSecret();
         }
+        if (action === "pairingLink") {
+          if (!gateway) throw new Error("Enable remote access first");
+          return gateway.pairingLink();
+        }
+        if (action === "pairingLinkPending")
+          return (
+            typeof value === "string" && !!gateway?.pairingLinkPending(value)
+          );
         if (action === "revokeSessions") {
           if (!gateway) throw new Error("Remote access is stopped");
           await gateway.revokeSessions();
@@ -920,6 +1146,7 @@ else {
       },
     );
     void resolveCorePath().finally(startCore);
+    buildMenu();
     createWindow();
     app.on("activate", () => {
       if (!window) createWindow();

@@ -1,3 +1,4 @@
+import { workspaceSocket } from "../src/core/socket.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -38,12 +39,7 @@ export function png(width: number, height: number) {
   ]);
 }
 function socketFor(dataDir: string) {
-  return path.join(
-    os.tmpdir(),
-    "aw-" +
-      crypto.createHash("sha256").update(fs.realpathSync(dataDir)).digest("hex").slice(0, 20) +
-      ".sock",
-  );
+  return workspaceSocket(fs.realpathSync(dataDir));
 }
 async function fixture() {
   const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "workspace-attach-")));

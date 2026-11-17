@@ -57,7 +57,10 @@ export function LaunchBar({
   disabledReason,
   git,
   onManageProfiles,
+  launchers = true,
 }: {
+  /** False where the Launchpad's cards already offer the providers. */
+  launchers?: boolean;
   project: Project;
   target: string;
   onTarget: (path: string) => void;
@@ -200,8 +203,12 @@ export function LaunchBar({
           </span>
         ) : null}
       </div>
-      <div className="launch-actions" role="group" aria-label="Open a session">
-        {providers.map((provider) => {
+      <div
+        className="launch-actions"
+        role="group"
+        aria-label={launchers ? "Open a session" : "Launch options"}
+      >
+        {(launchers ? providers : []).map((provider) => {
           const cap = capability(capabilities, provider);
           const missing = !!cap && !cap.available;
           const model =
@@ -243,7 +250,9 @@ export function LaunchBar({
         })}
         <div className="options-anchor" ref={panel}>
           <button
-            className={"icon-button options-button" + (customised ? " is-set" : "")}
+            className={
+              "icon-button options-button" + (customised ? " is-set" : "")
+            }
             aria-label="Launch options"
             aria-expanded={optionsOpen}
             title="Model, first message and worktree"
@@ -252,7 +261,11 @@ export function LaunchBar({
             <SlidersHorizontal size={16} />
           </button>
           {optionsOpen ? (
-            <div className="popover launch-options" role="dialog" aria-label="Launch options">
+            <div
+              className="popover launch-options"
+              role="dialog"
+              aria-label="Launch options"
+            >
               <header>
                 <strong>Launch options</strong>
                 <span>Optional. One click works without these.</span>
@@ -358,7 +371,8 @@ export function LaunchBar({
                   }
                 >
                   <option value="">
-                    This folder{segments.length ? ` (${segments.join("/")})` : ""}
+                    This folder
+                    {segments.length ? ` (${segments.join("/")})` : ""}
                   </option>
                   {(trees || [])
                     .filter((t) => t.path !== project.path)

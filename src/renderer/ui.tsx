@@ -32,7 +32,9 @@ export function StatusBadge({
   const state = sessionState(session);
   return (
     <span
-      className={"status-badge tone-" + state.tone + (compact ? " compact" : "")}
+      className={
+        "status-badge tone-" + state.tone + (compact ? " compact" : "")
+      }
       title={state.detail}
     >
       <span className="status-light" aria-hidden="true" />

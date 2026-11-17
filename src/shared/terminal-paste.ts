@@ -39,3 +39,11 @@ export function sanitizePasteText(text: string, options: { multiline?: boolean }
     .filter((char) => char === "\n" || !UNSAFE.test(char))
     .join("");
 }
+
+/** Under 64 KiB in UTF-8; never split a surrogate pair between terminal writes. */
+export function terminalInputChunk(data: string) {
+  let end = Math.min(data.length, 16_384);
+  const last = data.charCodeAt(end - 1);
+  if (end < data.length && last >= 0xd800 && last <= 0xdbff) end--;
+  return data.slice(0, end);
+}

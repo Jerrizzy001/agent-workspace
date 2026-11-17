@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { ArrowUpRight, Plus, X } from "lucide-react";
 import type {
   Attempt,
@@ -410,6 +410,8 @@ export function TaskModal({
 }
 
 /** The advanced flow: launch a provider for a task, optionally in a new worktree. */
+const ATTEMPT_PROVIDERS = ["shell", "claude", "codex"] as const;
+
 export function AttemptModal({
   task,
   capabilities,
@@ -424,6 +426,7 @@ export function AttemptModal({
   report: (e: unknown) => void;
 }) {
   const [provider, setProvider] = useState<Provider>("shell");
+  const runWithId = useId();
   const [models, setModels] = useState(savedModels);
   const model = provider === "claude" ? models.claude : models.codex;
   const launch = useRef<{
@@ -519,14 +522,43 @@ export function AttemptModal({
           </p>
         ) : null}
         <fieldset disabled={launchPending || busy} className="attempt-fields">
-          <label>Run with</label>
-          <div className="provider-options">
-            {(["shell", "claude", "codex"] as const).map((p) => {
+          <span className="field-label" id={runWithId}>
+            Run with
+          </span>
+          <div
+            className="provider-options"
+            role="radiogroup"
+            aria-labelledby={runWithId}
+            onKeyDown={(event) => {
+              const order = ATTEMPT_PROVIDERS;
+              const step =
+                event.key === "ArrowRight" || event.key === "ArrowDown"
+                  ? 1
+                  : event.key === "ArrowLeft" || event.key === "ArrowUp"
+                    ? -1
+                    : 0;
+              if (!step) return;
+              event.preventDefault();
+              const next =
+                order[
+                  (order.indexOf(provider) + step + order.length) % order.length
+                ];
+              setProvider(next);
+              event.currentTarget
+                .querySelector<HTMLButtonElement>(`[data-provider="${next}"]`)
+                ?.focus();
+            }}
+          >
+            {ATTEMPT_PROVIDERS.map((p) => {
               const cap = capability(capabilities, p);
               return (
                 <button
                   className={provider === p ? "selected" : ""}
                   type="button"
+                  role="radio"
+                  aria-checked={provider === p}
+                  tabIndex={provider === p ? 0 : -1}
+                  data-provider={p}
                   key={p}
                   onClick={() => setProvider(p)}
                 >

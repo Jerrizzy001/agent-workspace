@@ -1,3 +1,5 @@
+import { createRetention } from "./retention.js";
+import { workspaceSocket } from "./socket.js";
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
@@ -8,6 +10,8 @@ import { gitStatus, gitDiff, gitIndex, gitPath } from "./git.js";
 import {
   SESSION_START_OPTION,
   claudeActivitySettings,
+  codexActivityConfig,
+  isConversationId,
   initialPrompt,
   launchArguments,
   providerModel,
@@ -22,6 +26,8 @@ import {
   redact,
 } from "./transcripts.js";
 import { TerminalStream } from "./stream.js";
+import { indexedRecords } from "./records.js";
+import { createBackups } from "./backups.js";
 import { migrate } from "./migrations.js";
 import { createTeamCache } from "./team-cache.js";
 import { createAgentControl, type AgentControl } from "./agent-control.js";
@@ -32,7 +38,7 @@ import {
   writeAttachment,
   type AttachmentRecord,
 } from "./attachments.js";
-import { run, executable, probe } from "./process.js";
+import { ensureUtf8Locale, run, executable, probe } from "./process.js";
 import {
   ASSIST_DIFF_LIMIT,
   ASSIST_PROVIDERS,
@@ -103,6 +109,8 @@ export async function createCore({
   dataDir,
   emit,
 }: CoreOptions): Promise<Core> {
+  // Before tmux starts: its server and every shell inherit this locale.
+  ensureUtf8Locale();
   const requestedDataDir = path.resolve(dataDir);
   fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   dataDir = fs.realpathSync(dataDir);
@@ -172,10 +180,7 @@ export async function createCore({
     );
     const activeLaunches = new Set<string>();
     let controller: AgentControl = undefined!;
-    let socket = path.join(
-      os.tmpdir(),
-      `aw-${hash(dataDir).slice(0, 20)}.sock`,
-    );
+    let socket = workspaceSocket(dataDir);
     const tx = async (
       args: string[],
       targetSocket = socket,
@@ -190,27 +195,25 @@ export async function createCore({
         ["-f", tmuxConfig, "-S", targetSocket, ...args],
         undefined,
         env,
+        { lane: "tmux" },
       );
     };
-    const list = (kind: string): any[] =>
-      (
-        db
-          .prepare("SELECT value FROM records WHERE kind=? ORDER BY rowid")
-          .all(kind) as any[]
-      ).map((r) => JSON.parse(r.value));
-    const get = (kind: string, key: unknown): any => {
-      const row = db
-        .prepare("SELECT value FROM records WHERE kind=? AND id=?")
-        .get(kind, str(key, kind + " id")) as any;
-      if (!row) throw new Error(`${kind} not found`);
-      return JSON.parse(row.value);
-    };
+    const records = indexedRecords(db);
+    const list = records.list;
+    const get = (kind: string, key: unknown): any =>
+      records.get(kind, str(key, kind + " id"));
     const put = (kind: string, v: any) =>
       db
         .prepare("INSERT OR REPLACE INTO records VALUES (?,?,?)")
         .run(kind, v.id || v.projectId, JSON.stringify(v));
     const removeRecord = (kind: string, key: string) =>
       db.prepare("DELETE FROM records WHERE kind=? AND id=?").run(kind, key);
+    const retention = createRetention(db, {
+      list,
+      get,
+      put,
+      remove: removeRecord,
+    });
     const profiles = createProfiles({
       dataDir,
       list,
@@ -306,9 +309,7 @@ export async function createCore({
         return sessions;
       } catch (error: any) {
         return tmux &&
-          /no server running|error connecting.*No such file/.test(
-            String(error.stderr || error.message),
-          )
+          /no server running/.test(String(error.stderr || error.message))
           ? new Map()
           : undefined;
       }
@@ -328,7 +329,9 @@ export async function createCore({
         ),
       ]),
     ];
-    const oldSessions = list("sessions").filter((s) => !s.backendSocket);
+    const oldSessions = list("sessions").filter(
+      (s) => !s.backendSocket && s.status !== "exited",
+    );
     const catalog = new Map<string, Map<string, PaneState> | undefined>();
     if (oldSessions.length) {
       await Promise.all(
@@ -490,6 +493,7 @@ export async function createCore({
         : undefined;
     };
     const live = async (s: Session) => {
+      if (s.status === "exited") return "exited";
       let panes: string;
       try {
         panes = await tx(
@@ -506,7 +510,7 @@ export async function createCore({
       } catch (error: any) {
         const detail = String(error.stderr || error.message);
         return tmux &&
-          /no server running|no such session|can't find session|can't find window|error connecting.*No such file/.test(
+          /no server running|no such session|can't find session|can't find window/.test(
             detail,
           )
           ? "exited"
@@ -523,6 +527,7 @@ export async function createCore({
       return "running";
     };
     for (const s of list("sessions")) {
+      if (s.status === "exited") continue;
       s.status = await live(s);
       if (s.status === "exited") {
         s.activity = undefined;
@@ -548,6 +553,7 @@ export async function createCore({
         s.conversationState = "unknown";
         put("sessions", s);
       }
+    retention.prune();
     // Installs can change while the app runs; re-resolve PATH at most every few seconds.
     let capabilityCache: { at: number; value: Snapshot["capabilities"] } = {
       at: 0,
@@ -576,19 +582,47 @@ export async function createCore({
       capabilityCache = { at: Date.now(), value };
       return value;
     };
-    const snapshot = (): Snapshot => ({
-      projects: list("projects"),
-      tasks: list("tasks"),
-      attempts: list("attempts"),
-      sessions: list("sessions"),
-      notes: list("notes").map((n) => ({ ...n, revision: n.revision ?? 1 })),
-      layouts: list("layouts").map((l) => ({
-        ...l,
-        revision: l.revision ?? 1,
-      })),
-      boardLanes: list("boardLanes"),
-      capabilities: capabilities(),
-    });
+    const projections = new WeakMap<object, any>();
+    const projectedSets = new WeakMap<object, any[]>();
+    const metadata = (kind: string) => {
+      const rows = records.metadata(kind);
+      const cached = projectedSets.get(rows);
+      if (cached) return cached;
+      const values = rows.map((row) => {
+        let value = projections.get(row);
+        if (!value) {
+          value =
+            kind === "notes"
+              ? {
+                  ...row,
+                  body: "",
+                  bodyLoaded: false,
+                  revision: row.revision ?? 1,
+                }
+              : kind === "layouts"
+                ? { ...row, revision: row.revision ?? 1 }
+                : row;
+          projections.set(row, value);
+        }
+        return value;
+      });
+      projectedSets.set(rows, values);
+      return values;
+    };
+    const snapshot = (): Snapshot => {
+      const sessions = metadata("sessions").filter((s) => !s.historyArchived);
+      const visible = new Set(sessions.map((s) => s.id));
+      return {
+        projects: metadata("projects"),
+        tasks: metadata("tasks"),
+        attempts: metadata("attempts").filter((a) => visible.has(a.sessionId)),
+        sessions,
+        notes: metadata("notes"),
+        layouts: metadata("layouts"),
+        boardLanes: metadata("boardLanes"),
+        capabilities: capabilities(),
+      };
+    };
     // Optional Claude flags are used only when this installed version lists them.
     const claudeSupport = new Map<
       string,
@@ -616,15 +650,18 @@ export async function createCore({
       }
       return features;
     }
+    let lastLinks = records.view("transcriptLinks");
+    let lastLinksJSON = JSON.stringify(lastLinks);
     const changed = () => {
-      db.prepare("INSERT INTO events(type,time,payload) VALUES (?,?,?)").run(
-        "workspace.changed",
-        now(),
-        "{}",
-      );
-      db.exec(
-        "DELETE FROM events WHERE seq < (SELECT COALESCE(MAX(seq),0)-10000 FROM events)",
-      );
+      const links = records.view("transcriptLinks");
+      if (links !== lastLinks) {
+        lastLinks = links;
+        const json = JSON.stringify(links);
+        if (json !== lastLinksJSON) {
+          lastLinksJSON = json;
+          emit({ type: "transcript.changed" });
+        }
+      }
       const s = snapshot();
       emit({ type: "snapshot", snapshot: s });
       return s;
@@ -718,6 +755,9 @@ export async function createCore({
             tmuxConfig,
             "-S",
             sessionSocket(s),
+            // The viewer is xterm.js, always UTF-8, even if a tmux server
+            // started earlier without a UTF-8 locale.
+            "-u",
             "attach-session",
             "-t",
             "=" + s.backendName,
@@ -887,9 +927,12 @@ export async function createCore({
           throw new Error("That session does not belong to this folder");
         if (provider === "shell")
           throw new Error("A shell cannot be resumed; open a new shell");
-        if (provider === "claude" && !previous.conversationId)
+        if (
+          (provider === "claude" || provider === "codex") &&
+          !previous.conversationId
+        )
           throw new Error(
-            "This Claude session has no saved conversation to resume",
+            "This session has no saved conversation ID to resume",
           );
         if ((await live(previous)) !== "exited")
           throw new Error(
@@ -996,7 +1039,13 @@ export async function createCore({
         provider === "claude" && !fork && !setup
           ? previous?.conversationId || (features.sessionId ? id() : undefined)
           : undefined;
+      const codexHooks =
+        provider === "codex" &&
+        /--config\b/.test(await probe(bin, ["--help"])) &&
+        /hooks\s+stable\s+true/.test(await probe(bin, ["features", "list"]));
       const tracked = provider === "claude" && features.settings && !setup;
+      const aid = task ? id() : "",
+        sid = id();
       const providerArgs = setup
         ? []
         : launchArguments(provider, {
@@ -1007,18 +1056,24 @@ export async function createCore({
               : conversationId
                 ? { id: conversationId, resume: !!previous }
                 : undefined,
-            resumePicker: provider === "codex" && !!previous,
+            codexResumeId:
+              provider === "codex" ? previous?.conversationId : undefined,
+            codexConfig: codexHooks
+              ? codexActivityConfig(tmux, { socket, name: "aw-" + sid })
+              : undefined,
             settings: tracked ? claudeActivitySettings(tmux) : undefined,
           });
-      const aid = task ? id() : "",
-        sid = id();
       const s: Session & { backendSocket: string } = {
         id: sid,
         attemptId: task ? aid : null,
         projectId,
         provider,
         cwd,
-        ...(inherited?.worktreePath ? { worktreePath: inherited.worktreePath } : base !== get("projects", projectId).path ? { worktreePath: base } : {}),
+        ...(inherited?.worktreePath
+          ? { worktreePath: inherited.worktreePath }
+          : base !== get("projects", projectId).path
+            ? { worktreePath: base }
+            : {}),
         backendName: "aw-" + sid,
         backendSocket: socket,
         generation: 1,
@@ -1088,7 +1143,7 @@ export async function createCore({
             // A reference only; the folder is resolved again at launch.
             ...(profileId ? { profileId } : {}),
             ...(fork ? { forkOf: fork.id } : {}),
-            ...(tracked ? { startReport: true } : {}),
+            ...(tracked || codexHooks ? { startReport: true } : {}),
           }),
         );
         db.exec("COMMIT");
@@ -1102,7 +1157,7 @@ export async function createCore({
           profileId,
           (launchingProfiles.get(profileId) ?? 0) + 1,
         );
-      if (tracked) awaitingStart.add(sid);
+      if (tracked || codexHooks) awaitingStart.add(sid);
       // Per-session environment only (never tmux's global one): where this
       // session's agent-control grant file would be, and the awctl
       // launcher. tmux gives a new session the PATH of the client that
@@ -1246,6 +1301,24 @@ export async function createCore({
       try {
         latest = get("sessions", s.id);
       } catch {
+        return;
+      }
+      if (latest.provider === "codex") {
+        try {
+          const report = JSON.parse(raw);
+          if (
+            isConversationId(report.session_id) &&
+            report.cwd === latest.cwd &&
+            ["SessionStart", "UserPromptSubmit", "Stop", "Interrupt"].includes(
+              report.hook_event_name,
+            )
+          ) {
+            latest.conversationId = report.session_id;
+            latest.activityTracking = true;
+            put("sessions", latest);
+            Object.assign(s, latest);
+          }
+        } catch {}
         return;
       }
       const parsed = raw
@@ -1407,10 +1480,13 @@ export async function createCore({
       truncated: e.truncated,
       textBytes: e.textBytes,
     });
-    function linkView(link: any): TranscriptLinkView {
-      const record = list("transcriptExports").find(
-        (e) => e.id === link.exportId,
-      );
+    function linkView(
+      link: any,
+      exports?: Map<string, any>,
+    ): TranscriptLinkView {
+      const record = exports
+        ? exports.get(link.exportId)
+        : records.view("transcriptExports").find((e) => e.id === link.exportId);
       return {
         id: link.id,
         exportId: link.exportId,
@@ -1441,7 +1517,13 @@ export async function createCore({
             l.source.sessionId === p.sessionId ||
             l.recipient.sessionId === p.sessionId,
         );
-        return links.slice(-100).reverse().map(linkView);
+        const exports = new Map(
+          records.view("transcriptExports").map((e) => [e.id, e]),
+        );
+        return links
+          .slice(-100)
+          .reverse()
+          .map((link) => linkView(link, exports));
       }
       if (command === "transcript.revoke") {
         exact(p, ["linkId"]);
@@ -1594,11 +1676,12 @@ export async function createCore({
       const links = list("transcriptLinks");
       if (args.link === undefined) {
         const mine = links.filter(valid);
+        const exports = new Map(
+          records.view("transcriptExports").map((e) => [e.id, e]),
+        );
         return {
           links: mine.map((l) => {
-            const e = list("transcriptExports").find(
-              (x) => x.id === l.exportId,
-            );
+            const e = exports.get(l.exportId);
             return {
               link: l.id,
               createdAt: l.createdAt,
@@ -1632,9 +1715,9 @@ export async function createCore({
           "stale",
           "This transcript link was made for an earlier session or profile",
         );
-      const record = list("transcriptExports").find(
-        (e) => e.id === link.exportId,
-      );
+      const record = records
+        .view("transcriptExports")
+        .find((e) => e.id === link.exportId);
       if (!record)
         throw controllerFailure(
           "not_found",
@@ -1954,7 +2037,7 @@ export async function createCore({
           try {
             fs.writeFileSync(temp, p.content, {
               flag: "wx",
-              mode: exists ? fs.statSync(f).mode : 0o600,
+              mode: exists ? fs.statSync(f).mode : 0o666,
             });
             fs.renameSync(temp, f);
           } finally {
@@ -1976,6 +2059,8 @@ export async function createCore({
               "git",
               ["commit", "-m", str(p.message, "message")],
               await repository(p),
+              undefined,
+              { timeout: 120_000 },
             ),
             hash: (
               await run("git", ["rev-parse", "HEAD"], await repository(p))
@@ -1995,6 +2080,31 @@ export async function createCore({
           return (await worktrees(r)).find(
             (w) => w.path === fs.realpathSync(target),
           );
+        }
+        case "worktree.remove": {
+          exact(p, ["projectId", "path"]);
+          const r = await repository(p);
+          const target = fs.realpathSync(str(p.path, "worktree path"));
+          const trees = await worktrees(r);
+          if (target === r || !trees.some((w) => w.path === target))
+            throw new Error("Choose a linked worktree of this repository");
+          if (
+            list("sessions").some(
+              (s) =>
+                s.status !== "exited" &&
+                (s.cwd === target || s.cwd.startsWith(target + path.sep)),
+            )
+          )
+            throw new Error("End sessions in this worktree before removing it");
+          if ((await gitStatus(target, true)).files.length)
+            throw new Error(
+              "Worktree has uncommitted or untracked files. Preserve them before removing it",
+            );
+          // Git performs its own second dirty check; never use --force or delete the branch.
+          await run("git", ["worktree", "remove", "--", target], r, undefined, {
+            timeout: 60_000,
+          });
+          return { ok: true, path: target };
         }
         case "layout.save": {
           get("projects", p.projectId);
@@ -2097,6 +2207,7 @@ export async function createCore({
           if (key === "assistModel" && p.value !== "")
             providerModel("claude", p.value);
           put("ownerSettings", { id: key, value: p.value, updatedAt: now() });
+          emit({ type: "settings.changed", key });
           return { key, value: p.value };
         }
         case "session.confirmIdle": {
@@ -2105,12 +2216,12 @@ export async function createCore({
           if (s.generation !== p.generation)
             throw new Error("Stale session generation");
           if (
-            s.provider !== "claude" ||
+            !["claude", "codex"].includes(s.provider) ||
             !s.activityTracking ||
             (await live(s)) !== "running"
           )
             throw new Error(
-              "Only a running local Claude session can be marked idle",
+              "Only a running local tracked session can be marked idle",
             );
           await tx(
             [
@@ -2218,6 +2329,39 @@ export async function createCore({
           changed();
           return n;
         }
+        case "task.delete": {
+          exact(p, ["taskId", "revision"]);
+          const result = retention.deleteTask(p.taskId, p.revision);
+          changed();
+          return result;
+        }
+        case "note.delete": {
+          exact(p, ["noteId", "revision"]);
+          const result = retention.deleteNote(p.noteId, p.revision);
+          changed();
+          return result;
+        }
+        case "history.prune": {
+          exact(p, ["before"]);
+          const result = retention.prune(p.before);
+          changed();
+          return result;
+        }
+        case "history.list":
+          exact(p, ["offset", "limit"]);
+          return retention.history(p.offset, p.limit);
+        case "history.restore": {
+          exact(p, ["sessionId"]);
+          const result = retention.restore(p.sessionId);
+          changed();
+          return result;
+        }
+        case "backup.export":
+          exact(p, []);
+          return backups.export();
+        case "note.read":
+          exact(p, ["noteId", "projectId"]);
+          return { ...get("notes", p.noteId), bodyLoaded: true };
         case "note.create": {
           get("projects", p.projectId);
           const n = {
@@ -2235,7 +2379,7 @@ export async function createCore({
         }
         case "note.update": {
           const n = get("notes", p.noteId);
-          if (p.revision !== undefined && p.revision !== (n.revision ?? 1))
+          if (p.revision !== (n.revision ?? 1))
             throw new Error("Stale note revision");
           if (p.title !== undefined) n.title = str(p.title, "title");
           if (p.body !== undefined) n.body = text(p.body, "body");
@@ -2541,6 +2685,7 @@ export async function createCore({
       if (s.transcript) latest.transcript = true;
       if (status === "exited" || !s.activity) delete latest.activity;
       else latest.activity = s.activity;
+      if (status === "exited") latest.endedAt ??= now();
       if (status === "exited" || s.activityAt === undefined)
         delete latest.activityAt;
       else latest.activityAt = s.activityAt;
@@ -2768,6 +2913,8 @@ export async function createCore({
       }
       throw new Error("Unsupported host record action");
     }
+    const backups = createBackups(db, dataDir);
+    await backups.daily();
     const reconciliationTimer = setInterval(() => {
       if (!reconciling)
         reconciling = reconcile()
@@ -2779,8 +2926,19 @@ export async function createCore({
     reconciliationTimer.unref();
     function enqueue<T>(key: string, fn: () => Promise<T> | T): Promise<T> {
       const previous = queues.get(key) || Promise.resolve();
-      const next = previous.catch(() => {}).then(fn);
+      const next = previous
+        .catch(() => {})
+        .then(fn)
+        .catch((error) => {
+          records.invalidate();
+          throw error;
+        });
       queues.set(key, next);
+      void next
+        .finally(() => {
+          if (queues.get(key) === next) queues.delete(key);
+        })
+        .catch(() => {});
       return next;
     }
     function invoke(command: Command, payload: Record<string, unknown>) {
@@ -2790,7 +2948,9 @@ export async function createCore({
       const key =
         command === "attempt.start" ||
         command === "terminal.open" ||
-        command === "conversation.fork"
+        command === "conversation.fork" ||
+        command === "worktree.remove" ||
+        command === "task.delete"
           ? "launch"
           : command.startsWith("session.")
             ? "session:" + payload.sessionId
@@ -2859,7 +3019,11 @@ export async function createCore({
       },
       async agentControl(action, payload) {
         if (closed) throw new Error("Core is closed");
-        return controller.owner(action, payload);
+        const result = await controller.owner(action, payload);
+        // Read access is part of each link's state ("Reading paused"); views
+        // refresh links on this event now that nothing polls for it.
+        if (action !== "list") emit({ type: "transcript.changed" });
+        return result;
       },
       async hostRecords(action, payload) {
         if (closed) throw new Error("Core is closed");
@@ -2948,6 +3112,7 @@ export async function createCore({
               a.terminal.kill();
             } catch {}
           attachments.clear();
+          await backups.close();
           try {
             db.close();
             fs.unlinkSync(lock);

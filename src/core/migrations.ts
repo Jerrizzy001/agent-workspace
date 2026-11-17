@@ -115,6 +115,13 @@ export const MIGRATIONS: readonly Migration[] = [
     // error activity state. Keep all existing records and backend identities.
     up: () => {},
   },
+  {
+    version: 10,
+    name: "backend_retention_and_delta_transport",
+    // The bounded events table carried no state and had no readers. Live deltas
+    // use ordered epochs and full snapshots on reconnect, not a durable replay.
+    up: (db) => db.exec("DROP TABLE IF EXISTS events"),
+  },
 ];
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
 MIGRATIONS.forEach((m, index) => {
@@ -142,7 +149,7 @@ export async function migrate(db: DatabaseSync, dataDir: string) {
     throw new Error("Workspace data belongs to a newer app version");
   db.exec("PRAGMA journal_mode=WAL");
   // The base tables were always ensured on every start; keep that for v1 stores.
-  MIGRATIONS[0]!.up(db);
+  if (from < 10) MIGRATIONS[0]!.up(db);
   const pending = MIGRATIONS.filter((m) => m.version > from);
   if (!pending.length) return { from, to: from };
   let saved: string | undefined;

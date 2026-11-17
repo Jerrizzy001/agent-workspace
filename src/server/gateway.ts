@@ -1,3 +1,4 @@
+import { applyDelta, deltaPublisher } from "../shared/deltas.js";
 import http from "node:http";
 import https from "node:https";
 import fs from "node:fs";
@@ -29,6 +30,10 @@ export interface GatewayStatus {
 export interface Gateway {
   status(): GatewayStatus;
   pairingSecret(): Promise<string>;
+  /** A single-use link (code in the URL fragment) for QR pairing. */
+  pairingLink(): Promise<{ id: string; url: string; expiresAt: number }>;
+  /** False once the link's code was used, replaced, revoked or has expired. */
+  pairingLinkPending(id: string): boolean;
   revokeSessions(): Promise<void>;
   stop(): Promise<void>;
 }
@@ -153,6 +158,8 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
           projectId: n.projectId,
           title: n.title,
           body: n.body,
+          ...(n.bodyLoaded === false ? { bodyLoaded: false } : {}),
+          ...(n.archived ? { archived: true } : {}),
           createdAt: n.createdAt,
           updatedAt: n.updatedAt,
           revision: n.revision ?? 1,
@@ -176,6 +183,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     serverId: string;
   };
   type Client = {
+    publish: ReturnType<typeof deltaPublisher>;
     ws: WebSocket;
     sessionKey: string;
     viewers: Map<string, Viewer>;
@@ -188,6 +196,9 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   };
   const clients = new Set<Client>();
   const attempts = new Map<string, { start: number; count: number }>();
+  // Single-use pairing codes, stored only as digests, valid for ten minutes.
+  const oneTimeCodes = new Map<string, number>();
+  const oneTimeLifetime = 10 * 60 * 1000;
   const inFlight = new Set<Promise<void>>();
   const cleanup = new Set<Promise<void>>();
   let pendingTotal = 0,
@@ -347,11 +358,14 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
             return;
           }
           const p = await body(req);
-          const supplied = typeof p?.secret === "string" ? p.secret : "";
-          if (
-            supplied.length !== secret.length ||
-            !crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(secret))
-          ) {
+          const supplied = typeof p?.secret === "string" ? p.secret.trim() : "";
+          const oneTime = oneTimeCodes.get(digest(supplied));
+          // Digests are always the same length, whatever bytes were supplied.
+          const longLived = crypto.timingSafeEqual(
+            Buffer.from(digest(supplied), "hex"),
+            Buffer.from(digest(secret), "hex"),
+          );
+          if (!longLived && !(oneTime && oneTime > now)) {
             json(res, 401, { error: "Pairing failed" });
             return;
           }
@@ -361,6 +375,8 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
             });
             return;
           }
+          // A one-time code is spent once a session is actually issued.
+          if (!longLived) oneTimeCodes.delete(digest(supplied));
           const token = random(),
             secure = !!options.tls || req.headers.origin!.startsWith("https:");
           sessions.set(digest(token), {
@@ -487,6 +503,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
       const c: Client = {
+        publish: deltaPublisher(crypto.randomUUID()),
         ws,
         sessionKey: key,
         viewers: new Map(),
@@ -506,6 +523,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
         c.alive = true;
       });
       send(c, { type: "hello", version: 1 });
+      send(c, { type: "event", event: c.publish(filtered(latest)) });
       ws.on("message", (bytes, binary) => {
         if (c.closed) return;
         if (!liveSession(c.sessionKey)) {
@@ -544,10 +562,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
               m.command,
               m.payload ?? {},
             );
-            // Terminal scope follows authoritative snapshots; avoid SQLite reads for every keystroke/ACK.
-            // Other commands refresh metadata before resource authorization.
-            if (!command.startsWith("session."))
-              latest = (await options.invoke("snapshot")) as Snapshot;
+            // Authoritative events keep the authorization index current.
             if (c.closed || !liveSession(c.sessionKey))
               throw new Error("Session revoked");
             let projectId = p.projectId;
@@ -658,6 +673,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   });
   const unsubscribe = options.subscribe((event) => {
     if (event.type === "snapshot") latest = event.snapshot;
+    if (event.type === "workspace.delta") latest = applyDelta(latest, event);
     for (const c of clients) {
       if (event.type === "terminal.data" || event.type === "terminal.resync") {
         const v = [...c.viewers.values()].find(
@@ -666,11 +682,16 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
         );
         if (v)
           send(c, { type: "event", event: { ...event, viewerId: v.alias } });
-      } else if (event.type === "snapshot")
+      } else if (event.type === "snapshot" || event.type === "workspace.delta")
         send(c, {
           type: "event",
-          event: { type: "snapshot", snapshot: filtered(event.snapshot) },
+          event: c.publish(filtered(latest)),
         });
+      else if (
+        event.type === "transcript.changed" ||
+        event.type === "settings.changed"
+      )
+        continue;
       else if (
         event.type !== "session.exit" ||
         latest.sessions.some(
@@ -737,8 +758,22 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       clients: clients.size,
     }),
     pairingSecret: async () => secret,
+    async pairingLink() {
+      const now = Date.now();
+      for (const [key, expires] of oneTimeCodes)
+        if (expires <= now) oneTimeCodes.delete(key);
+      while (oneTimeCodes.size >= 8)
+        oneTimeCodes.delete(oneTimeCodes.keys().next().value!);
+      const code = random(),
+        expiresAt = now + oneTimeLifetime;
+      oneTimeCodes.set(digest(code), expiresAt);
+      // The fragment never reaches the server, logs or Referer headers.
+      return { id: digest(code), url: `${url}/#pair=${code}`, expiresAt };
+    },
+    pairingLinkPending: (id) => (oneTimeCodes.get(id) ?? 0) > Date.now(),
     async revokeSessions() {
       sessions.clear();
+      oneTimeCodes.clear();
       for (const c of clients) closeClient(c, "Access revoked");
       const next = random(),
         temp = secretPath + "." + crypto.randomUUID();

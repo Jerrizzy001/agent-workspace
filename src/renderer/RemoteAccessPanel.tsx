@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { X, Shield, Eye, EyeOff } from "lucide-react";
+import { X, Shield, Eye, EyeOff, QrCode, Copy } from "lucide-react";
+import { toDataURL } from "qrcode";
 import type { RemoteStatus, Snapshot } from "../shared/contracts";
 import "./remote-access.css";
 
@@ -13,6 +14,50 @@ export function RemoteAccessPanel({ onClose }: { onClose(): void }) {
   const [phone, setPhone] = useState(true);
   const [selected, setSelected] = useState<string[]>([]);
   const [secret, setSecret] = useState("");
+  const [link, setLink] = useState<{
+    id: string;
+    url: string;
+    expiresAt: number;
+    image: string;
+  } | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!link) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [link]);
+  const linkExpired = !!link && link.expiresAt <= now;
+  // Take the code off screen as soon as a device has used it.
+  useEffect(() => {
+    if (!link || linkExpired) return;
+    let active = true;
+    void api
+      .pairingLinkPending(link.id)
+      .then((pending) => {
+        if (!active || pending) return;
+        setLink(null);
+        setNotice(
+          "That pairing code was used. Show a new one to pair another device.",
+        );
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [link, linkExpired, now]);
+  const showLink = () =>
+    run(async () => {
+      const next = await api.pairingLink();
+      // Dark modules on white, whatever the app theme, so every camera reads it.
+      const image = await toDataURL(next.url, {
+        errorCorrectionLevel: "M",
+        margin: 2,
+        width: 220,
+        color: { dark: "#000000", light: "#ffffff" },
+      });
+      setNow(Date.now());
+      setLink({ ...next, image });
+    });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -83,7 +128,9 @@ export function RemoteAccessPanel({ onClose }: { onClose(): void }) {
     ? ["localhost", "127.0.0.1", "[::1]"].includes(new URL(status.url).hostname)
     : false;
   const choices = status?.enabled ? status.sharedProjects : projects;
-  const selectedLocal = selected.filter(id => projects.some(p => p.id === id));
+  const selectedLocal = selected.filter((id) =>
+    projects.some((p) => p.id === id),
+  );
   const ready = !!status && selectedLocal.length > 0 && (!phone || https);
   return (
     <div
@@ -303,8 +350,65 @@ export function RemoteAccessPanel({ onClose }: { onClose(): void }) {
               <p>
                 {localAddress
                   ? "This address works on this computer only."
-                  : "Open this exact address and enter the pairing code. Keep this computer awake and Agent Workspace open."}
+                  : "Scan the QR code, or open this exact address and enter the pairing code. Keep this computer awake and Agent Workspace open."}
               </p>
+              <div className="remote-qr">
+                {localAddress ? (
+                  <p>
+                    A QR code needs an address your phone can reach. Stop
+                    access, then choose a network or tunnel connection above.
+                  </p>
+                ) : link && !linkExpired ? (
+                  <>
+                    <img
+                      src={link.image}
+                      width={220}
+                      height={220}
+                      alt="QR code that pairs one device with this workspace"
+                    />
+                    <div>
+                      <p>
+                        Scan with your phone's camera. This code signs in one
+                        device, once, and expires in{" "}
+                        {Math.max(1, Math.ceil((link.expiresAt - now) / 60000))}{" "}
+                        min.
+                      </p>
+                      <div className="remote-actions">
+                        <button
+                          disabled={busy}
+                          onClick={() =>
+                            void run(async () => {
+                              await navigator.clipboard.writeText(link.url);
+                              setNotice(
+                                "One-time pairing link copied. It works once, for ten minutes.",
+                              );
+                            })
+                          }
+                        >
+                          <Copy size={14} /> Copy one-time link
+                        </button>
+                        <button disabled={busy} onClick={() => void showLink()}>
+                          <QrCode size={14} /> New code
+                        </button>
+                        <button disabled={busy} onClick={() => setLink(null)}>
+                          Hide
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <button
+                    className="primary"
+                    disabled={busy}
+                    onClick={() => void showLink()}
+                  >
+                    <QrCode size={14} />{" "}
+                    {linkExpired
+                      ? "Code expired · show a new one"
+                      : "Show pairing QR code"}
+                  </button>
+                )}
+              </div>
               <div className="remote-actions">
                 <button
                   disabled={busy}
@@ -325,6 +429,7 @@ export function RemoteAccessPanel({ onClose }: { onClose(): void }) {
                     void run(async () => {
                       await api.revokeSessions();
                       setSecret("");
+                      setLink(null);
                       setNotice(
                         "All browser sessions revoked. The pairing code has changed.",
                       );

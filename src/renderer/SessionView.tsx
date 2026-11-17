@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  Ellipsis,
   GitFork,
   History,
   ImagePlus,
@@ -27,6 +28,7 @@ import { AgentControlButton } from "./AgentControl";
 import { profileLabel, profilesAvailable, useProfiles } from "./ProfilesPanel";
 import { TranscriptLinksPanel } from "./TranscriptLinksPanel";
 import { createId } from "./id";
+import { endSession } from "./session-actions";
 
 /** One session: identity, state and controls above its terminal. */
 export function SessionView({
@@ -164,35 +166,13 @@ export function SessionView({
     generation: session.generation,
   };
   const name = providerName(session.provider);
-  // The core ends a session only for an attached viewer. When this view's
-  // terminal could not attach, a short-lived viewer lets End still work.
-  async function end(viewer: string | null) {
-    const temporary = viewer ? null : createId();
-    try {
-      if (temporary)
-        await window.workspace.invoke("session.attach", {
-          ...identity,
-          viewerId: temporary,
-          cols: 80,
-          rows: 24,
-        });
-      await window.workspace.invoke("session.terminate", {
-        ...identity,
-        viewerId: viewer || temporary,
-      });
-    } finally {
-      if (temporary)
-        void window.workspace
-          .invoke("session.detach", { ...identity, viewerId: temporary })
-          .catch(() => {});
-    }
-  }
+  const end = (viewer: string | null) => endSession(session, viewer);
   // A CLI that failed at startup has nothing to resume; offer a fresh start instead.
   const resumable =
     session.status === "exited" &&
     !session.exitCode &&
-    ((session.provider === "claude" && !!session.conversationId) ||
-      session.provider === "codex");
+    ["claude", "codex"].includes(session.provider) &&
+    !!session.conversationId;
   return (
     <section
       className={"session-view tone-" + state.tone}
@@ -310,7 +290,10 @@ export function SessionView({
         <div className="session-actions">
           {ownerLocal && (canBranch || session.status === "running") ? (
             <details className="session-more">
-              <summary>More actions</summary>
+              <summary title="More actions">
+                <Ellipsis size={15} aria-hidden="true" />
+                <span className="action-label">More actions</span>
+              </summary>
               <div className="session-more-menu">
                 {ownerLocal &&
                 session.activityTracking &&
@@ -321,7 +304,7 @@ export function SessionView({
                     onClick={() => {
                       if (
                         confirm(
-                          "Is Claude back at its prompt and no longer working? Only confirm after inspecting the terminal. This marks the turn idle; it does not interrupt a running request.",
+                          `Is ${name} back at its prompt and no longer working? Only confirm after inspecting the terminal. This marks the turn idle; it does not interrupt a running request.`,
                         )
                       )
                         void window.workspace
@@ -367,7 +350,7 @@ export function SessionView({
               onClick={() => setLinksOpen(true)}
             >
               <Link2 size={13} />
-              Connect agents
+              <span className="action-label">Connect agents</span>
             </button>
           ) : null}
           {session.status === "running" ? (
@@ -381,7 +364,7 @@ export function SessionView({
                   onClick={() => setImagePasteRequest((value) => value + 1)}
                 >
                   <ImagePlus size={13} />
-                  Paste image
+                  <span className="action-label">Paste image</span>
                 </button>
               ) : null}
               <button
@@ -399,7 +382,7 @@ export function SessionView({
                 }
               >
                 <Zap size={13} />
-                Interrupt
+                <span className="action-label">Interrupt</span>
               </button>
               <button
                 className="button danger small"
@@ -416,7 +399,7 @@ export function SessionView({
                 }}
               >
                 <Square size={11} />
-                End
+                <span className="action-label">End</span>
               </button>
             </>
           ) : null}
@@ -513,6 +496,7 @@ export function SessionView({
         <TerminalView
           key={session.id}
           session={session}
+          label={title}
           onViewer={setViewerId}
           endedNotice={false}
           imagePasteRequest={imagePasteRequest}

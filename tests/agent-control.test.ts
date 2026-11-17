@@ -364,7 +364,8 @@ test("agent control: owner grants, awctl acts within the grant, and every bounda
     assert.equal(r.json.note.revision, 1);
     let snapshot = await call("snapshot");
     let note = snapshot.notes.find((n: any) => n.id === noteId);
-    assert.equal(note.body, "Step 1 <b>not html</b>\n");
+    assert.equal(note.bodyLoaded, false);
+    assert.equal((await call("note.read", { noteId })).body, "Step 1 <b>not html</b>\n");
     assert.equal(note.source, "agent");
     assert.equal(note.projectId, alpha.id);
     const again = await awctl(cli, grantFile, [
@@ -410,6 +411,7 @@ test("agent control: owner grants, awctl acts within the grant, and every bounda
       noteId,
       title: "Agent plan",
       body: "Owner edit",
+      revision: note.revision ?? 1,
     });
     let stale = await awctl(cli, grantFile, [
       "note",
@@ -425,7 +427,7 @@ test("agent control: owner grants, awctl acts within the grant, and every bounda
     assert.equal(stale.json.error, "stale_revision");
     assert.equal(stale.json.currentRevision, 2);
     note = (await call("snapshot")).notes.find((n: any) => n.id === noteId);
-    assert.equal(note.body, "Owner edit");
+    assert.equal((await call("note.read", { noteId })).body, "Owner edit");
     const updated = await awctl(cli, grantFile, [
       "note",
       "update",

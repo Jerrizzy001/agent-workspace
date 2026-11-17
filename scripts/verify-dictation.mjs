@@ -1,3 +1,4 @@
+import { pollFunction } from "./poll-function.mjs";
 import { cleanupFixture } from "./fixture-cleanup.mjs";
 import { _electron as electron } from "playwright";
 import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
@@ -229,7 +230,9 @@ const result = {
   transcript: "",
 };
 const openShell = async () => {
-  await page.getByRole("button", { name: "Shell", exact: true }).click();
+  if (await page.getByRole("button", { name: "New session", exact: true }).isVisible())
+    await page.getByRole("button", { name: "New session", exact: true }).click();
+  await page.getByRole("button", { name: "Open Shell here", exact: true }).click();
   await page.locator(".xterm-helper-textarea").waitFor();
   await page.waitForFunction(() =>
     [...document.querySelectorAll(".terminal-voice-bar button")].some(
@@ -672,18 +675,17 @@ try {
   assert.equal(/please|project/i.test(await screen()), false);
   await page.screenshot({ path: path.join(shots, "dictation-untyped.png") });
   await leftover.getByRole("button", { name: "Copy" }).click();
-  await page
-    .waitForFunction(
-      async (expected) =>
-        (await navigator.clipboard.readText().catch(() => "")) === expected,
+  await pollFunction(
+    page,
+    async (expected) =>
+      (await navigator.clipboard.readText().catch(() => "")) === expected,
+    leftoverText,
+  ).catch(async () => {
+    assert.equal(
+      await app.evaluate(({ clipboard }) => clipboard.readText()),
       leftoverText,
-    )
-    .catch(async () => {
-      assert.equal(
-        await app.evaluate(({ clipboard }) => clipboard.readText()),
-        leftoverText,
-      );
-    });
+    );
+  });
   await leftover.getByRole("button", { name: "Dismiss untyped text" }).click();
   await leftover.waitFor({ state: "detached" });
   // The original terminal did not receive phrase two either.

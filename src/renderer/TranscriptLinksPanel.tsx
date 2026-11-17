@@ -117,6 +117,9 @@ export function TranscriptLinksPanel({
   }, [session.id]);
   useEffect(() => {
     void refresh();
+    return window.workspace.subscribe((event) => {
+      if (event.type === "transcript.changed") void refresh();
+    });
   }, [refresh]);
   const act = async (what: string, work: () => Promise<void>) => {
     setBusy(what);

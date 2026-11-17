@@ -16,6 +16,7 @@
     "smoke:ui": "node scripts/smoke-ui.mjs",
     "verify:desktop": "node scripts/verify-desktop.mjs",
     "verify:workflows": "node scripts/verify-workflows.mjs",
+    "verify:backend": "node scripts/verify-backend-ui.mjs",
     "verify:lifecycle": "node scripts/verify-lifecycle-ui.mjs",
     "verify:board": "node scripts/verify-board.mjs",
     "verify:agent-control": "node scripts/verify-agent-control.mjs",
@@ -42,7 +43,8 @@
     "verify:mobile-webkit": "node scripts/verify-mobile-webkit.mjs",
     "start:team": "node dist/team/server.mjs",
     "verify:team": "node scripts/verify-team.mjs",
-    "verify:ux": "node scripts/verify-ux-repairs.mjs"
+    "verify:ux": "node scripts/verify-ux-repairs.mjs",
+    "verify:context-menu": "node scripts/verify-context-menu.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "4.7.0",
@@ -54,6 +56,7 @@
     "monaco-editor": "0.57.0",
     "node-pty": "1.1.0",
     "openid-client": "6.8.8",
+    "qrcode": "1.5.4",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "sherpa-onnx-node": "2.0.1",
@@ -64,6 +67,7 @@
   "devDependencies": {
     "@electron/rebuild": "4.2.1",
     "@types/node": "24.10.1",
+    "@types/qrcode": "1.5.6",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@types/ws": "8.18.2",

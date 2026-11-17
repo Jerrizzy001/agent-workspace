@@ -47,13 +47,13 @@ test("migration registry is ordered, uniquely named and keeps the shipped prefix
   assert.equal(SCHEMA_VERSION, MIGRATIONS[MIGRATIONS.length - 1]!.version);
 });
 
-test("a fresh store is created at the current version without a backup", async () => {
+test("a fresh store has the current schema and a private daily backup", async () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "workspace-migrate-"));
   try {
     const core = await createCore({ dataDir: temp, emit: () => {} });
     await core.close();
     assert.equal(version(path.join(temp, "workspace.sqlite")), SCHEMA_VERSION);
-    assert.equal(fs.existsSync(path.join(temp, "backups")), false);
+    assert.equal(fs.readdirSync(path.join(temp, "backups")).filter((n) => n.startsWith("workspace-daily-")).length, 1);
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }
@@ -86,7 +86,8 @@ test("an existing v2 store keeps its rows and is backed up before upgrading", as
 
     const core = await createCore({ dataDir: temp, emit: () => {} });
     const snapshot: any = await core.invoke("snapshot");
-    assert.deepEqual(snapshot.sessions, [session]);
+    assert.deepEqual(snapshot.sessions, []);
+    assert.deepEqual((await core.invoke("history.list") as any).sessions, [{ ...session, historyArchived: true }]);
     assert.deepEqual(snapshot.projects, [project]);
     await core.close();
 
@@ -102,7 +103,7 @@ test("an existing v2 store keeps its rows and is backed up before upgrading", as
     );
     upgraded.close();
 
-    const backups = fs.readdirSync(path.join(temp, "backups"));
+    const backups = fs.readdirSync(path.join(temp, "backups")).filter((n) => /^workspace-v/.test(n));
     assert.equal(backups.length, 1);
     assert.match(backups[0]!, /^workspace-v2-[\dTZ-]+\.sqlite$/);
     const saved = path.join(temp, "backups", backups[0]!);
@@ -120,7 +121,7 @@ test("an existing v2 store keeps its rows and is backed up before upgrading", as
     // Opening the current version again neither migrates nor backs up.
     const again = await createCore({ dataDir: temp, emit: () => {} });
     await again.close();
-    assert.equal(fs.readdirSync(path.join(temp, "backups")).length, 1);
+    assert.equal(fs.readdirSync(path.join(temp, "backups")).filter((n) => n.startsWith("workspace-v")).length, 1);
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

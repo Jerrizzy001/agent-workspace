@@ -1,3 +1,4 @@
+import { workspaceSocket } from "../src/core/socket.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -24,12 +25,7 @@ import type { CoreEvent } from "../src/shared/contracts.js";
 const tmux = process.env.WORKSPACE_TMUX || "/opt/homebrew/bin/tmux";
 const wait = (ms = 25) => new Promise((resolve) => setTimeout(resolve, ms));
 const socketFor = (dataDir: string) =>
-  path.join(
-    os.tmpdir(),
-    "aw-" +
-      crypto.createHash("sha256").update(dataDir).digest("hex").slice(0, 20) +
-      ".sock",
-  );
+  workspaceSocket(dataDir);
 /** Only the tmux server this test's own core created. */
 function killServer(dataDir: string) {
   try {
@@ -354,7 +350,8 @@ test("a v3 store upgrades to board_lanes with its records unchanged", async () =
     const core = await createCore({ dataDir: temp, emit: () => {} });
     try {
       const snapshot: any = await core.invoke("snapshot");
-      assert.deepEqual(snapshot.sessions, [session]);
+      assert.deepEqual(snapshot.sessions, []);
+      assert.deepEqual((await core.invoke("history.list") as any).sessions, [{ ...session, historyArchived: true }]);
       assert.deepEqual(snapshot.projects, [project]);
       assert.deepEqual(snapshot.boardLanes, []);
       assert.deepEqual(
@@ -370,7 +367,7 @@ test("a v3 store upgrades to board_lanes with its records unchanged", async () =
       SCHEMA_VERSION,
     );
     upgraded.close();
-    const backups = fs.readdirSync(path.join(temp, "backups"));
+    const backups = fs.readdirSync(path.join(temp, "backups")).filter((n) => /^workspace-v/.test(n));
     assert.equal(backups.length, 1);
     assert.match(backups[0]!, /^workspace-v3-[\dTZ-]+\.sqlite$/);
   } finally {

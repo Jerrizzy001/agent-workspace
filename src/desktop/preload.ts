@@ -1,18 +1,74 @@
+import { deltaReceiver } from "../shared/deltas";
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   Command,
   CoreEvent,
   DictationStatus,
+  MenuAction,
   PowerStatus,
   WorkspaceAPI,
 } from "../shared/contracts";
+// One materialized state per renderer, shared by every terminal/panel subscriber.
+const receive = deltaReceiver();
+const eventListeners = new Set<(event: CoreEvent) => void>();
+let syncing = false;
+let buffered: CoreEvent[] = [];
+function broadcast(event: CoreEvent) {
+  for (const listener of eventListeners) listener(event);
+}
+function receiveEvent(_event: unknown, value: CoreEvent) {
+  if (value.type !== "workspace.delta" && value.type !== "snapshot") {
+    broadcast(value);
+    return;
+  }
+  if (syncing) {
+    // A long resync cannot grow a renderer's queue without bound. A later gap
+    // triggers another full read; no mutation or terminal input is replayed.
+    if (buffered.length >= 256) buffered = [];
+    buffered.push(value);
+    return;
+  }
+  const decoded = receive.accept(value);
+  if (decoded) {
+    broadcast(decoded);
+    return;
+  }
+  syncing = true;
+  void ipcRenderer
+    .invoke("workspace:sync")
+    .then((event: CoreEvent) => {
+      const snapshot = receive.accept(event);
+      if (snapshot) broadcast(snapshot);
+      syncing = false;
+      const queued = buffered;
+      buffered = [];
+      for (const next of queued) {
+        if (
+          next.type === "workspace.delta" &&
+          event.type === "snapshot" &&
+          next.epoch === event.epoch &&
+          next.sequence <= (event.sequence ?? 0)
+        )
+          continue;
+        receiveEvent(undefined, next);
+      }
+    })
+    .catch(() => {
+      syncing = false;
+      buffered = [];
+    });
+}
+ipcRenderer.on("workspace:event", receiveEvent);
 const api: WorkspaceAPI = {
   invoke: <T>(command: Command, payload: Record<string, unknown> = {}) =>
     ipcRenderer.invoke("workspace:invoke", command, payload) as Promise<T>,
   subscribe: (listener: (event: CoreEvent) => void) => {
-    const handler = (_event: unknown, value: CoreEvent) => listener(value);
-    ipcRenderer.on("workspace:event", handler);
-    return () => ipcRenderer.removeListener("workspace:event", handler);
+    eventListeners.add(listener);
+    const current = receive.current();
+    if (current) listener(current);
+    return () => {
+      eventListeners.delete(listener);
+    };
   },
   chooseDirectory: () => ipcRenderer.invoke("workspace:chooseDirectory"),
   browseDirectory: (path?: string) =>
@@ -24,6 +80,9 @@ const api: WorkspaceAPI = {
     disable: () => ipcRenderer.invoke("workspace:remote", "disable"),
     pairingSecret: () =>
       ipcRenderer.invoke("workspace:remote", "pairingSecret"),
+    pairingLink: () => ipcRenderer.invoke("workspace:remote", "pairingLink"),
+    pairingLinkPending: (id) =>
+      ipcRenderer.invoke("workspace:remote", "pairingLinkPending", id),
     revokeSessions: () =>
       ipcRenderer.invoke("workspace:remote", "revokeSessions"),
     chooseTLSFile: (kind) =>
@@ -35,6 +94,13 @@ const api: WorkspaceAPI = {
       ipcRenderer.invoke("workspace:clipboardImage", "save", target),
     discard: (token) =>
       ipcRenderer.invoke("workspace:clipboardImage", "discard", token),
+  },
+  contextMenu: (items) => ipcRenderer.invoke("workspace:contextMenu", items),
+  onMenu: (listener) => {
+    const handler = (_event: unknown, action: MenuAction) => listener(action);
+    ipcRenderer.on("workspace:menu", handler);
+    ipcRenderer.send("workspace:menu-ready");
+    return () => ipcRenderer.removeListener("workspace:menu", handler);
   },
   power: {
     status: () => ipcRenderer.invoke("workspace:power", "status"),

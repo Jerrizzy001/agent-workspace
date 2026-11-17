@@ -95,7 +95,7 @@ let originalPid;
 try {
   await page.waitForFunction(() => !!window.workspace);
   await invoke("project.add", { path: repo });
-  await page.getByRole("button", { name: "Shell", exact: true }).click();
+  await page.getByRole("button", { name: "Open Shell here", exact: true }).click();
   await poll(
     () =>
       page.getByRole("button", { name: "Interrupt", exact: true }).isEnabled(),

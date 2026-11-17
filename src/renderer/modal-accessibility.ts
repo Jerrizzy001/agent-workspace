@@ -28,6 +28,11 @@ export function focusOutside(from: HTMLElement, backwards: boolean) {
   (backwards ? before.at(-1) || items.at(-1) : after[0] || items[0])?.focus();
 }
 
+let returnOverride: HTMLElement | undefined;
+/** Where focus goes when the open dialog closes, instead of back to its opener. */
+export function returnModalFocusTo(element: HTMLElement | null | undefined) {
+  returnOverride = element || undefined;
+}
 /** Shared behavior for every modal, including portals and nested dialogs. */
 export function installModalAccessibility() {
   let current: HTMLElement | undefined;
@@ -56,7 +61,13 @@ export function installModalAccessibility() {
     const old = current;
     restoreInert();
     current = next;
-    if (old && !old.isConnected) returnFocus.get(old)?.focus();
+    if (old && !old.isConnected) {
+      (returnOverride?.isConnected
+        ? returnOverride
+        : returnFocus.get(old)
+      )?.focus();
+      returnOverride = undefined;
+    }
     if (!next) return;
     if (!returnFocus.has(next) && document.activeElement instanceof HTMLElement)
       returnFocus.set(next, document.activeElement);

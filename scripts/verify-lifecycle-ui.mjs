@@ -1,3 +1,4 @@
+import { pollFunction } from "./poll-function.mjs";
 import { cleanupFixture } from "./fixture-cleanup.mjs";
 import { _electron as electron } from "playwright";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
@@ -126,7 +127,7 @@ try {
     .click();
   // Models are not assumed: blank inherits each CLI's own configured default.
   await page
-    .getByRole("button", { name: /^Claude/ })
+    .getByRole("radio", { name: /^Claude/ })
     .last()
     .click();
   assert.equal(
@@ -135,7 +136,7 @@ try {
   );
   await page.getByPlaceholder("CLI default when blank").fill("custom-claude");
   await page
-    .getByRole("button", { name: /^Codex/ })
+    .getByRole("radio", { name: /^Codex/ })
     .last()
     .click();
   assert.equal(
@@ -144,7 +145,7 @@ try {
   );
   await page.getByPlaceholder("CLI default when blank").fill("gpt-6.1-sol");
   await page
-    .getByRole("button", { name: /^Claude/ })
+    .getByRole("radio", { name: /^Claude/ })
     .last()
     .click();
   assert.equal(
@@ -152,7 +153,7 @@ try {
     "custom-claude",
   );
   await page
-    .getByRole("button", { name: /^Codex/ })
+    .getByRole("radio", { name: /^Codex/ })
     .last()
     .click();
   assert.equal(
@@ -164,7 +165,7 @@ try {
     "provider-specific model fields start at the CLI default; independent custom values per provider",
   );
   await page
-    .getByRole("button", { name: "Shell Your local shell", exact: true })
+    .getByRole("radio", { name: "Shell Your local shell", exact: true })
     .click();
   assert.equal(
     await page.getByPlaceholder("CLI default when blank").count(),
@@ -201,8 +202,18 @@ try {
   await page.getByRole("button", { name: "Add note", exact: true }).click();
   const note = page.getByLabel("Canvas note");
   await note.fill("Autosave while this note remains focused");
-  await page.waitForFunction(async () => {
-    const state = await window.workspace.invoke("snapshot");
+  await pollFunction(page, async () => {
+    const state = await (async () => {
+      const s = await window.workspace.invoke("snapshot");
+      return {
+        ...s,
+        notes: await Promise.all(
+          s.notes.map((n) =>
+            window.workspace.invoke("note.read", { noteId: n.id }),
+          ),
+        ),
+      };
+    })();
     return state.notes[0]?.body === "Autosave while this note remains focused";
   });
   assert(await note.evaluate((element) => element === document.activeElement));
@@ -218,8 +229,18 @@ try {
   await app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()[0].close(),
   );
-  await page.waitForFunction(async () => {
-    const state = await window.workspace.invoke("snapshot");
+  await pollFunction(page, async () => {
+    const state = await (async () => {
+      const s = await window.workspace.invoke("snapshot");
+      return {
+        ...s,
+        notes: await Promise.all(
+          s.notes.map((n) =>
+            window.workspace.invoke("note.read", { noteId: n.id }),
+          ),
+        ),
+      };
+    })();
     return (
       state.notes[0]?.body ===
       "Newest focused note survives closing and reopening"
@@ -243,8 +264,18 @@ try {
     process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End",
   );
   await page.keyboard.type("; continued after cancel");
-  await page.waitForFunction(async () => {
-    const state = await window.workspace.invoke("snapshot");
+  await pollFunction(page, async () => {
+    const state = await (async () => {
+      const s = await window.workspace.invoke("snapshot");
+      return {
+        ...s,
+        notes: await Promise.all(
+          s.notes.map((n) =>
+            window.workspace.invoke("note.read", { noteId: n.id }),
+          ),
+        ),
+      };
+    })();
     return (
       state.notes[0]?.body ===
       "Newest focused note survives closing and reopening; continued after cancel"

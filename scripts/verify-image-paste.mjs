@@ -71,7 +71,7 @@ try {
   await page.waitForFunction(() => !!window.workspace);
   await command("project.add", { path: repo });
   await page.getByRole("button", { name: "Open Shell here" }).waitFor();
-  await page.getByRole("button", { name: "Shell", exact: true }).click();
+  await page.getByRole("button", { name: "Open Shell here", exact: true }).click();
   await page.locator(".xterm-helper-textarea").waitFor();
   const pasteButton = page.getByRole("button", { name: "Paste image" });
   await page.waitForFunction(() =>

@@ -1,3 +1,4 @@
+import { workspaceSocket } from "../src/core/socket.js";
 /**
  * A disposable OpenSSH server on a high loopback port for SSH tests: its own
  * config, throwaway host and user keys and known_hosts in a temp folder. No
@@ -225,16 +226,7 @@ export async function startSshFixture(prefix = "aw-ssh-"): Promise<SshFixture> {
 }
 
 export function tmuxSocketFor(dataDir: string) {
-  return path.join(
-    os.tmpdir(),
-    "aw-" +
-      crypto
-        .createHash("sha256")
-        .update(fs.realpathSync(dataDir))
-        .digest("hex")
-        .slice(0, 20) +
-      ".sock",
-  );
+  return workspaceSocket(fs.realpathSync(dataDir));
 }
 /** Kills only the tmux server a fixture core created for this data folder. */
 export function killTmuxFor(dataDir: string) {

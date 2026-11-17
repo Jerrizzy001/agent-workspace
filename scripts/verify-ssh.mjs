@@ -1,3 +1,4 @@
+import { workspaceSocket } from "../src/core/socket.ts";
 import { _electron as electron } from "playwright";
 import {
   mkdtemp,
@@ -21,7 +22,9 @@ import { installHelper, startSshd } from "./ssh-fixture.mjs";
 // shell there, kill the ssh client and see the same session come back, then
 // edit a file and read Git status on the host. No provider is called.
 const fixture = await mkdtemp(path.join(tmpdir(), "verify-ssh-"));
-const screenshots = path.resolve("docs/screenshots/desktop");
+const screenshots = path.resolve(
+  process.env.WORKSPACE_SCREENSHOT_DIR || "docs/screenshots/desktop",
+);
 await mkdir(screenshots, { recursive: true });
 const tmux = process.env.WORKSPACE_TMUX || "/opt/homebrew/bin/tmux";
 const remoteHome = path.join(fixture, "remote-home");
@@ -49,13 +52,7 @@ const checks = [];
 const errors = [];
 let app;
 const socketFor = async (dir) =>
-  path.join(
-    tmpdir(),
-    `aw-${createHash("sha256")
-      .update(await realpath(dir))
-      .digest("hex")
-      .slice(0, 20)}.sock`,
-  );
+  workspaceSocket(await realpath(dir));
 try {
   app = await electron.launch({
     executablePath: process.env.WORKSPACE_APP_EXECUTABLE,
@@ -331,6 +328,23 @@ try {
   );
   checks.push(
     "Disconnect leaves the remote tmux session running; while disconnected its state shows unknown",
+  );
+  // A disconnected SSH folder offers Reconnect, never greyed "ready" cards.
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "New session", exact: true }).click();
+  const offline = page.locator(".host-offline");
+  await offline.getByText("Build box is not connected").waitFor();
+  assert.equal(
+    await page.getByText(/ready for your first message/).count(),
+    0,
+  );
+  await offline.getByRole("button", { name: "Reconnect", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^Open Claude Code here|^Open Shell here/ })
+    .first()
+    .waitFor();
+  checks.push(
+    "A disconnected SSH folder shows a Reconnect notice in place of launch cards, and Reconnect restores them",
   );
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, checks }, null, 2));

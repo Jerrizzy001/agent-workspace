@@ -350,7 +350,7 @@ setInterval(() => {}, 1000);
       snapshot = await call("snapshot");
       assert.ok(
         snapshot.notes.some(
-          (n) => n.id === note.id && n.body === "remote note",
+          (n) => n.id === note.id && n.bodyLoaded === false,
         ),
       );
       assert.ok(snapshot.tasks.some((t) => t.id === task.id));

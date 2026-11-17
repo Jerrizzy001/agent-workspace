@@ -1,3 +1,4 @@
+import { workspaceSocket } from "../src/core/socket.ts";
 import { _electron as electron, chromium } from 'playwright';
 import { mkdtemp, mkdir, writeFile, realpath, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -45,7 +46,7 @@ try{
   assert.deepEqual(changed.files.map(file=>file.path).sort(),['provider-proof.txt','run-count.txt']);
   await assert.rejects(readFile(path.join(repo,'provider-proof.txt')),error=>error.code==='ENOENT');
   await assert.rejects(readFile(path.join(repo,'run-count.txt')),error=>error.code==='ENOENT');
-  const socket=path.join(tmpdir(),`aw-${createHash('sha256').update(await realpath(path.join(fixture,'data'))).digest('hex').slice(0,20)}.sock`);
+  const socket=workspaceSocket(await realpath(path.join(fixture,'data')));
   const tmux=process.env.WORKSPACE_TMUX || '/opt/homebrew/bin/tmux';
   const panePid=()=>execFileSync(tmux,['-S',socket,'display-message','-p','-t',launch.session.backendName,'#{pane_pid}'],{encoding:'utf8'}).trim();
   const beforePid=panePid();await remotePage.close();remotePage=await context.newPage();await remotePage.goto(status.url);await remotePage.getByText('Connected to workspace',{exact:true}).waitFor();

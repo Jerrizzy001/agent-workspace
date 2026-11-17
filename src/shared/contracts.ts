@@ -4,11 +4,7 @@ import type {
 } from "./controller-contracts.js";
 import type { DesktopTeamAPI } from "./team-contracts.js";
 export type TaskStatus =
-  | "backlog"
-  | "ready"
-  | "in_progress"
-  | "review"
-  | "done";
+  "backlog" | "ready" | "in_progress" | "review" | "done";
 export type Provider = "shell" | "claude" | "codex";
 export interface Project {
   id: string;
@@ -64,6 +60,9 @@ export interface Session {
   /** Claude conversation ID, used to resume the conversation after the process ends. */
   conversationId?: string;
   resumedFrom?: string;
+  endedAt?: string;
+  historyArchived?: boolean;
+  historyRestoredAt?: string;
   exitCode?: number;
   /** True when the final screen was saved after the process ended on its own. */
   transcript?: boolean;
@@ -120,6 +119,8 @@ export interface Note {
   /** "agent" when created through agent control (`awctl note create`). */
   source?: "agent";
   archived?: boolean;
+  /** Snapshot metadata omits the body; fetch note.read before editing. */
+  bodyLoaded?: boolean;
 }
 export interface Layout {
   projectId: string;
@@ -146,10 +147,7 @@ export interface Snapshot {
   hosts?: ExecutionHostView[];
 }
 export type HostConnectionState =
-  | "disconnected"
-  | "connecting"
-  | "connected"
-  | "reconnecting";
+  "disconnected" | "connecting" | "connected" | "reconnecting";
 /** Why a host could not be used, with what the owner can do about it. */
 export interface HostProblem {
   code:
@@ -238,7 +236,10 @@ export interface Worktree {
   managed?: boolean;
 }
 export type CoreEvent =
-  | { type: "snapshot"; snapshot: Snapshot }
+  | { type: "snapshot"; snapshot: Snapshot; epoch?: string; sequence?: number }
+  | import("./deltas.js").WorkspaceDelta
+  | { type: "transcript.changed" }
+  | { type: "settings.changed"; key: string }
   | {
       type: "terminal.data";
       sessionId: string;
@@ -276,6 +277,7 @@ export const COMMANDS = [
   "terminal.open",
   "task.create",
   "task.update",
+  "task.delete",
   "attempt.start",
   "session.attach",
   "session.detach",
@@ -302,7 +304,14 @@ export const COMMANDS = [
   "git.commit",
   "worktree.list",
   "worktree.create",
+  "worktree.remove",
   "layout.save",
+  "note.read",
+  "note.delete",
+  "history.prune",
+  "history.list",
+  "history.restore",
+  "backup.export",
   "note.create",
   "note.update",
   "note.archive",
@@ -344,6 +353,10 @@ export interface DesktopRemoteAPI {
   enable(config: RemoteConfig): Promise<RemoteStatus>;
   disable(): Promise<RemoteStatus>;
   pairingSecret(): Promise<string>;
+  /** Single-use pairing link for a QR code; expires after ten minutes. */
+  pairingLink(): Promise<{ id: string; url: string; expiresAt: number }>;
+  /** False once that link was used, replaced, revoked or has expired. */
+  pairingLinkPending(id: string): Promise<boolean>;
   revokeSessions(): Promise<void>;
   chooseTLSFile(kind: "certificate" | "key"): Promise<RemoteStatus>;
 }
@@ -629,6 +642,21 @@ export interface TranscriptLinkView {
   redactions: number;
   export: TranscriptExportInfo & { createdAt: string; excerpt: string };
 }
+/** Application-menu commands; the renderer carries them out. */
+export type MenuAction =
+  | "settings"
+  | "open-folder"
+  | "palette"
+  | "new-task"
+  | "view-terminals"
+  | "view-board"
+  | "view-canvas"
+  | "toggle-sidebar"
+  | "toggle-files";
+/** One entry of a native right-click menu; `id` comes back when chosen. */
+export type ContextMenuItem =
+  | { id: string; label: string; enabled?: boolean; danger?: boolean }
+  | { type: "separator" };
 export interface WorkspaceAPI {
   invoke<T = unknown>(
     command: Command,
@@ -654,6 +682,10 @@ export interface WorkspaceAPI {
   profiles?: DesktopProfilesAPI;
   /** Desktop owner only: team members, comments and assignments (team service). */
   team?: DesktopTeamAPI;
+  /** Desktop only: commands chosen from the application menu. */
+  onMenu?: (listener: (action: MenuAction) => void) => () => void;
+  /** Desktop only: shows a native right-click menu; resolves the chosen id or null. */
+  contextMenu?: (items: ContextMenuItem[]) => Promise<string | null>;
 }
 declare global {
   interface Window {

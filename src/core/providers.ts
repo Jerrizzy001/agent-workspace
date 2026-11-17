@@ -37,8 +37,9 @@ export interface LaunchOptions {
    * CLI chooses and reports through the SessionStart hook).
    */
   conversation?: { id: string; resume: boolean; fork?: boolean };
-  /** Codex: open its own resume picker instead of a new conversation. */
-  resumePicker?: boolean;
+  /** Codex conversation to resume exactly; never open a picker implicitly. */
+  codexResumeId?: string;
+  codexConfig?: string[];
   /** Claude per-session settings JSON (status hooks); never written to global config. */
   settings?: string;
 }
@@ -50,7 +51,15 @@ export function launchArguments(
   const model = providerModel(provider, options.model);
   if (provider === "shell") return [];
   const prompt = initialPrompt(options.prompt);
-  if (provider === "codex" && options.resumePicker) return ["resume"];
+  if (provider === "codex")
+    return [
+      ...(options.codexResumeId
+        ? ["resume", conversationIdText(options.codexResumeId)]
+        : []),
+      ...(options.codexConfig ?? []),
+      ...(model ? ["--model", model] : []),
+      ...(prompt ? ["--", prompt] : []),
+    ];
   const conversation =
     provider === "claude" && options.conversation
       ? options.conversation.fork
@@ -140,4 +149,29 @@ export function claudeActivitySettings(tmux: string): string {
       ),
     },
   });
+}
+
+/** Invocation-local hooks only. Codex still requires the owner to review/trust them in /hooks. */
+export function codexActivityConfig(
+  tmux: string,
+  target?: { socket: string; name: string },
+): string[] {
+  const client = quote(tmux) + (target ? ` -S ${quote(target.socket)}` : "");
+  const pane = target ? ` -t ${quote("=" + target.name + ":0.0")}` : "";
+  const set = (state: string) =>
+    `${client} set-option -p${pane} @aw_activity ${state} \\; set-option -p${pane} @aw_activity_at "$(date +%s)" >/dev/null 2>&1 || true`;
+  const start = `r="$(head -c ${SESSION_START_LIMIT} | tr -d '\\r\\n')"; ${client} set-option -p${pane} ${SESSION_START_OPTION} "$r" >/dev/null 2>&1 || true`;
+  const commands: Record<string, string> = {
+    SessionStart: start,
+    UserPromptSubmit: start + "; " + set("running"),
+    PreModelRequest: set("running"),
+    PostToolUse: set("running"),
+    PermissionRequest: set("needs"),
+    Stop: start + "; " + set("done"),
+    Interrupt: start + "; " + set("done"),
+  };
+  return Object.entries(commands).flatMap(([event, command]) => [
+    "--config",
+    `hooks.${event}=[{hooks=[{type="command",command=${JSON.stringify(command + "; printf '%s\\n' '{}'")},timeout=3}]}]`,
+  ]);
 }

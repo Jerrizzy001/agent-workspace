@@ -40,7 +40,7 @@ try {
   );
   // Folder-first launch: one click opens a shell; no task or attempt form.
   await page.getByRole("button", { name: "Open Shell here" }).waitFor();
-  await page.getByRole("button", { name: "Shell", exact: true }).click();
+  await page.getByRole("button", { name: "Open Shell here", exact: true }).click();
   await page.locator(".xterm-helper-textarea").waitFor();
   await page.waitForTimeout(500);
   await page.locator(".xterm-helper-textarea").focus();

@@ -58,21 +58,21 @@ function fixture() {
               },
             }
           : command === "session.rename"
-          ? {
-              ...snapshot.sessions[0],
-              title: payload.title,
-              titleRevision: 1,
-              backendSocket: "/private/socket",
-            }
-          : command === "attempt.start"
-          ? {
-              attempt: { id: "a" },
-              session: {
+            ? {
                 ...snapshot.sessions[0],
+                title: payload.title,
+                titleRevision: 1,
                 backendSocket: "/private/socket",
-              },
-            }
-          : { ok: true };
+              }
+            : command === "attempt.start"
+              ? {
+                  attempt: { id: "a" },
+                  session: {
+                    ...snapshot.sessions[0],
+                    backendSocket: "/private/socket",
+                  },
+                }
+              : { ok: true };
     },
     subscribe: (fn: (e: CoreEvent) => void) => {
       listeners.add(fn);
@@ -248,13 +248,22 @@ test("gateway authenticates real sockets, scopes commands, targets streams and r
     assert.equal(renamed.result.titleRevision, 1);
     assert.equal(renamed.result.backendSocket, undefined);
     assert.match(
-      (await a.rpc("session.rename", { sessionId: "s", title: "x", titleRevision: 1 })).error,
+      (
+        await a.rpc("session.rename", {
+          sessionId: "s",
+          title: "x",
+          titleRevision: 1,
+        })
+      ).error,
       /generation required/,
     );
     for (const [command, payload] of [
       ["project.add", { path: "/" }],
       ["project.hide", { projectId: "p" }],
-      ["terminal.open", { projectId: "p", provider: "shell", idempotencyKey: "k", cwd: "/" }],
+      [
+        "terminal.open",
+        { projectId: "p", provider: "shell", idempotencyKey: "k", cwd: "/" },
+      ],
     ] as const)
       assert.match(
         (await a.rpc(command, payload)).error,
@@ -286,7 +295,12 @@ test("gateway authenticates real sockets, scopes commands, targets streams and r
     const projected = (await a.rpc("snapshot")).result.sessions[0];
     assert.equal(projected.activityAt, 1_800_000_000_000);
     assert.equal(projected.backendSocket, undefined);
-    for (const key of ["activity", "activityTracking", "activityAt", "backendSocket"])
+    for (const key of [
+      "activity",
+      "activityTracking",
+      "activityAt",
+      "backendSocket",
+    ])
       delete (f.snapshot.sessions[0] as any)[key];
     const snapshotsBeforeTyping = f.calls.filter(
       (c) => c.command === "snapshot",
@@ -745,10 +759,12 @@ test("RPC flood closes the socket and cancels bounded queued mutations", async (
   }
 });
 
-test("expiry during scope refresh prevents the pending mutation", async () => {
+test("expiry while an RPC is queued prevents the pending mutation", async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "aw-gateway-expiry-")),
     f = fixture();
-  let release!: () => void, started!: () => void, block = false;
+  let release!: () => void,
+    started!: () => void,
+    block = false;
   const blocked = new Promise<void>((resolve) => {
       release = resolve;
     }),
@@ -760,7 +776,7 @@ test("expiry during scope refresh prevents the pending mutation", async () => {
     ...f,
     port: 0,
     invoke: async (command, payload) => {
-      if (command === "snapshot" && block) {
+      if (command === "git.status" && block) {
         started();
         await blocked;
       }
@@ -773,14 +789,25 @@ test("expiry during scope refresh prevents the pending mutation", async () => {
     const url = gateway.status().url;
     c = await client(url, await login(url, await gateway.pairingSecret()));
     block = true;
-    c.ws.send(JSON.stringify({
-      type: "rpc",
-      version: 1,
-      id: "expiry",
-      command: "note.create",
-      payload: { projectId: "p", title: "expired mutation" },
-    }));
+    c.ws.send(
+      JSON.stringify({
+        type: "rpc",
+        version: 1,
+        id: "blocker",
+        command: "git.status",
+        payload: { projectId: "p" },
+      }),
+    );
     await entered;
+    c.ws.send(
+      JSON.stringify({
+        type: "rpc",
+        version: 1,
+        id: "expiry",
+        command: "note.create",
+        payload: { projectId: "p", title: "expired mutation" },
+      }),
+    );
     const afterExpiry = realNow() + 12 * 60 * 60 * 1000 + 1000;
     Date.now = () => afterExpiry;
     const closed = once(c.ws, "close");
@@ -810,10 +837,16 @@ test("explicit IPv6 loopback HTTP origin is accepted", async () => {
   try {
     assert.equal(gateway.status().url, "http://[::1]:8787");
     const status = await new Promise<number>((resolve, reject) => {
-      http.get(`http://127.0.0.1:${gateway.status().port}/api/status`, { headers: { host: "[::1]:8787" } }, (res) => {
-        res.resume();
-        resolve(res.statusCode!);
-      }).on("error", reject);
+      http
+        .get(
+          `http://127.0.0.1:${gateway.status().port}/api/status`,
+          { headers: { host: "[::1]:8787" } },
+          (res) => {
+            res.resume();
+            resolve(res.statusCode!);
+          },
+        )
+        .on("error", reject);
     });
     assert.equal(status, 200);
   } finally {
@@ -823,26 +856,41 @@ test("explicit IPv6 loopback HTTP origin is accepted", async () => {
 });
 
 test("independent gateways on one hostname keep separate browser cookie sessions", async () => {
-  const dirs = [0, 1].map(() => fs.mkdtempSync(path.join(os.tmpdir(), "aw-gateway-cookie-")));
+  const dirs = [0, 1].map(() =>
+    fs.mkdtempSync(path.join(os.tmpdir(), "aw-gateway-cookie-")),
+  );
   let a = await startGateway({ dataDir: dirs[0], ...fixture(), port: 0 });
   const b = await startGateway({ dataDir: dirs[1], ...fixture(), port: 0 });
   const browserCookies = new Map<string, string>();
   try {
     for (const gateway of [a, b]) {
-      const cookie = await login(gateway.status().url, await gateway.pairingSecret());
+      const cookie = await login(
+        gateway.status().url,
+        await gateway.pairingSecret(),
+      );
       browserCookies.set(cookie.slice(0, cookie.indexOf("=")), cookie);
     }
     const cookie = [...browserCookies.values()].join("; ");
     for (const gateway of [a, b]) {
-      const status = await fetch(gateway.status().url + "/api/status", { headers: { cookie } });
-      assert.equal((await status.json() as any).authenticated, true);
+      const status = await fetch(gateway.status().url + "/api/status", {
+        headers: { cookie },
+      });
+      assert.equal(((await status.json()) as any).authenticated, true);
     }
     assert.equal(browserCookies.size, 2);
-    const originalUrl = a.status().url, originalPort = a.status().port;
+    const originalUrl = a.status().url,
+      originalPort = a.status().port;
     const originalCookie = await login(originalUrl, await a.pairingSecret());
     await a.stop();
-    a = await startGateway({ dataDir: dirs[0], ...fixture(), port: originalPort });
-    const restartedCookie = await login(a.status().url, await a.pairingSecret());
+    a = await startGateway({
+      dataDir: dirs[0],
+      ...fixture(),
+      port: originalPort,
+    });
+    const restartedCookie = await login(
+      a.status().url,
+      await a.pairingSecret(),
+    );
     assert.equal(restartedCookie.split("=")[0], originalCookie.split("=")[0]);
   } finally {
     await a.stop();
@@ -854,22 +902,45 @@ test("independent gateways on one hostname keep separate browser cookie sessions
 test("SSH hosts and SSH folders never reach a paired browser", async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "aw-gateway-")),
     f = fixture();
-  f.snapshot.projects.push({ id: "ssh-0a1b2c3d-r1", name: "remote", path: "/srv/remote", createdAt: "", hostId: "0a1b2c3d" });
+  f.snapshot.projects.push({
+    id: "ssh-0a1b2c3d-r1",
+    name: "remote",
+    path: "/srv/remote",
+    createdAt: "",
+    hostId: "0a1b2c3d",
+  });
   f.snapshot.hosts = [
-    { id: "0a1b2c3d", alias: "box", label: "box", helperPath: "~/aw", state: "connected", tools: [] },
+    {
+      id: "0a1b2c3d",
+      alias: "box",
+      label: "box",
+      helperPath: "~/aw",
+      state: "connected",
+      tools: [],
+    },
   ];
   // Even a misconfigured allow list containing the SSH folder does not share it.
-  const gateway = await startGateway({ dataDir, ...f, port: 0, allowedProjectIds: ["p", "ssh-0a1b2c3d-r1"] });
+  const gateway = await startGateway({
+    dataDir,
+    ...f,
+    port: 0,
+    allowedProjectIds: ["p", "ssh-0a1b2c3d-r1"],
+  });
   const url = gateway.status().url;
   let c: Awaited<ReturnType<typeof client>> | undefined;
   try {
     c = await client(url, await login(url, await gateway.pairingSecret()));
     const snapshot = (await c.rpc("snapshot")).result;
     assert.equal(snapshot.hosts, undefined);
-    assert.deepEqual(snapshot.projects.map((p: any) => p.id), ["p"]);
+    assert.deepEqual(
+      snapshot.projects.map((p: any) => p.id),
+      ["p"],
+    );
     f.emit({ type: "snapshot", snapshot: f.snapshot });
     await wait(50);
-    const pushed = c.messages.filter((m) => m.type === "event" && m.event.type === "snapshot").at(-1);
+    const pushed = c.messages
+      .filter((m) => m.type === "event" && m.event.type === "snapshot")
+      .at(-1);
     assert.ok(pushed);
     assert.equal(pushed.event.snapshot.hosts, undefined);
     assert.ok(!pushed.event.snapshot.projects.some((p: any) => p.hostId));
@@ -877,5 +948,135 @@ test("SSH hosts and SSH folders never reach a paired browser", async () => {
     c?.ws.terminate();
     await gateway.stop();
     fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("gateway pushes scoped record deltas and authorizes lazy note reads without refreshing the whole store", async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "aw-delta-gateway-"));
+  const f = fixture();
+  const gateway = await startGateway({
+    dataDir,
+    ...f,
+    port: 0,
+    allowedProjectIds: ["p"],
+  });
+  let c: Awaited<ReturnType<typeof client>> | undefined;
+  try {
+    const url = gateway.status().url;
+    c = await client(url, await login(url, await gateway.pairingSecret()));
+    const initialReads = f.calls.filter(
+      (call) => call.command === "snapshot",
+    ).length;
+    const note = {
+      id: "n",
+      projectId: "p",
+      title: "lazy",
+      body: "",
+      bodyLoaded: false,
+      revision: 1,
+      createdAt: "",
+      updatedAt: "",
+    };
+    const hidden = {
+      ...note,
+      id: "secret",
+      projectId: "hidden",
+      title: "private title",
+    };
+    f.emit({
+      type: "workspace.delta",
+      epoch: "core",
+      sequence: 1,
+      changes: { notes: { upsert: [note, hidden], remove: [] } },
+    });
+    for (
+      let i = 0;
+      i < 100 && !c.messages.some((m) => m.event?.type === "workspace.delta");
+      i++
+    )
+      await wait(5);
+    const delta = c.messages.find(
+      (m) => m.event?.type === "workspace.delta",
+    ).event;
+    assert.equal(delta.changes.notes.upsert.length, 1);
+    assert.equal(delta.changes.notes.upsert[0].bodyLoaded, false);
+    assert.equal(JSON.stringify(delta).includes("private title"), false);
+    assert.equal((await c.rpc("note.read", { noteId: "n" })).error, undefined);
+    assert.match(
+      (await c.rpc("note.read", { noteId: "secret" })).error,
+      /access denied/,
+    );
+    assert.equal(
+      f.calls.filter((call) => call.command === "snapshot").length,
+      initialReads,
+    );
+    f.emit({
+      type: "workspace.delta",
+      epoch: "core",
+      sequence: 2,
+      changes: { notes: { upsert: [], remove: ["n"] } },
+    });
+    assert.match(
+      (await c.rpc("note.read", { noteId: "n" })).error,
+      /access denied/,
+    );
+    for (const command of [
+      "note.delete",
+      "task.delete",
+      "worktree.remove",
+      "history.prune",
+      "backup.export",
+    ])
+      assert.match((await c.rpc(command, {})).error, /not available remotely/);
+  } finally {
+    c?.ws.terminate();
+    await gateway.stop();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("one-time pairing links sign in once, ride only in the fragment, and die on revoke", async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "aw-pairlink-")),
+    f = fixture();
+  const gateway = await startGateway({ dataDir, ...f, port: 0 });
+  const url = gateway.status().url;
+  const attempt = (secret: string) =>
+    fetch(url + "/api/login", {
+      method: "POST",
+      headers: { origin: url, "content-type": "application/json" },
+      body: JSON.stringify({ secret }),
+    }).then((r) => r.status);
+  try {
+    const link = await gateway.pairingLink();
+    const parsed = new URL(link.url);
+    assert.equal(parsed.origin, url);
+    assert.equal(parsed.search, "");
+    const code = new URLSearchParams(parsed.hash.slice(1)).get("pair")!;
+    assert.ok(code.length >= 43);
+    assert.ok(link.expiresAt > Date.now() + 9 * 60 * 1000);
+    assert.equal(
+      await attempt(code + " "),
+      200,
+      "pasted whitespace is trimmed",
+    );
+    assert.equal(
+      gateway.pairingLinkPending(link.id),
+      false,
+      "spent links report it",
+    );
+    assert.equal(await attempt(code), 401, "a one-time code works only once");
+    assert.equal(
+      await attempt("é".repeat((await gateway.pairingSecret()).length)),
+      401,
+      "non-ASCII input of the same length is rejected, not an error",
+    );
+    const spare = new URLSearchParams(
+      new URL((await gateway.pairingLink()).url).hash.slice(1),
+    ).get("pair")!;
+    await gateway.revokeSessions();
+    assert.equal(await attempt(spare), 401, "revoke ends unused links too");
+    assert.equal(await attempt(await gateway.pairingSecret()), 200);
+  } finally {
+    await gateway.stop();
   }
 });

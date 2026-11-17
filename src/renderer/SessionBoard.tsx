@@ -201,8 +201,12 @@ export function SessionBoard({
               dropping={dropLane === lane.id}
               capabilities={capabilities}
               launchDisabled={!!disabledReason || !!launching}
-              onRename={(name) => changeLanes("lane.rename", { laneId: lane.id, name })}
-              onRemove={() => void changeLanes("lane.remove", { laneId: lane.id })}
+              onRename={(name) =>
+                changeLanes("lane.rename", { laneId: lane.id, name })
+              }
+              onRemove={() =>
+                void changeLanes("lane.remove", { laneId: lane.id })
+              }
               onStart={(provider) => void startIn(lane.id, provider)}
               onDragOver={(active) =>
                 setDropLane((current) =>
@@ -366,7 +370,8 @@ function Lane({
       onDrop={(e) => {
         e.preventDefault();
         onDrop(
-          e.dataTransfer.getData(DRAG_TYPE) || e.dataTransfer.getData("text/plain"),
+          e.dataTransfer.getData(DRAG_TYPE) ||
+            e.dataTransfer.getData("text/plain"),
         );
       }}
       onKeyDown={(e) => {
@@ -451,7 +456,11 @@ function Lane({
         </div>
       ) : null}
       {menu === "lane" ? (
-        <div className="lane-menu" role="menu" aria-label={`Actions for ${name}`}>
+        <div
+          className="lane-menu"
+          role="menu"
+          aria-label={`Actions for ${name}`}
+        >
           <button role="menuitem" onClick={startRename}>
             <Pencil size={12} />
             Rename lane
@@ -509,9 +518,7 @@ function SessionCard({
   const location = sessionLocation(s, project);
   return (
     <article
-      className={
-        "session-card tone-" + state.tone + (ended ? " is-ended" : "")
-      }
+      className={"session-card tone-" + state.tone + (ended ? " is-ended" : "")}
       data-session-id={s.id}
       draggable
       onDragStart={(e) => {
@@ -570,7 +577,11 @@ function SessionCard({
         </button>
       </footer>
       {moving ? (
-        <div className="lane-menu move-menu" role="menu" aria-label="Move to lane">
+        <div
+          className="lane-menu move-menu"
+          role="menu"
+          aria-label="Move to lane"
+        >
           {lanes.map((l) => (
             <button
               key={l.id}

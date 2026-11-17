@@ -8,6 +8,8 @@ import {
   Check,
   Minus,
   PanelRightClose,
+  Maximize2,
+  Minimize2,
   Sparkles,
 } from "lucide-react";
 import {
@@ -94,6 +96,8 @@ export function ReviewPanel({
   const [message, setMessage] = useState("");
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [branch, setBranch] = useState("");
+  const [treeLocation, setTreeLocation] = useState("");
+  const [removingTree, setRemovingTree] = useState("");
   const scope = { projectId: project.id, worktreePath };
   // AI draft: the staged fingerprint it was generated from, to flag staleness.
   const assist = useAssist();
@@ -302,6 +306,11 @@ export function ReviewPanel({
             key={t}
             className={tab === t ? "active" : ""}
             aria-pressed={tab === t}
+            aria-label={
+              t === "changes" && status.files.length
+                ? `Changes, ${status.files.length} changed`
+                : undefined
+            }
             onClick={() => setTab(t)}
           >
             {t === "files"
@@ -494,6 +503,56 @@ export function ReviewPanel({
                 <strong>{tree.branch || "Detached HEAD"}</strong>
                 <span>{tree.path}</span>
                 <code>{tree.head.slice(0, 8)}</code>
+                {window.workspace.profiles &&
+                !project.hostId &&
+                tree.path !== project.path ? (
+                  <button
+                    className="button ghost small"
+                    disabled={!!removingTree}
+                    onClick={async () => {
+                      if (
+                        selected &&
+                        content !== selected.content &&
+                        worktreePath === tree.path
+                      ) {
+                        report(
+                          new Error(
+                            "Save or discard the open file before removing its worktree",
+                          ),
+                        );
+                        return;
+                      }
+                      if (
+                        !confirm(
+                          `Remove the clean worktree at ${tree.path}? Its branch is kept. Dirty files and running sessions prevent removal.`,
+                        )
+                      )
+                        return;
+                      setRemovingTree(tree.path);
+                      try {
+                        await window.workspace.invoke("worktree.remove", {
+                          projectId: project.id,
+                          path: tree.path,
+                        });
+                        if (worktreePath === tree.path)
+                          onOpenWorktree?.({
+                            path: project.path,
+                            branch: "",
+                            head: "",
+                          });
+                        await refresh();
+                      } catch (error) {
+                        report(error);
+                      } finally {
+                        setRemovingTree("");
+                      }
+                    }}
+                  >
+                    {removingTree === tree.path
+                      ? "Removing…"
+                      : "Remove worktree…"}
+                  </button>
+                ) : null}
                 {onOpenWorktree ? (
                   <div className="worktree-actions">
                     <button
@@ -527,9 +586,14 @@ export function ReviewPanel({
             onSubmit={(e) => {
               e.preventDefault();
               void window.workspace
-                .invoke("worktree.create", { projectId: project.id, branch })
+                .invoke("worktree.create", {
+                  projectId: project.id,
+                  branch,
+                  ...(treeLocation.trim() ? { path: treeLocation.trim() } : {}),
+                })
                 .then(() => {
                   setBranch("");
+                  setTreeLocation("");
                   return refresh();
                 })
                 .catch(report);
@@ -544,6 +608,20 @@ export function ReviewPanel({
                 required
               />
             </label>
+            {window.workspace.profiles && !project.hostId ? (
+              <label>
+                Worktree location (optional)
+                <input
+                  value={treeLocation}
+                  onChange={(event) => setTreeLocation(event.target.value)}
+                  placeholder={`${project.path}-worktree`}
+                />
+                <span className="hint">
+                  Use an absolute path beside your project, or leave blank for
+                  app storage.
+                </span>
+              </label>
+            ) : null}
             <button className="secondary full">Create worktree</button>
           </form>
         </>
@@ -573,8 +651,15 @@ export function ReviewPanel({
           className={"editor-overlay" + (expanded ? " editor-expanded" : "")}
         >
           <header>
-            <span>
-              {selected?.path || "Selected diff"}{" "}
+            <span title={selected?.path || "Selected diff"}>
+              <span className="editor-file-name">
+                {selected?.path.split("/").pop() || "Selected diff"}
+              </span>
+              {selected?.path.includes("/") ? (
+                <span className="editor-file-dir">
+                  {selected.path.split("/").slice(0, -1).join("/")}
+                </span>
+              ) : null}
               {selected ? (
                 <small role="status">
                   {content === selected.content ? " · Saved" : " · Unsaved"}
@@ -593,11 +678,12 @@ export function ReviewPanel({
                 </button>
               ) : null}
               <button
-                className="button small"
+                className="icon-button"
                 onClick={() => setExpanded((v) => !v)}
                 aria-label={expanded ? "Restore editor panel" : "Expand editor"}
+                title={expanded ? "Restore editor panel" : "Expand editor"}
               >
-                {expanded ? "Restore" : "Expand"}
+                {expanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
               </button>
               {selected ? (
                 <button

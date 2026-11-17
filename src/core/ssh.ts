@@ -635,7 +635,7 @@ export function connectHost(spec: HostSpec, options: ConnectOptions = {}) {
         protocol,
         remoteHostId: hello!.hostId,
         child,
-        request(op, fields, timeoutMs = 55000) {
+        request(op, fields, timeoutMs = fields.command === "git.commit" ? 180_000 : 90_000) {
           if (phase !== "open" || deliberate)
             return Promise.reject(new Error(`${spec.alias} is not connected`));
           const id = ++nextId;

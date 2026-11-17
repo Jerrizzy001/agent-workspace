@@ -297,6 +297,7 @@ export function sanitizeSnapshot(raw: unknown): Snapshot {
           revision: "int?",
           source: ["agent"],
           archived: "bool?",
+          bodyLoaded: "bool?",
         }) ??
         pick(v, {
           id: "id",
@@ -307,6 +308,7 @@ export function sanitizeSnapshot(raw: unknown): Snapshot {
           updatedAt: "str",
           revision: "int?",
           archived: "bool?",
+          bodyLoaded: "bool?",
         }),
     ) as unknown as Snapshot["notes"],
     layouts: list(s.layouts, 1000, (v) => {

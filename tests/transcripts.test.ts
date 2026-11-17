@@ -223,10 +223,10 @@ test("transcript links: owner preview, redaction and directed grant; awctl trans
     assert.equal(r.json.error, "not_granted");
     await w.core.agentControl("grant", { sessionId: recipient.id, generation: 1, verbs: ["status", "transcript.read"] });
     r = await w.inPane(recipient, "awctl transcript read");
-    assert.equal(r.code, 0);
+    assert.equal(r.code, 0, JSON.stringify(r.json));
     assert.deepEqual(r.json.links.map((l: any) => l.link), [granted.id]);
     r = await w.inPane(recipient, `awctl transcript read --link ${granted.id}`);
-    assert.equal(r.code, 0);
+    assert.equal(r.code, 0, JSON.stringify(r.json));
     assert.match(r.json.text, /the codename is \[redacted\]/);
     assert.equal(r.json.text.includes("alpha"), false);
     assert.equal(r.json.export.complete, false);

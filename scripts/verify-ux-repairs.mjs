@@ -157,7 +157,10 @@ try {
   checks.push("Command/Ctrl-S writes the file; editor expands; Saved feedback");
 
   assert.equal((await snapshot()).capabilities.find(c => c.name === "claude").detail, path.join(bin, "claude"), "only the fixture provider may be launched");
-  await page.getByRole("button", { name: "Claude", exact: true }).click();
+  // With a session open, "+" brings the Launchpad back.
+  if (await page.getByRole("button", { name: "New session", exact: true }).isVisible())
+    await page.getByRole("button", { name: "New session", exact: true }).click();
+  await page.getByRole("button", { name: "Open Claude here", exact: true }).click();
   await page.locator('.session-view[aria-label="Claude session"]').waitFor();
   source = (await snapshot()).sessions.find((s) => s.provider === "claude");
   await type("A context example for the connected agent");
@@ -286,7 +289,7 @@ try {
 
   await page
     .getByRole("button", {
-      name: "Receiver audit-project Running",
+      name: "Receiver, audit-project, Running",
       exact: true,
     })
     .click();
@@ -325,9 +328,14 @@ try {
   await note.press("Tab");
   await poll(
     async () =>
-      (await snapshot()).notes.some(
-        (n) => n.body === "A durable planning note",
-      ),
+      // Snapshots carry note metadata only; bodies load on demand.
+      (
+        await Promise.all(
+          (await snapshot()).notes.map((n) =>
+            invoke("note.read", { noteId: n.id }),
+          ),
+        )
+      ).some((n) => n.body === "A durable planning note"),
     "note save",
   );
   await page
@@ -507,7 +515,7 @@ try {
   const title = "Receiver";
   await page
     .getByRole("button", {
-      name: `${title} audit-project Running`,
+      name: `${title}, audit-project, Running`,
       exact: true,
     })
     .click();

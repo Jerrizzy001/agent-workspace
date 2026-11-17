@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
-import { CloudUpload, LoaderCircle, MessageSquare, UserRound, X } from "lucide-react";
+import {
+  CloudUpload,
+  LoaderCircle,
+  MessageSquare,
+  UserRound,
+  X,
+} from "lucide-react";
 import type { Task } from "../shared/contracts";
-import type { TeamBoardEntry, TeamStatus, TeamSyncState, TeamTaskPreview } from "../shared/team-contracts";
+import type {
+  TeamBoardEntry,
+  TeamStatus,
+  TeamSyncState,
+  TeamTaskPreview,
+} from "../shared/team-contracts";
 import { errorText } from "./sessions";
 import { TeamTaskThread } from "./TaskComments";
 import "./team.css";
@@ -27,8 +38,14 @@ export function useTeamBoard(projectId: string | undefined, tasks: Task[]) {
   const load = useCallback(() => {
     const api = window.workspace.team;
     if (!api || !projectId) return;
-    void api.boardInfo({ projectId }).then(setEntries).catch(() => setEntries({}));
-    void api.status().then(setStatus).catch(() => {});
+    void api
+      .boardInfo({ projectId })
+      .then(setEntries)
+      .catch(() => setEntries({}));
+    void api
+      .status()
+      .then(setStatus)
+      .catch(() => {});
   }, [projectId]);
   useEffect(() => {
     load();
@@ -37,14 +54,21 @@ export function useTeamBoard(projectId: string | undefined, tasks: Task[]) {
   return { entries, status, reload: load };
 }
 
-export function TeamCardMeta({ entry, offline }: { entry?: TeamBoardEntry; offline?: boolean }) {
+export function TeamCardMeta({
+  entry,
+  offline,
+}: {
+  entry?: TeamBoardEntry;
+  offline?: boolean;
+}) {
   if (!entry) return null;
   const sync = offline && entry.sync === "synced" ? "offline" : entry.sync;
   return (
     <div className="team-card-meta" aria-label="Team">
       <span className={"team-chip " + sync}>{syncLabel(sync)}</span>
       <span title="Assignee">
-        <UserRound size={11} aria-hidden="true" /> {entry.assignee ?? "Unassigned"}
+        <UserRound size={11} aria-hidden="true" />{" "}
+        {entry.assignee ?? "Unassigned"}
       </span>
       <span title="Comments" aria-label={entry.commentCount + " comments"}>
         <MessageSquare size={11} aria-hidden="true" /> {entry.commentCount}
@@ -68,23 +92,40 @@ export function PublishPreview({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    api.previewTask({ taskId }).then(setPreview).catch((e) => setError(errorText(e)));
+    api
+      .previewTask({ taskId })
+      .then(setPreview)
+      .catch((e) => setError(errorText(e)));
   }, [taskId]);
   return (
     <div className="modal-backdrop">
-      <section className="modal team-panel team-preview" role="dialog" aria-modal="true" aria-labelledby="team-preview-title">
+      <section
+        className="modal team-panel team-preview"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="team-preview-title"
+      >
         <header>
           <div>
             <div className="eyebrow">Team</div>
-            <h2 id="team-preview-title">{preview?.sharedTaskId ? "Update the shared task" : "Share this task with the team"}</h2>
+            <h2 id="team-preview-title">
+              {preview?.sharedTaskId
+                ? "Update the shared task"
+                : "Share this task with the team"}
+            </h2>
             {preview ? (
               <p>
-                Sent to {preview.teamProjectName}, readable by everyone in that project. Exactly these {preview.bytes} bytes
-                leave this computer:
+                Sent to {preview.teamProjectName}, readable by everyone in that
+                project. Exactly these {preview.bytes} bytes leave this
+                computer:
               </p>
             ) : null}
           </div>
-          <button className="icon-button" aria-label="Close preview" onClick={onClose}>
+          <button
+            className="icon-button"
+            aria-label="Close preview"
+            onClick={onClose}
+          >
             <X size={18} />
           </button>
         </header>
@@ -95,14 +136,23 @@ export function PublishPreview({
               <strong>Never sent:</strong>
               <ul>
                 <li>folder and file paths, file contents and Git data</li>
-                <li>first messages, prompts, transcripts and terminal output</li>
+                <li>
+                  first messages, prompts, transcripts and terminal output
+                </li>
                 <li>attempts, sessions, notes and canvas</li>
               </ul>
             </div>
-            <p className="form-hint">A description can itself contain secrets. Edit the task first if anything above should stay private.</p>
+            <p className="form-hint">
+              A description can itself contain secrets. Edit the task first if
+              anything above should stay private.
+            </p>
           </>
         ) : null}
-        {error ? <p className="team-error" role="alert">{error}</p> : null}
+        {error ? (
+          <p className="team-error" role="alert">
+            {error}
+          </p>
+        ) : null}
         <footer>
           <button className="button ghost" onClick={onClose}>
             Cancel
@@ -118,13 +168,20 @@ export function PublishPreview({
                 onPublished();
               } catch (e) {
                 setError(errorText(e));
-                api.previewTask({ taskId }).then(setPreview).catch(() => {});
+                api
+                  .previewTask({ taskId })
+                  .then(setPreview)
+                  .catch(() => {});
               } finally {
                 setBusy(false);
               }
             }}
           >
-            {busy ? <LoaderCircle size={14} className="spin" /> : <CloudUpload size={14} />}
+            {busy ? (
+              <LoaderCircle size={14} className="spin" />
+            ) : (
+              <CloudUpload size={14} />
+            )}
             {preview?.sharedTaskId ? "Send update" : "Share task"}
           </button>
         </footer>
@@ -149,22 +206,36 @@ export function TaskTeamSection({
 }) {
   const [previewing, setPreviewing] = useState(false);
   if (!window.workspace.team || !status?.connected) return null;
-  const linked = status.projects.find((p) => p.localProjectId === task.projectId && p.state === "active");
+  const linked = status.projects.find(
+    (p) => p.localProjectId === task.projectId && p.state === "active",
+  );
   return (
     <section className="task-team" aria-label="Team">
       <div className="task-team-head">
         <h3 className="section-label">Team</h3>
-        {entry ? <span className={"team-chip " + entry.sync}>{syncLabel(entry.sync)}</span> : null}
-        {linked && linked.role === "admin" && (!entry || entry.sync === "local-changes") ? (
+        {entry ? (
+          <span className={"team-chip " + entry.sync}>
+            {syncLabel(entry.sync)}
+          </span>
+        ) : null}
+        {linked &&
+        linked.role === "admin" &&
+        (!entry || entry.sync === "local-changes") ? (
           <button className="button small" onClick={() => setPreviewing(true)}>
-            <CloudUpload size={13} /> {entry ? "Update shared copy…" : "Share with team…"}
+            <CloudUpload size={13} />{" "}
+            {entry ? "Update shared copy…" : "Share with team…"}
           </button>
         ) : null}
         {entry && linked?.role === "admin" ? (
           <button
             className="button small ghost"
             onClick={async () => {
-              if (!confirm("Stop sharing this task? Its comments and assignment are removed for the team; your local task stays.")) return;
+              if (
+                !confirm(
+                  "Stop sharing this task? Its comments and assignment are removed for the team; your local task stays.",
+                )
+              )
+                return;
               try {
                 await window.workspace.team!.unpublishTask({ taskId: task.id });
                 reload();
@@ -177,8 +248,17 @@ export function TaskTeamSection({
           </button>
         ) : null}
       </div>
-      {!linked ? <p className="muted">Publish this folder from the Team panel to share its tasks.</p> : null}
-      {entry ? <TeamTaskThread key={entry.sharedTaskId} sharedTaskId={entry.sharedTaskId} /> : null}
+      {!linked ? (
+        <p className="muted">
+          Publish this folder from the Team panel to share its tasks.
+        </p>
+      ) : null}
+      {entry ? (
+        <TeamTaskThread
+          key={entry.sharedTaskId}
+          sharedTaskId={entry.sharedTaskId}
+        />
+      ) : null}
       {previewing ? (
         <PublishPreview
           taskId={task.id}

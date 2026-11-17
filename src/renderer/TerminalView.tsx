@@ -1,3 +1,4 @@
+import { terminalInputChunk } from "../shared/terminal-paste";
 import { createId } from "./id";
 import { useEffect, useId, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
@@ -5,7 +6,8 @@ import { FitAddon } from "@xterm/addon-fit";
 import type { ClipboardImagePreview, Session } from "../shared/contracts";
 import { shellEscapePath } from "../shared/terminal-paste";
 import { ImagePastePreview } from "./ImagePastePreview";
-import { focusOutside } from "./modal-accessibility";
+import { focusOutside, returnModalFocusTo } from "./modal-accessibility";
+import { providerName, sessionLocation } from "./sessions";
 import {
   getAppearance,
   subscribeAppearance,
@@ -29,8 +31,11 @@ export function TerminalView({
   dictationToggle = 0,
   handoffPaste,
   onHandoffInserted,
+  label,
 }: {
   session: Session;
+  /** Accessible session name; defaults to the session title or provider. */
+  label?: string;
   onViewer?: (id: string | null) => void;
   /** Hosts that explain an ended session themselves turn the built-in notice off. */
   endedNotice?: boolean;
@@ -43,6 +48,14 @@ export function TerminalView({
 }) {
   const host = useRef<HTMLDivElement>(null);
   const hintId = useId();
+  // Each terminal is named after its session so screen-reader users can tell
+  // several of them apart (xterm's default is "Terminal input" for all).
+  const accessibleName = `${label || session.title || providerName(session.provider)} terminal, ${sessionLocation(session)}`;
+  const accessibleNameRef = useRef(accessibleName);
+  accessibleNameRef.current = accessibleName;
+  useEffect(() => {
+    terminalRef.current?.textarea?.setAttribute("aria-label", accessibleName);
+  }, [accessibleName]);
   useEffect(
     () =>
       subscribeAppearance(() => {
@@ -156,14 +169,18 @@ export function TerminalView({
       setImageBusy(false);
     }
   };
+  // The preview dialog keeps the terminal inert until it unmounts; tell the
+  // dialog helper to hand focus to the terminal instead of the opener button.
+  const focusAfterDialog = () =>
+    returnModalFocusTo(terminalRef.current?.textarea);
   const closeImagePaste = () => {
     if (imagePaste)
       void window.workspace.clipboardImage
         ?.discard(imagePaste.preview.token)
         .catch(() => {});
+    focusAfterDialog();
     setImagePaste(null);
     setImageError("");
-    terminalRef.current?.focus();
   };
   const confirmImagePaste = async () => {
     const api = window.workspace.clipboardImage;
@@ -191,9 +208,9 @@ export function TerminalView({
         );
       // Bracketed paste of one escaped path, no Enter: nothing is submitted.
       terminalRef.current!.paste(shellEscapePath(saved.path));
+      focusAfterDialog();
       setImagePaste(null);
       setImageError("");
-      terminalRef.current!.focus();
     } catch (error) {
       setImageError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -264,6 +281,8 @@ export function TerminalView({
       scrollback: 5000,
       theme: terminalThemes[getAppearance().resolved],
       minimumContrastRatio: getAppearance().resolved === "light" ? 4.5 : 1,
+      // Mirrors output into a live region so VoiceOver can read agent output.
+      screenReaderMode: true,
     });
     terminalRef.current = terminal;
     const fit = new FitAddon();
@@ -271,6 +290,37 @@ export function TerminalView({
     const element = host.current;
     terminal.open(element);
     terminal.textarea?.setAttribute("aria-describedby", hintId);
+    terminal.textarea?.setAttribute("aria-label", accessibleNameRef.current);
+    // In screen-reader mode xterm ignores text that arrives without key events
+    // (macOS dictation, the emoji picker, text replacement). Forward it here;
+    // keyed text is still handled by xterm itself, so nothing is sent twice.
+    let keyed = false;
+    // Only a keydown that types a character suppresses forwarding, and only
+    // briefly: macOS drops keyup for chords held with Cmd and after focus
+    // leaves, so the flag must never depend on keyup alone.
+    let keyedTimer: ReturnType<typeof setTimeout> | undefined;
+    const clearKeyed = () => {
+      clearTimeout(keyedTimer);
+      keyed = false;
+    };
+    const onTextKeyDown = (event: KeyboardEvent) => {
+      clearKeyed();
+      if (event.metaKey || event.ctrlKey || event.key.length !== 1) return;
+      keyed = true;
+      keyedTimer = setTimeout(clearKeyed, 250);
+    };
+    const onTextKeyUp = clearKeyed;
+    const onTextInput = (event: Event) => {
+      const e = event as InputEvent;
+      if (keyed || e.isComposing || e.inputType !== "insertText" || !e.data)
+        return;
+      terminal.input(e.data, true);
+      if (terminal.textarea) terminal.textarea.value = "";
+    };
+    terminal.textarea?.addEventListener("keydown", onTextKeyDown, true);
+    terminal.textarea?.addEventListener("keyup", onTextKeyUp, true);
+    terminal.textarea?.addEventListener("input", onTextInput);
+    terminal.textarea?.addEventListener("blur", clearKeyed);
     // Two key combinations are taken from the terminal: F6 / Shift+F6, which
     // move focus out because the shell keeps Tab, and the dictation shortcut.
     terminal.attachCustomKeyEventHandler((event) => {
@@ -471,8 +521,8 @@ export function TerminalView({
     const flushInput = () => {
       inputTimer = undefined;
       if (disposed || !attached || inputInFlight || !inputBuffer) return;
-      const data = inputBuffer;
-      inputBuffer = "";
+      const data = terminalInputChunk(inputBuffer);
+      inputBuffer = inputBuffer.slice(data.length);
       inputInFlight = true;
       const inputEpoch = streamEpoch;
       void window.workspace
@@ -492,7 +542,7 @@ export function TerminalView({
         );
         return;
       }
-      if (inputBuffer.length + data.length > 65536) {
+      if (inputBuffer.length + data.length > 2 * 1024 * 1024) {
         fail(
           "Terminal input exceeded its limit. Unsent text was discarded; inspect the terminal before retrying.",
         );
@@ -521,6 +571,11 @@ export function TerminalView({
       viewerCallback.current?.(null);
       observer.disconnect();
       element.removeEventListener("paste", onPaste, true);
+      terminal.textarea?.removeEventListener("keydown", onTextKeyDown, true);
+      terminal.textarea?.removeEventListener("keyup", onTextKeyUp, true);
+      terminal.textarea?.removeEventListener("input", onTextInput);
+      terminal.textarea?.removeEventListener("blur", clearKeyed);
+      clearKeyed();
       input.dispose();
       unsubscribe();
       terminalRef.current = null;

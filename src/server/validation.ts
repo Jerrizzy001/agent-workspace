@@ -2,6 +2,7 @@ import { COMMANDS, type Command } from "../shared/contracts.js";
 import { remoteAllowed } from "../shared/command-policy.js";
 const fields: Record<string, string[]> = {
   snapshot: [],
+  "note.read": ["noteId", "projectId"],
   "task.create": ["projectId", "title", "description"],
   "task.update": ["taskId", "revision", "title", "description", "status"],
   "attempt.start": [
@@ -88,7 +89,8 @@ const required: Record<string, string[]> = {
   "terminal.open": ["projectId", "provider", "idempotencyKey"],
   "files.write": ["projectId", "path", "content", "expectedHash"],
   "note.create": ["projectId", "title"],
-  "note.update": ["noteId"],
+  "note.read": ["noteId"],
+  "note.update": ["noteId", "revision"],
   "layout.save": ["projectId", "positions"],
   "git.commit": ["projectId", "message"],
   "worktree.create": ["projectId", "branch"],

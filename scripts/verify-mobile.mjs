@@ -1,3 +1,4 @@
+import { pollFunction, workspaceSnapshotWithNotes } from "./poll-function.mjs";
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
@@ -10,7 +11,9 @@ import { cleanupFixture } from "./fixture-cleanup.mjs";
 
 const fixture = await mkdtemp(path.join(tmpdir(), "aw-mobile-"));
 const repo = path.join(fixture, "phone-project");
-const screenshotDir = path.resolve("docs/screenshots/remote");
+const screenshotDir = path.resolve(
+  process.env.WORKSPACE_EVIDENCE_DIR || path.join(fixture, "screenshots"),
+);
 await mkdir(repo);
 await mkdir(screenshotDir, { recursive: true });
 await writeFile(path.join(repo, "hello.txt"), "Shared workspace file\n");
@@ -179,7 +182,9 @@ try {
   await page.getByRole("button", { name: "Launch options" }).click();
   assert.equal(await page.getByLabel("Claude model").inputValue(), "");
   assert.equal(await page.getByLabel("Codex model").inputValue(), "");
-  const options = await page.getByRole("dialog", { name: "Launch options" }).boundingBox();
+  const options = await page
+    .getByRole("dialog", { name: "Launch options" })
+    .boundingBox();
   assert.ok(options.x >= 0 && options.x + options.width <= 390);
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Open Shell here" }).click();
@@ -201,14 +206,18 @@ try {
     "phone command creates file",
   );
   const originalPid = await read("mobile-pid.txt");
-  const original = await page.evaluate(() =>
-    window.workspace.invoke("snapshot"),
-  );
+  const original = await page.evaluate(workspaceSnapshotWithNotes);
   assert.equal(original.sessions.length, 1);
   assert.equal(original.attempts.length, 0);
   // Agent control is granted only from the desktop window.
-  assert.equal(await page.evaluate(() => "agentControl" in window.workspace), false);
-  assert.equal(await page.getByRole("button", { name: /Agent control/ }).count(), 0);
+  assert.equal(
+    await page.evaluate(() => "agentControl" in window.workspace),
+    false,
+  );
+  assert.equal(
+    await page.getByRole("button", { name: /Agent control/ }).count(),
+    0,
+  );
   checks.push(
     "390×844 touch layout: task modal fits portrait/landscape; launch options default to CLI models; one tap opens a shell with no task; terminal input creates server file",
   );
@@ -326,8 +335,8 @@ try {
   await phoneCard.getByRole("menuitem", { name: "Review" }).tap();
   await poll(
     async () =>
-      (await page.evaluate(() => window.workspace.invoke("snapshot")))
-        .sessions[0].lane === "review",
+      (await page.evaluate(workspaceSnapshotWithNotes)).sessions[0].lane ===
+      "review",
     "phone Move to Review",
   );
   await page
@@ -340,20 +349,22 @@ try {
   await noOverflow(page);
   await page.screenshot({
     animations: "disabled",
-    path: path.resolve("docs/screenshots/desktop/board-phone.png"),
+    path: path.join(screenshotDir, "board-phone.png"),
   });
   await page.locator('.lane[data-lane="review"] .session-card-open').tap();
   const phoneLive = page.getByRole("dialog", { name: /^Live card/ });
   await phoneLive.waitFor();
   await page.getByRole("button", { name: "Focus terminal keyboard" }).waitFor();
   const liveBounds = await phoneLive.boundingBox();
-  assert.ok(liveBounds.x <= 1 && liveBounds.width >= 389, "live card is full-screen");
+  assert.ok(
+    liveBounds.x <= 1 && liveBounds.width >= 389,
+    "live card is full-screen",
+  );
   await noOverflow(page);
   await page.getByRole("button", { name: "Close live card" }).tap();
   await phoneLive.waitFor({ state: "detached" });
-  const placedPhone = (
-    await page.evaluate(() => window.workspace.invoke("snapshot"))
-  ).sessions[0];
+  const placedPhone = (await page.evaluate(workspaceSnapshotWithNotes))
+    .sessions[0];
   assert.equal(placedPhone.status, "running");
   assert.equal(placedPhone.generation, original.sessions[0].generation);
   assert.equal(placedPhone.placementRevision, 1);
@@ -396,13 +407,11 @@ try {
   await canvasNote.fill("The same workspace note,");
   await poll(
     async () =>
-      (await page.evaluate(() => window.workspace.invoke("snapshot"))).notes[0]
-        ?.body === "The same workspace note,",
+      (await page.evaluate(workspaceSnapshotWithNotes)).notes[0]?.body ===
+      "The same workspace note,",
     "first note snapshot before delayed acknowledgement",
   );
-  const firstNoteSnapshot = await page.evaluate(() =>
-    window.workspace.invoke("snapshot"),
-  );
+  const firstNoteSnapshot = await page.evaluate(workspaceSnapshotWithNotes);
   assert.equal(
     await page.evaluate(() => {
       const event = new Event("beforeunload", { cancelable: true });
@@ -426,8 +435,8 @@ try {
   assert.equal(await canvasNote.inputValue(), continuedNote);
   await poll(
     async () =>
-      (await page.evaluate(() => window.workspace.invoke("snapshot"))).notes[0]
-        ?.body === continuedNote,
+      (await page.evaluate(workspaceSnapshotWithNotes)).notes[0]?.body ===
+      continuedNote,
     "continued note serializes after first acknowledgement",
   );
   await new Promise((resolve) => setTimeout(resolve, 700));
@@ -441,8 +450,7 @@ try {
     "stale acknowledged snapshot cannot revert the local draft",
   );
   assert.equal(
-    (await page.evaluate(() => window.workspace.invoke("snapshot"))).notes[0]
-      .body,
+    (await page.evaluate(workspaceSnapshotWithNotes)).notes[0].body,
     continuedNote,
   );
   await page
@@ -472,9 +480,7 @@ try {
     "a stale reload cannot rebind an older note on remount",
   );
   await page.evaluate(() => globalThis.__restoreNoteInvoke());
-  const latestNoteSnapshot = await page.evaluate(() =>
-    window.workspace.invoke("snapshot"),
-  );
+  const latestNoteSnapshot = await page.evaluate(workspaceSnapshotWithNotes);
   assert.equal(latestNoteSnapshot.notes[0].body, continuedNote);
   await page.evaluate((snapshot) => {
     window.workspace.emit({
@@ -488,7 +494,11 @@ try {
     .getByRole("button", { name: "Terminal", exact: true })
     .click();
   await page.getByRole("button", { name: "Canvas", exact: true }).click();
-  assert.equal(await canvasNote.count(), 0, "removed notes stay removed on remount");
+  assert.equal(
+    await canvasNote.count(),
+    0,
+    "removed notes stay removed on remount",
+  );
   await page.evaluate(
     (snapshot) => window.workspace.emit({ type: "snapshot", snapshot }),
     latestNoteSnapshot,
@@ -510,9 +520,8 @@ try {
   await page.getByText("Connected to workspace", { exact: true }).waitFor();
   await poll(
     async () =>
-      (
-        await page.evaluate(() => window.workspace.invoke("snapshot"))
-      ).notes[0]?.body === continuedNote + ".",
+      (await page.evaluate(workspaceSnapshotWithNotes)).notes[0]?.body ===
+      continuedNote + ".",
     "pending note flush before explicit sign out",
   );
   await page.getByRole("button", { name: "Canvas", exact: true }).click();
@@ -602,9 +611,7 @@ try {
     "reattach after network drop",
   );
   assert.equal(await read("phone-once.txt"), "once\n");
-  const afterReconnect = await page.evaluate(() =>
-    window.workspace.invoke("snapshot"),
-  );
+  const afterReconnect = await page.evaluate(workspaceSnapshotWithNotes);
   assert.equal(afterReconnect.sessions[0].id, original.sessions[0].id);
   assert.equal(
     afterReconnect.sessions[0].generation,
@@ -643,9 +650,7 @@ try {
     "same PID after browser restart",
   );
   assert.equal(await read("phone-once.txt"), "once\n");
-  const afterRestart = await page.evaluate(() =>
-    window.workspace.invoke("snapshot"),
-  );
+  const afterRestart = await page.evaluate(workspaceSnapshotWithNotes);
   assert.equal(afterRestart.sessions.length, 1);
   assert.equal(
     afterRestart.notes[0].body,
@@ -891,7 +896,7 @@ try {
     "mobile worktree creation, scoped file read/save and tracked diff use valid remote command scopes; main repository file is preserved",
   );
 
-  await page.waitForFunction(async () =>
+  await pollFunction(page, async () =>
     Boolean(await navigator.serviceWorker.getRegistration()),
   );
   const cachedPaths = await page.evaluate(async () => {

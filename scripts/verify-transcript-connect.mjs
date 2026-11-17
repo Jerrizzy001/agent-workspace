@@ -138,7 +138,7 @@ try {
       "only the fixture CLI can run",
     );
   const project = await invoke("project.add", { path: repo });
-  await page.getByRole("button", { name: "Codex", exact: true }).click();
+  await page.getByRole("button", { name: "Open Codex here", exact: true }).click();
   await poll(
     async () => (await snapshot()).sessions.some((s) => s.provider === "codex"),
     "Codex launched",

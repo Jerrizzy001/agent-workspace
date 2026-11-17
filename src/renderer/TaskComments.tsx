@@ -1,7 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 // Styles: team.css, imported by TeamPanel and TaskTeam (kept out so tests can render this module).
-import { LoaderCircle, MessageSquare, Pencil, RotateCcw, Trash2, UserRound, X } from "lucide-react";
-import type { CommentView, TeamOutboxItem, TeamTaskDetail } from "../shared/team-contracts";
+import {
+  LoaderCircle,
+  MessageSquare,
+  Pencil,
+  RotateCcw,
+  Trash2,
+  UserRound,
+  X,
+} from "lucide-react";
+import type {
+  CommentView,
+  TeamOutboxItem,
+  TeamTaskDetail,
+} from "../shared/team-contracts";
 import { errorText } from "./sessions";
 
 /** A comment body: plain text only, never HTML, links or mentions. */
@@ -26,16 +38,28 @@ export function CommentItem({
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   return (
-    <li className={"team-comment" + (comment.pending ? " pending" : "")} aria-label={"Comment by " + comment.authorName}>
+    <li
+      className={"team-comment" + (comment.pending ? " pending" : "")}
+      aria-label={"Comment by " + comment.authorName}
+    >
       <header>
         <strong>{comment.authorName}</strong>
-        <time dateTime={comment.createdAt}>{new Date(comment.createdAt).toLocaleString()}</time>
+        <time dateTime={comment.createdAt}>
+          {new Date(comment.createdAt).toLocaleString()}
+        </time>
         {comment.revision > 1 ? <em>edited</em> : null}
-        {comment.pending ? <span className="team-chip pending">Not sent yet</span> : null}
+        {comment.pending ? (
+          <span className="team-chip pending">Not sent yet</span>
+        ) : null}
         {!comment.pending && (canEdit || canDelete) && editing === null ? (
           <span className="team-comment-actions">
             {canEdit ? (
-              <button className="icon-button" aria-label="Edit comment" disabled={busy} onClick={() => setEditing(comment.body)}>
+              <button
+                className="icon-button"
+                aria-label="Edit comment"
+                disabled={busy}
+                onClick={() => setEditing(comment.body)}
+              >
                 <Pencil size={12} />
               </button>
             ) : null}
@@ -45,7 +69,8 @@ export function CommentItem({
                 aria-label="Delete comment"
                 disabled={busy}
                 onClick={() => {
-                  if (confirm("Delete this comment for everyone on the team?")) onDelete?.();
+                  if (confirm("Delete this comment for everyone on the team?"))
+                    onDelete?.();
                 }}
               >
                 <Trash2 size={12} />
@@ -63,10 +88,26 @@ export function CommentItem({
             setEditing(null);
           }}
         >
-          <textarea aria-label="Edit comment text" value={editing} maxLength={4000} onChange={(e) => setEditing(e.target.value)} />
+          <textarea
+            aria-label="Edit comment text"
+            value={editing}
+            maxLength={4000}
+            onChange={(e) => setEditing(e.target.value)}
+          />
           <div>
-            <button className="button small primary" disabled={!editing.trim() || busy}>Save</button>
-            <button type="button" className="button small ghost" onClick={() => setEditing(null)}>Cancel</button>
+            <button
+              className="button small primary"
+              disabled={!editing.trim() || busy}
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              className="button small ghost"
+              onClick={() => setEditing(null)}
+            >
+              Cancel
+            </button>
           </div>
         </form>
       ) : (
@@ -76,11 +117,30 @@ export function CommentItem({
   );
 }
 
-export function OutboxRow({ item, onResolve }: { item: TeamOutboxItem; onResolve: (choice: "retry" | "discard") => void }) {
+export function OutboxRow({
+  item,
+  onResolve,
+}: {
+  item: TeamOutboxItem;
+  onResolve: (choice: "retry" | "discard") => void;
+}) {
   return (
-    <div className={"team-outbox-row " + item.state} role={item.state === "conflict" || item.state === "failed" ? "alert" : undefined}>
+    <div
+      className={"team-outbox-row " + item.state}
+      role={
+        item.state === "conflict" || item.state === "failed"
+          ? "alert"
+          : undefined
+      }
+    >
       <span className={"team-chip " + item.state}>
-        {item.state === "conflict" ? "Conflict" : item.state === "failed" ? "Not accepted" : item.state === "sending" ? "Sending" : "Waiting to send"}
+        {item.state === "conflict"
+          ? "Conflict"
+          : item.state === "failed"
+            ? "Not accepted"
+            : item.state === "sending"
+              ? "Sending"
+              : "Waiting to send"}
       </span>
       <span>{item.summary}</span>
       {item.error ? <small>{item.error}</small> : null}
@@ -91,7 +151,10 @@ export function OutboxRow({ item, onResolve }: { item: TeamOutboxItem; onResolve
               <RotateCcw size={12} /> Apply to latest
             </button>
           ) : null}
-          <button className="button small ghost" onClick={() => onResolve("discard")}>
+          <button
+            className="button small ghost"
+            onClick={() => onResolve("discard")}
+          >
             <X size={12} /> Discard
           </button>
         </span>
@@ -125,7 +188,12 @@ export function TeamTaskThread({ sharedTaskId }: { sharedTaskId: string }) {
     setError("");
     try {
       const result = await fn();
-      if (result && typeof result === "object" && "comments" in (result as object)) setDetail(result as TeamTaskDetail);
+      if (
+        result &&
+        typeof result === "object" &&
+        "comments" in (result as object)
+      )
+        setDetail(result as TeamTaskDetail);
       else load();
     } catch (e) {
       setError(errorText(e));
@@ -136,15 +204,25 @@ export function TeamTaskThread({ sharedTaskId }: { sharedTaskId: string }) {
   if (!detail)
     return (
       <section className="team-thread" aria-label="Team comments">
-        {error ? <p className="team-error">{error}</p> : <p className="muted">Loading team comments…</p>}
+        {error ? (
+          <p className="team-error">{error}</p>
+        ) : (
+          <p className="muted">Loading team comments…</p>
+        )}
       </section>
     );
   const admin = detail.role === "admin";
   const canComment = detail.role === "admin" || detail.role === "member";
-  const assignable = detail.members.filter((m) => m.status === "active" && m.role !== "viewer");
+  const assignable = detail.members.filter(
+    (m) => m.status === "active" && m.role !== "viewer",
+  );
   const assignee = detail.assignment.memberId;
-  const choices = admin ? assignable : assignable.filter((m) => m.memberId === detail.meMemberId);
-  const canChangeAssignee = admin || (detail.role === "member" && (!assignee || assignee === detail.meMemberId));
+  const choices = admin
+    ? assignable
+    : assignable.filter((m) => m.memberId === detail.meMemberId);
+  const canChangeAssignee =
+    admin ||
+    (detail.role === "member" && (!assignee || assignee === detail.meMemberId));
   return (
     <section className="team-thread" aria-label="Team comments">
       <div className="team-assignee">
@@ -155,7 +233,11 @@ export function TeamTaskThread({ sharedTaskId }: { sharedTaskId: string }) {
             aria-label="Assignee"
             value={assignee ?? ""}
             disabled={busy || !canChangeAssignee}
-            onChange={(e) => void run(() => api.assign({ sharedTaskId, memberId: e.target.value || null }))}
+            onChange={(e) =>
+              void run(() =>
+                api.assign({ sharedTaskId, memberId: e.target.value || null }),
+              )
+            }
           >
             <option value="">Unassigned</option>
             {assignee && !choices.some((m) => m.memberId === assignee) ? (
@@ -169,13 +251,23 @@ export function TeamTaskThread({ sharedTaskId }: { sharedTaskId: string }) {
             ))}
           </select>
         </label>
-        <small className="muted">Coordination only: an assignee gets no access to anyone's terminals or files.</small>
+        <small className="muted">
+          Coordination only: an assignee gets no access to anyone's terminals or
+          files.
+        </small>
       </div>
       {detail.outbox.map((o) => (
-        <OutboxRow key={o.mutationId} item={o} onResolve={(choice) => void run(() => api.resolve({ mutationId: o.mutationId, choice }))} />
+        <OutboxRow
+          key={o.mutationId}
+          item={o}
+          onResolve={(choice) =>
+            void run(() => api.resolve({ mutationId: o.mutationId, choice }))
+          }
+        />
       ))}
       <h4 className="team-thread-title">
-        <MessageSquare size={13} aria-hidden="true" /> Comments <span className="muted">{detail.comments.length}</span>
+        <MessageSquare size={13} aria-hidden="true" /> Comments{" "}
+        <span className="muted">{detail.comments.length}</span>
       </h4>
       <ul className="team-comments">
         {detail.comments.map((c) => (
@@ -185,11 +277,17 @@ export function TeamTaskThread({ sharedTaskId }: { sharedTaskId: string }) {
             busy={busy}
             canEdit={c.mine && canComment}
             canDelete={(c.mine && canComment) || admin}
-            onEdit={(body) => void run(() => api.editComment({ commentId: c.id, body }))}
-            onDelete={() => void run(() => api.deleteComment({ commentId: c.id }))}
+            onEdit={(body) =>
+              void run(() => api.editComment({ commentId: c.id, body }))
+            }
+            onDelete={() =>
+              void run(() => api.deleteComment({ commentId: c.id }))
+            }
           />
         ))}
-        {!detail.comments.length ? <li className="muted team-empty">No comments yet.</li> : null}
+        {!detail.comments.length ? (
+          <li className="muted team-empty">No comments yet.</li>
+        ) : null}
       </ul>
       {canComment ? (
         <form
@@ -208,7 +306,10 @@ export function TeamTaskThread({ sharedTaskId }: { sharedTaskId: string }) {
             maxLength={4000}
             onChange={(e) => setDraft(e.target.value)}
           />
-          <button className="button small primary" disabled={busy || !draft.trim()}>
+          <button
+            className="button small primary"
+            disabled={busy || !draft.trim()}
+          >
             {busy ? <LoaderCircle size={12} className="spin" /> : null}
             Comment
           </button>
@@ -216,7 +317,11 @@ export function TeamTaskThread({ sharedTaskId }: { sharedTaskId: string }) {
       ) : (
         <p className="muted">Viewers can read comments but not write them.</p>
       )}
-      {error ? <p className="team-error" role="alert">{error}</p> : null}
+      {error ? (
+        <p className="team-error" role="alert">
+          {error}
+        </p>
+      ) : null}
     </section>
   );
 }

@@ -1,3 +1,4 @@
+import { workspaceSocket } from "../src/core/socket.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -99,16 +100,7 @@ test("persistent core, file conflict, worktree and session ownership", async () 
       cols: 80,
       rows: 24,
     });
-    const sessionSocket = path.join(
-      os.tmpdir(),
-      "aw-" +
-        crypto
-          .createHash("sha256")
-          .update(fs.realpathSync(dataDir))
-          .digest("hex")
-          .slice(0, 20) +
-        ".sock",
-    );
+    const sessionSocket = workspaceSocket(fs.realpathSync(dataDir));
     const paneSize = () =>
       execFileSync(
         "/opt/homebrew/bin/tmux",
@@ -272,16 +264,7 @@ test("persistent core, file conflict, worktree and session ownership", async () 
         await call("session.terminate", { sessionId: sid });
       } catch {}
     await core.close();
-    const socket = path.join(
-      os.tmpdir(),
-      "aw-" +
-        crypto
-          .createHash("sha256")
-          .update(fs.realpathSync(dataDir))
-          .digest("hex")
-          .slice(0, 20) +
-        ".sock",
-    );
+    const socket = workspaceSocket(fs.realpathSync(dataDir));
     try {
       execFileSync(
         process.env.WORKSPACE_TMUX || "/opt/homebrew/bin/tmux",
@@ -351,16 +334,7 @@ test("fresh provider launch receives exact task prompt as arguments without shel
   } finally {
     process.env.PATH = oldPath;
     await core?.close();
-    const socket = path.join(
-      os.tmpdir(),
-      "aw-" +
-        crypto
-          .createHash("sha256")
-          .update(fs.realpathSync(dataDir))
-          .digest("hex")
-          .slice(0, 20) +
-        ".sock",
-    );
+    const socket = workspaceSocket(fs.realpathSync(dataDir));
     try {
       execFileSync("/opt/homebrew/bin/tmux", ["-S", socket, "kill-server"], {
         stdio: "ignore",
@@ -380,16 +354,7 @@ test("detached shell exit is reconciled without reopening and private tmux has n
       if (event.type === "snapshot") snapshots.push(event.snapshot);
     },
   });
-  const socket = path.join(
-    os.tmpdir(),
-    "aw-" +
-      crypto
-        .createHash("sha256")
-        .update(fs.realpathSync(dataDir))
-        .digest("hex")
-        .slice(0, 20) +
-      ".sock",
-  );
+  const socket = workspaceSocket(fs.realpathSync(dataDir));
   try {
     const project: any = await core.invoke("project.add", { path: temp });
     const task: any = await core.invoke("task.create", {

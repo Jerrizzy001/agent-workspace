@@ -1,3 +1,4 @@
+import { workspaceSocket } from "../src/core/socket.ts";
 import { cleanupFixture } from "./fixture-cleanup.mjs";
 import { _electron as electron } from "playwright";
 import {
@@ -132,13 +133,7 @@ try {
   await app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()[0].setSize(1440, 900),
   );
-  socket = path.join(
-    tmpdir(),
-    `aw-${createHash("sha256")
-      .update(await realpath(path.join(fixture, "data")))
-      .digest("hex")
-      .slice(0, 20)}.sock`,
-  );
+  socket = workspaceSocket(await realpath(path.join(fixture, "data")));
   const project = await invoke("project.add", { path: repo });
   await page
     .locator(".folder-list button")

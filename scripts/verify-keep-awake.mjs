@@ -66,7 +66,7 @@ const started = () =>
 const statusText = (text) =>
   page.locator(".keep-awake-status").filter({ hasText: text }).waitFor();
 const toggle = () =>
-  page.getByRole("switch", { name: "Keep awake during Claude work" });
+  page.getByRole("switch", { name: "Keep awake during agent work" });
 const until = async (read, ok, label) => {
   for (let i = 0; i < 200; i++) {
     const value = await read();

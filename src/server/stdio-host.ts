@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { createCore } from "../core/index.js";
 import { SCHEMA_VERSION } from "../core/migrations.js";
-import { executable, probe } from "../core/process.js";
+import { ensureUtf8Locale, executable, probe } from "../core/process.js";
 import { listDirectory, loginShellPath } from "../desktop/folders.js";
 import { validateCommand } from "./validation.js";
 import {
@@ -83,14 +83,18 @@ async function tools(): Promise<HostTool[]> {
   const found = await Promise.all(
     checks.map(async ([name, args]) => {
       const bin =
-        name === "tmux" ? process.env.WORKSPACE_TMUX || executable(name) : executable(name);
+        name === "tmux"
+          ? process.env.WORKSPACE_TMUX || executable(name)
+          : executable(name);
       if (!bin)
         return {
           name,
           available: false,
           detail: `${name} was not found on this host's PATH`,
         };
-      const line = printable((await probe(bin, args, 4000)).split("\n")[0] || "");
+      const line = printable(
+        (await probe(bin, args, 4000)).split("\n")[0] || "",
+      );
       return { name, available: true, detail: line || bin };
     }),
   );
@@ -103,8 +107,9 @@ function storeSchema(dataDir: string) {
   try {
     const db = new DatabaseSync(file, { readOnly: true });
     try {
-      return (db.prepare("PRAGMA user_version").get() as { user_version: number })
-        .user_version;
+      return (
+        db.prepare("PRAGMA user_version").get() as { user_version: number }
+      ).user_version;
     } finally {
       db.close();
     }
@@ -115,7 +120,9 @@ function storeSchema(dataDir: string) {
 
 function existingHostId(dataDir: string) {
   try {
-    const value = fs.readFileSync(path.join(dataDir, "helper-host-id"), "utf8").trim();
+    const value = fs
+      .readFileSync(path.join(dataDir, "helper-host-id"), "utf8")
+      .trim();
     return /^[0-9a-f]{32}$/.test(value) ? value : "";
   } catch {
     return "";
@@ -154,8 +161,7 @@ export async function runStdioHost(
     console[method] = (...values: unknown[]) =>
       process.stderr.write(values.map(String).join(" ") + "\n");
   // tmux needs a UTF-8 locale to pass non-ASCII through.
-  if (!process.env.LC_ALL && !process.env.LC_CTYPE && !process.env.LANG)
-    process.env.LANG = process.platform === "darwin" ? "en_US.UTF-8" : "C.UTF-8";
+  ensureUtf8Locale();
   // Provider CLIs are found through this host's own PATH plus its login
   // shell's (nvm, Volta, Bun and profile additions), as on the desktop.
   const login = await loginShellPath();
@@ -239,7 +245,10 @@ export async function runStdioHost(
           b64: Buffer.from(event.data, "utf8").toString("base64"),
         },
       });
-    else if (event.type !== "core.status") send({ k: "evt", event });
+    else if (
+      ["snapshot", "terminal.resync", "session.exit"].includes(event.type)
+    )
+      send({ k: "evt", event });
   };
 
   async function start(message: Record<string, any>) {
@@ -251,7 +260,10 @@ export async function runStdioHost(
       return fatal(
         `Protocol ${String(message.protocol).slice(0, 12)} is not supported by this helper (${PROTOCOL_MIN}-${PROTOCOL_VERSION}). Install a matching helper version.`,
       );
-    if (message.approveUpgrade !== undefined && typeof message.approveUpgrade !== "boolean")
+    if (
+      message.approveUpgrade !== undefined &&
+      typeof message.approveUpgrade !== "boolean"
+    )
       return fatal("Invalid start request");
     const existing = storeSchema(dataDir);
     if (existing < 0)
@@ -260,7 +272,11 @@ export async function runStdioHost(
       return fatal(
         "upgrade-required: The helper data on this host belongs to a newer version. Install the matching helper version.",
       );
-    if (existing > 0 && existing < SCHEMA_VERSION && message.approveUpgrade !== true)
+    if (
+      existing > 0 &&
+      existing < SCHEMA_VERSION &&
+      message.approveUpgrade !== true
+    )
       return fatal(
         `upgrade-required: The helper data on this host uses schema ${existing}; this helper writes ${SCHEMA_VERSION}. Approve the upgrade to continue (a backup is kept on the host).`,
       );
@@ -316,9 +332,14 @@ export async function runStdioHost(
           throw new Error("Choose a folder from the list");
         result = await listDirectory(message.path);
       } else if (message.op === "hide") {
-        if (typeof message.projectId !== "string" || message.projectId.length > 128)
+        if (
+          typeof message.projectId !== "string" ||
+          message.projectId.length > 128
+        )
           throw new Error("Invalid folder");
-        result = await core.invoke("project.hide", { projectId: message.projectId });
+        result = await core.invoke("project.hide", {
+          projectId: message.projectId,
+        });
       } else {
         if (
           typeof message.path !== "string" ||
@@ -334,7 +355,10 @@ export async function runStdioHost(
       send({
         k: "res",
         id,
-        error: (error instanceof Error ? error.message : "Operation failed").slice(0, 2000),
+        error: (error instanceof Error
+          ? error.message
+          : "Operation failed"
+        ).slice(0, 2000),
       });
     } finally {
       inFlight--;
@@ -392,7 +416,9 @@ if (isDirectEntry(import.meta.url)) {
     },
     (error) => {
       process.stderr.write(
-        "Agent Workspace SSH helper: " + String(error?.message || error).slice(0, 512) + "\n",
+        "Agent Workspace SSH helper: " +
+          String(error?.message || error).slice(0, 512) +
+          "\n",
       );
       process.exit(1);
     },

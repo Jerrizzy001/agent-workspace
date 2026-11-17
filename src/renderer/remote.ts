@@ -1,3 +1,4 @@
+import { deltaReceiver } from "../shared/deltas";
 import { createId } from "./id";
 import type { Command, CoreEvent, WorkspaceAPI } from "../shared/contracts";
 
@@ -151,6 +152,7 @@ class BrowserWorkspace implements WorkspaceAPI {
       return;
     const url = new URL("/api/ws", location.href);
     url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    const receive = deltaReceiver();
     const socket = new WebSocket(url);
     this.socket = socket;
     const handshakeTimeout = setTimeout(() => {
@@ -167,7 +169,9 @@ class BrowserWorkspace implements WorkspaceAPI {
           this.update({ status: "connected", error: "" });
           this.emit({ type: "core.status", status: "ready" });
         } else if (packet.type === "event") {
-          this.emit(packet.event as CoreEvent);
+          const decoded = receive.accept(packet.event as CoreEvent);
+          if (decoded) this.emit(decoded);
+          else socket.close();
         } else if (packet.type === "result") {
           const request = this.pending.get(packet.id);
           if (!request) return;
@@ -265,7 +269,7 @@ class BrowserWorkspace implements WorkspaceAPI {
             "The request timed out. Its result is uncertain; inspect the workspace before retrying. Nothing was replayed.",
           ),
         );
-      }, 30000);
+      }, command === "git.commit" ? 180_000 : 90_000);
       this.pending.set(id, {
         resolve: (value) => resolve(value as T),
         reject,

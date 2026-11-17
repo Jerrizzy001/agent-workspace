@@ -22,8 +22,9 @@
   display: grid;
   gap: 14px;
 }
-.modal.remote-access fieldset:disabled {
-  opacity: 0.65;
+.modal.remote-access fieldset:disabled,
+.modal.remote-access fieldset:disabled :is(label, legend, span, p, small, strong) {
+  color: var(--text-dim);
 }
 .modal.remote-access label {
   display: grid;
@@ -142,4 +143,22 @@
 .remote-projects ul {
   padding-left: 20px;
   margin: 7px 0;
+}
+
+.modal.remote-access .remote-qr {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.modal.remote-access .remote-qr img {
+  border-radius: 8px;
+  background: #ffffff;
+  image-rendering: pixelated;
+}
+.modal.remote-access .remote-qr > div {
+  flex: 1;
+  min-width: 200px;
+  display: grid;
+  gap: 10px;
 }
