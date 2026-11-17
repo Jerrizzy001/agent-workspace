@@ -303,7 +303,9 @@ and one file per view, so old rules are deleted rather than overridden.
      body (e.g. Hanken Grotesk), warmer paper tones. Most personality, least "tool".
 2. **Density:** comfortable (13px body, 32px rows) as above, or compact (12px body, 28px rows).
 3. **Default theme:** keep dark-first, or make System the default.
-4. **Terminology:** "session" or "terminal" as the main noun; "folder" or "project".
+4. **Terminology:** decided in Phase 6. **Session** is what you open (agent or shell). **Folder** is
+   where it runs. "Terminal" means only the pane itself. View names describe layout (Terminals, Board,
+   Canvas).
 
 ---
 
@@ -467,3 +469,40 @@ Checks, run one at a time:
   held text copied during the run. It passed on rerun.
 - **`verify:accounts`** still fails only its final default-folder isolation check, as in Phase 4.
 - **`npm test`:** 144 pass, 0 fail.
+
+### Phase 6: copy and motion (done)
+- **Terminology:** see decision 4. "End this terminal process" becomes "End this session". Resume opens a
+  "new session", not a "new terminal".
+- **Explainers:** 10 long paragraphs are rewritten shorter, with every fact kept. They are
+  Agent control, the remote "no folders" empty state, Voice dictation (×2), Claude profiles,
+  Connect agents, AI suggestions, the Team header, Remote access and the SSH setup guide. Security and
+  privacy statements stay word-for-word in meaning.
+- **Messages:**
+  - "Staged changes changed…" (four places, two of them in core) now reads "The staged changes are
+    different from…".
+  - The terminal input-limit error now says what happened in plain words.
+  - "unsent change(s)" now uses the correct singular or plural.
+- **Casing:** canvas notes say "Agent note" and "Note", not all caps. The palette key reads "esc", as on
+  macOS. Sentence case was already consistent, and no Title Case strings were left.
+- **Status words kept.** "Ready", "Needs you", "Working", "Turn failed", "Check terminal" and "Unknown"
+  stay as they are. They are plainer than the "Idle / Needs input" proposed in section 5.
+- **Motion:**
+  - Every transition and token-timed animation now uses `--ease-out`. There was a mix of `ease-out`,
+    `ease` and the token.
+  - The mobile drawer's hard-coded 0.2s now uses `--dur-base`.
+  - Status dots pulse only for live work, slowed to 2s with an opacity-only keyframe. "Needs you" is a
+    steady dot, since a board of blinking dots read as an alarm.
+  - Reduced motion keeps its existing rule: no movement, and dialogs fade.
+- **Tests updated:**
+  - `verify-assist.mjs` and `tests/assist.test.ts` match the new staged-changes wording.
+  - `verify-agent-control.mjs` expects "Agent note".
+
+Checks: `npm test` gives 144 pass, 0 fail. In a sequential run of 24 UI suites, 21 pass. Smoke, desktop,
+workflows, backend, lifecycle, board, agent control, transcript connect, appearance, SSH,
+keep-awake, terminal, image paste, dictation, assist, remote desktop, mobile, mobile WebKit, team,
+UX and context menu all pass. Three fail:
+- **`verify:accounts`:** the same final default-folder isolation check as in Phases 4 and 5.
+- **`verify:providers` and `verify:remote-provider`:** these are opt-in suites that run real Claude and Codex tasks on the
+  host's accounts. They fail outside the UI. The provider runs didn't complete, and
+  `remote-provider` calls `remote.enable` without the `sharedProjects` the core now requires.
+  That script predates the redesign.

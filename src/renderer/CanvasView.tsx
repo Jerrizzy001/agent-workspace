@@ -263,7 +263,7 @@ function WorkspaceNode({ data }: NodeProps<Node<CanvasData>>) {
           </span>
         ) : (
           <span className="muted">
-            {data.note?.source === "agent" ? "AGENT NOTE" : "NOTE"}
+            {data.note?.source === "agent" ? "Agent note" : "Note"}
           </span>
         )}
       </header>

@@ -202,10 +202,10 @@ export function TranscriptLinksPanel({
           </button>
         </header>
         <p>
-          Share a reviewed conversation snapshot with another agent in this
-          folder. This does not send a message or start work. You choose the
-          recipient, preview the text, and approve access here. Disconnecting
-          stops future reads; it cannot take back text already read.
+          Share a reviewed snapshot of a conversation with another agent in this
+          folder. Nothing is sent and no work starts: you pick the recipient,
+          preview the text and approve access. Disconnecting stops future reads
+          but can't take back text already read.
         </p>
         <ol className="connection-steps" aria-label="Connection steps">
           <li aria-current={!source ? "step" : undefined}>Choose source</li>

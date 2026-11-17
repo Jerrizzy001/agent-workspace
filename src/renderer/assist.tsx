@@ -137,10 +137,10 @@ export function AssistSettings() {
           <p className="assist-callout">{settingsNotice}</p>
         ) : null}
         <p className="muted">
-          Draft commit messages from staged changes and names for sessions. Each
-          suggestion is made only when you click Generate, after a preview of
-          exactly what will be sent. Drafts are editable; nothing is committed,
-          staged, pushed or renamed for you.
+          Drafts commit messages from staged changes, and names for sessions.
+          Nothing is sent until you click Generate, after a preview of exactly
+          what will go. Drafts are editable; nothing is committed, staged,
+          pushed or renamed for you.
         </p>
         <fieldset className="assist-providers" disabled={busy}>
           <legend>Provider</legend>

@@ -155,7 +155,7 @@ kbd {
   white-space: nowrap;
   transition-property: background-color, color, box-shadow, scale;
   transition-duration: var(--dur-fast);
-  transition-timing-function: ease-out;
+  transition-timing-function: var(--ease-out);
 }
 .primary,
 .button.primary {
@@ -209,7 +209,7 @@ kbd {
   position: relative;
   transition-property: background-color, color, scale;
   transition-duration: var(--dur-fast);
-  transition-timing-function: ease-out;
+  transition-timing-function: var(--ease-out);
 }
 .icon-button.tiny {
   width: var(--control-sm);
@@ -308,13 +308,14 @@ kbd {
   background: var(--ended);
   flex-shrink: 0;
 }
+/* Only live work pulses; "needs you" is already marked by colour, a bar
+   and its label, and a wall of blinking dots reads as alarm. */
 .tone-working .status-light {
   background: var(--working);
-  animation: pulse 1.6s ease-in-out infinite;
+  animation: pulse 2s ease-in-out infinite;
 }
 .tone-needs .status-light {
   background: var(--needs);
-  animation: pulse 1.1s ease-in-out infinite;
 }
 .tone-done .status-light {
   background: var(--done);
@@ -333,13 +334,8 @@ kbd {
   color: var(--danger);
 }
 @keyframes pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 currentColor;
-    opacity: 1;
-  }
   50% {
-    opacity: 0.45;
+    opacity: 0.4;
   }
 }
 
@@ -729,8 +725,8 @@ kbd {
   font-size: var(--text-body);
   font-weight: 500;
   transition:
-    background-color var(--dur-fast) ease-out,
-    color var(--dur-fast) ease-out;
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 .view-switch button.active,
 .board-mode button.active {
@@ -1251,7 +1247,7 @@ kbd {
   font-weight: 500;
   transition-property: background-color, scale;
   transition-duration: var(--dur-fast);
-  transition-timing-function: ease-out;
+  transition-timing-function: var(--ease-out);
 }
 @media (hover: hover) {
   .launch-button:hover:not(:disabled) {
@@ -1681,7 +1677,7 @@ kbd {
   padding: var(--space-2);
   border-radius: var(--radius-sm);
   text-align: start;
-  transition: background-color var(--dur-fast) ease-out;
+  transition: background-color var(--dur-fast) var(--ease-out);
 }
 .launchpad-option + .launchpad-option {
   position: relative;
@@ -2198,7 +2194,7 @@ kbd {
   border-radius: var(--radius);
   min-height: 0;
   overflow-y: auto;
-  transition: background-color var(--dur-fast) ease-out;
+  transition: background-color var(--dur-fast) var(--ease-out);
 }
 .lane.drop-target {
   background: var(--accent-soft);
@@ -2289,7 +2285,7 @@ kbd {
   border: 1px solid transparent;
   box-shadow: var(--shadow-border);
   cursor: grab;
-  transition: box-shadow var(--dur-fast) ease-out;
+  transition: box-shadow var(--dur-fast) var(--ease-out);
 }
 :root[data-theme="light"] :is(.session-card, .board-card) {
   background: var(--bg-surface);
@@ -2641,7 +2637,7 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   .modal,
   .palette {
-    animation: fade-in var(--dur-base) ease-out;
+    animation: fade-in var(--dur-base) var(--ease-out);
   }
 }
 @keyframes sheet-in {
@@ -2825,7 +2821,7 @@ kbd {
 }
 @media (prefers-reduced-motion: reduce) {
   .toast {
-    animation: fade-in var(--dur-base) ease-out;
+    animation: fade-in var(--dur-base) var(--ease-out);
   }
 }
 .toast > div {
@@ -3021,8 +3017,8 @@ kbd {
     /* Hidden once off-screen so its controls leave the tab order. */
     visibility: hidden;
     transition:
-      transform 0.2s ease,
-      visibility 0s linear 0.2s;
+      transform var(--dur-base) var(--ease-out),
+      visibility 0s linear var(--dur-base);
     padding-top: max(14px, env(safe-area-inset-top));
     padding-bottom: env(safe-area-inset-bottom);
     box-shadow: var(--shadow);
@@ -3030,7 +3026,7 @@ kbd {
   .drawer-open .sidebar {
     transform: none;
     visibility: visible;
-    transition: transform 0.2s ease;
+    transition: transform var(--dur-base) var(--ease-out);
   }
   .drawer-scrim {
     display: block;
@@ -3486,7 +3482,7 @@ kbd {
 }
 @media (prefers-reduced-motion: reduce) {
   .dictation-notice {
-    animation: fade-in var(--dur-base) ease-out;
+    animation: fade-in var(--dur-base) var(--ease-out);
   }
 }
 .dictation-notice > div:first-child {

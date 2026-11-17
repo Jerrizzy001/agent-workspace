@@ -164,9 +164,9 @@ export function SSHProjectsPanel({
           <section className="setup-guide">
             <h3>Before adding your first host</h3>
             <p>
-              You need a Mac or Linux computer that you can already reach with
-              SSH. The app will test its host key, sign-in, Node version and
-              workspace helper before offering its folders.
+              You need a Mac or Linux computer you can already reach with SSH.
+              The app checks its host key, sign-in, Node version and helper
+              before showing its folders.
             </p>
             <ol>
               <li>

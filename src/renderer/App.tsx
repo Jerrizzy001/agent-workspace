@@ -1442,9 +1442,9 @@ export default function App() {
             <BrandMark size={44} />
             <h2>No folders are shared with this browser yet</h2>
             <p>
-              Folders live on the host computer. On the host, open the folder in
-              the desktop app, then stop and enable Remote access again, or
-              start the server with <code>--project /path/to/folder</code>.
+              Folders live on the host computer. Open the folder in the desktop
+              app there, then turn Remote access off and on again. Or start the
+              server with <code>--project /path/to/folder</code>.
             </p>
           </div>
         ) : (
@@ -2588,7 +2588,7 @@ function Palette({
               }
             }}
           />
-          <kbd>ESC</kbd>
+          <kbd>esc</kbd>
         </div>
         <div className="palette-options">
           {matches.map((item, index) => (

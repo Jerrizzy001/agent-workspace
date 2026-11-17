@@ -2617,14 +2617,14 @@ export async function createCore({
       if (preview) return shown;
       if (typeof p.inputHash !== "string" || p.inputHash !== shown.inputHash)
         throw new Error(
-          "What would be sent changed since the preview. Review the preview again.",
+          "What would be sent is different from the preview. Review the preview again.",
         );
       if (
         kind === "commit" &&
         p.stagedHash !== (shown as { stagedHash: string }).stagedHash
       )
         throw new Error(
-          "Staged changes changed since the preview. Review the preview again.",
+          "The staged changes are different from the preview. Review the preview again.",
         );
       if (assistBusy)
         throw new Error("A suggestion is already being generated.");

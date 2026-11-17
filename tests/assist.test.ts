@@ -353,7 +353,7 @@ test("commit suggestions: off by default, previewed, isolated, stale-checked and
         inputHash: preview.inputHash,
         stagedHash: preview.stagedHash,
       }),
-      /changed since the preview/,
+      /different from the preview/,
     );
     const scratchBefore = scratchDirs();
     fs.writeFileSync(path.join(fixture, "mode"), "obey");
@@ -487,7 +487,7 @@ test("commit suggestions: off by default, previewed, isolated, stale-checked and
         inputHash: preview.inputHash,
         stagedHash: preview.stagedHash,
       }),
-      /changed since the preview/,
+      /different from the preview/,
     );
     assert.equal(
       calls(fixture).length,

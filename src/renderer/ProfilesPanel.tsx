@@ -125,10 +125,10 @@ export function ProfilesPanel({
           </button>
         </header>
         <p className="profiles-intro">
-          A profile is a named Claude configuration folder. It is not proof of a
-          separate account. Use Check account to see which identity Claude
-          reports, then select the profile in Launch options. Sign-in stays
-          inside Claude; this app never changes your global account.
+          A profile is a separate Claude configuration folder, not a guarantee
+          of a separate account. Use Check account to see who Claude is signed
+          in as, then pick the profile in Launch options. You sign in inside
+          Claude; this app never changes your global account.
         </p>
         <details className="profiles-support">
           <summary>Which accounts can be separated?</summary>

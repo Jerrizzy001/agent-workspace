@@ -100,9 +100,9 @@ export function TeamPanel({
               Team
             </h2>
             <p>
-              Share chosen task titles, descriptions and status with your team.
-              Files, prompts, transcripts and terminals never leave this
-              computer, and teammates get no access to your sessions.
+              Share the task titles, descriptions and status you choose. Files,
+              prompts, transcripts and terminals stay on this computer, and
+              teammates can't reach your sessions.
             </p>
           </div>
           <button
@@ -277,7 +277,7 @@ export function TeamPanel({
                   if (
                     confirm(
                       status.outbox.length
-                        ? `Disconnect? ${status.outbox.length} unsent change(s) and this computer's copy of team data will be removed.`
+                        ? `Disconnect from the team service? ${status.outbox.length} unsent ${status.outbox.length === 1 ? "change" : "changes"} and this computer's copy of team data will be removed.`
                         : "Disconnect from the team service? This computer's copy of team data is removed; your local tasks stay.",
                     )
                   )

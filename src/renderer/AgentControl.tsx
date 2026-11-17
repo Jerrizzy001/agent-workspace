@@ -156,10 +156,10 @@ function AgentControlDialog({
         </header>
         <p className="muted">
           Lets the program in this terminal run <code>awctl</code> to read this
-          folder's canvas and make the changes you allow below. It cannot type
-          into terminals, end sessions, change files or Git, or grant itself
-          more. Other programs running as you could also read the grant while it
-          lasts.
+          folder's canvas and make the changes you allow below. It can't type
+          into terminals, end sessions, touch files or Git, or give itself more
+          access. While the grant lasts, other programs running as you could
+          read it too.
         </p>
         {grant ? (
           <div className="agent-control-grant" role="status">

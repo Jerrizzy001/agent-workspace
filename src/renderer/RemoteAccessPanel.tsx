@@ -168,10 +168,9 @@ export function RemoteAccessPanel({ onClose }: { onClose(): void }) {
             : "Off · complete the setup below"}
         </div>
         <p>
-          Select the folders to show on your device. Paired devices act as you:
-          terminal commands use your host account's permissions, so folder
-          selection is not an operating-system sandbox. Closing the desktop app
-          turns access off.
+          Choose the folders your device can see. A paired device acts as you,
+          with your account's permissions, so this choice is not a sandbox.
+          Quitting the desktop app turns access off.
         </p>
         <fieldset disabled={busy || status?.enabled}>
           <legend>1. Choose folders</legend>
