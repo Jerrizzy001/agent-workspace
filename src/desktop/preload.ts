@@ -71,6 +71,8 @@ const api: WorkspaceAPI = {
     };
   },
   chooseDirectory: () => ipcRenderer.invoke("workspace:chooseDirectory"),
+  windowChrome: process.platform === "darwin" ? "mac-inset" : undefined,
+  setWindowAppearance: (mode) => ipcRenderer.send("workspace:appearance", mode),
   browseDirectory: (path?: string) =>
     ipcRenderer.invoke("workspace:browse", path),
   remote: {

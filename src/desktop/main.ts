@@ -5,6 +5,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  nativeTheme,
   safeStorage,
   screen,
   session,
@@ -590,8 +591,18 @@ function createWindow() {
     height: bounds.height,
     minWidth: WINDOW_MIN.width,
     minHeight: WINDOW_MIN.height,
-    backgroundColor: "#1e1e1e",
     title: "Agent Workspace",
+    // macOS: inset traffic lights over a translucent sidebar; the renderer
+    // draws the toolbar (windowChrome "mac-inset" in preload).
+    ...(process.platform === "darwin"
+      ? {
+          titleBarStyle: "hiddenInset" as const,
+          trafficLightPosition: { x: 20, y: 19 },
+          vibrancy: "sidebar" as const,
+          visualEffectState: "followWindow" as const,
+          backgroundColor: "#00000000",
+        }
+      : { backgroundColor: "#1e1e1e" }),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -680,6 +691,12 @@ else {
     window?.focus();
   });
   app.whenReady().then(() => {
+    // Native materials (sidebar vibrancy, menus) follow the in-app choice.
+    ipcMain.on("workspace:appearance", (ev, mode: unknown) => {
+      if (ev.sender !== window?.webContents) return;
+      if (mode === "light" || mode === "dark" || mode === "system")
+        nativeTheme.themeSource = mode;
+    });
     ipcMain.handle("workspace:sync", async (ev) => {
       assertOwner(ev);
       const snapshot = await invokeCore("snapshot");

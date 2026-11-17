@@ -373,21 +373,22 @@ kbd {
   display: none;
 }
 
-/* Sidebar */
+/* Sidebar: macOS source list. Rows 28px, grey selection, accent icon on
+   the selected row; groups separated by space, not lines. */
 .sidebar {
   background: var(--bg-side);
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 16px 12px 0;
-  gap: 14px;
+  padding: var(--space-3) var(--space-2) 0;
+  gap: var(--space-4);
 }
 .sidebar-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 2px 6px;
+  gap: var(--space-2);
+  padding: 0 var(--space-1) 0 var(--space-2);
 }
 .brand-mark .brand-tile {
   fill: var(--brand-tile);
@@ -406,30 +407,25 @@ kbd {
 .brand-name {
   font-weight: 600;
   font-size: var(--text-body);
-  line-height: 1.2;
+  line-height: var(--leading-tight);
   flex: 1;
 }
 .brand-name small {
   display: block;
-  font-weight: 500;
+  font-weight: 400;
   font-size: var(--text-small);
   color: var(--text-3);
 }
 .command-button {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 34px;
-  padding: 0 10px;
+  gap: 6px;
+  height: var(--control-md);
+  padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--text-3);
-  font-size: var(--text-small);
-}
-.command-button:hover {
-  border-color: var(--line-strong);
-  color: var(--text-2);
+  background: var(--ghost-hover);
+  color: var(--text-secondary);
+  font-size: var(--text-body);
 }
 .command-button > span {
   min-width: 0;
@@ -441,6 +437,10 @@ kbd {
   margin-left: auto;
   flex-shrink: 0;
   white-space: nowrap;
+  border: 0;
+  padding: 0;
+  font-family: var(--font);
+  font-size: var(--text-small);
 }
 .side-section {
   display: flex;
@@ -450,31 +450,49 @@ kbd {
 .side-section > header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 6px 6px;
+  gap: var(--space-2);
+  min-height: var(--control-sm);
+  padding: 0 0 2px var(--space-2);
+}
+.side-section > header .icon-button {
+  width: var(--control-sm);
+  height: var(--control-sm);
 }
 .side-section h2 {
-  font-size: var(--text-small);
+  font-size: var(--text-caption);
   font-weight: 600;
   color: var(--text-3);
   flex: 1;
 }
+.side-section > header .count-pill {
+  background: none;
+  padding: 0;
+  font-weight: 400;
+  font-size: var(--text-caption);
+  color: var(--text-3);
+}
 .folder-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   max-height: 34vh;
   overflow-y: auto;
 }
-.folder-row {
+.folder-row,
+.session-row {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 7px 8px;
+  gap: var(--space-2);
+  padding: 4px var(--space-2);
   border-radius: var(--radius-sm);
-  color: var(--text-2);
+  color: var(--text-primary);
   text-align: left;
-  min-height: 34px;
+  min-height: var(--control-md);
+}
+.folder-row svg,
+.session-row > svg {
+  flex-shrink: 0;
+  color: var(--text-secondary);
 }
 .folder-row > span:first-of-type {
   flex: 1;
@@ -482,19 +500,29 @@ kbd {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.folder-row:hover {
-  background: var(--surface-2);
-  color: var(--text);
-}
-.folder-row.selected {
-  background: var(--accent-soft);
-  color: var(--text);
+.folder-row.selected,
+.session-row.selected {
+  background: var(--sidebar-selected);
 }
 .folder-row.selected svg {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
-.folder-row.add {
-  color: var(--accent);
+.folder-row.add,
+.folder-row.add svg {
+  color: var(--accent-ink);
+}
+.folder-row .count-pill {
+  background: none;
+  padding: 0;
+  font-weight: 400;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+@media (hover: hover) {
+  .folder-row:not(.selected):hover,
+  .session-row:not(.selected):hover {
+    background: var(--ghost-hover);
+  }
 }
 .sessions-section {
   flex: 1;
@@ -502,31 +530,20 @@ kbd {
 .session-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   overflow-y: auto;
   min-height: 0;
-  padding-bottom: 10px;
+  padding-bottom: var(--space-2);
 }
 .session-row {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 7px 8px;
-  border-radius: var(--radius-sm);
-  text-align: left;
-  min-height: 42px;
-}
-.session-row:hover {
-  background: var(--surface-2);
-}
-.session-row.selected {
-  background: var(--surface-3);
+  min-height: 36px;
 }
 .session-row-text {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  line-height: var(--leading-snug);
 }
 .session-row-text strong,
 .session-row-text small {
@@ -535,12 +552,12 @@ kbd {
   white-space: nowrap;
 }
 .session-row-text strong {
-  font-weight: 500;
-  font-size: var(--text-small);
+  font-weight: 400;
+  font-size: var(--text-body);
 }
 .session-row-text small {
   color: var(--text-3);
-  font-size: var(--text-small);
+  font-size: var(--text-caption);
 }
 .session-row.tone-ended,
 .session-row.tone-ended .session-row-text small {
@@ -550,10 +567,10 @@ kbd {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: var(--text-small);
+  font-size: var(--text-caption);
   font-weight: 600;
   color: var(--text-3);
-  padding: 8px 8px 3px;
+  padding: var(--space-2) var(--space-2) 2px;
 }
 .group-label.needs {
   color: var(--needs);
@@ -562,13 +579,15 @@ kbd {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: var(--text-small);
+  font-size: var(--text-caption);
   font-weight: 600;
   color: var(--text-3);
-  padding: 10px 8px 4px;
+  padding: var(--space-2) var(--space-2) 2px;
 }
-.group-toggle:hover {
-  color: var(--text-2);
+@media (hover: hover) {
+  .group-toggle:hover {
+    color: var(--text-2);
+  }
 }
 .group-toggle .rotated {
   transform: rotate(-90deg);
@@ -576,58 +595,48 @@ kbd {
 .sidebar-empty {
   color: var(--text-3);
   font-size: var(--text-small);
-  padding: 6px 8px;
-  line-height: 1.5;
+  padding: 4px var(--space-2);
+  line-height: var(--leading-body);
 }
 .sidebar-foot {
-  border-top: 1px solid var(--line);
-  margin: 0 -12px;
-  padding: 10px 18px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-2);
+  row-gap: 2px;
+  padding: var(--space-2) var(--space-2) var(--space-3);
+}
+.sidebar-foot > * {
+  grid-column: 1;
+}
+.sidebar-foot > .foot-button {
+  grid-column: 2;
+  grid-row: 1;
 }
 .connection {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-size: var(--text-small);
   color: var(--text-2);
+  min-width: 0;
 }
 .connection > span:last-child {
-  margin-left: auto;
   color: var(--text-3);
 }
+.connection > span:last-child::before {
+  content: "· ";
+}
 .capabilities {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  font-size: var(--text-small);
+  color: var(--status-attention);
 }
 .capabilities span {
   font-family: var(--mono);
-  font-size: var(--text-small);
-  border-radius: var(--radius-sm);
-  padding: 1px 4px;
-  border: 1px solid var(--line);
-  color: var(--text-3);
 }
-.capabilities .ok {
-  color: var(--text-2);
-}
-.capabilities .missing {
-  text-decoration: line-through;
-  color: var(--text-dim);
-}
-.foot-button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--text-small);
-  color: var(--text-2);
-  padding: 5px 0;
-}
-.foot-button:hover {
-  color: var(--text);
+.capabilities span + span::before {
+  content: ", ";
+  font-family: var(--font);
 }
 .keep-awake {
   display: flex;
@@ -665,34 +674,52 @@ kbd {
   min-width: 0;
   min-height: 0;
 }
+/* One unified toolbar row (52px, as macOS): folder title, where new
+   sessions open, launch controls, view switch, window actions. */
 .topbar {
   display: flex;
   align-items: center;
-  gap: 14px;
-  height: 54px;
-  padding: 0 16px 0 22px;
+  gap: var(--space-2);
+  height: 52px;
+  padding: 0 var(--space-3) 0 var(--space-5);
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
 }
 .topbar-title {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
+  align-items: center;
+  gap: var(--space-2);
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
 }
 .topbar-title h1 {
-  font-size: var(--text-heading);
+  font-size: var(--text-body);
   font-weight: 600;
   white-space: nowrap;
-}
-.topbar-path {
-  font-family: var(--mono);
-  font-size: var(--text-small);
-  color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+.topbar-spacer {
+  flex: 1;
+}
+.topbar .launch-bar {
+  display: contents;
+}
+.topbar .launch-target {
+  flex: 1;
+  min-width: 0;
+  gap: var(--space-1);
+}
+/* "Opens in" only appears once it says something the title doesn't: a
+   subfolder or a worktree. */
+.topbar .launch-target:not(:has(.target-crumbs li + li)) :is(.launch-label, .target-crumbs) {
+  display: none;
+}
+.topbar .launch-actions {
+  gap: var(--space-2);
+}
+.topbar-actions {
+  margin-inline-start: var(--space-1);
 }
 /* Segmented controls: view switch and board mode share one look. */
 .view-switch,
@@ -1183,7 +1210,7 @@ kbd {
   align-items: center;
   gap: 8px;
   flex: 1;
-  min-width: 240px;
+  min-width: 0;
 }
 .launch-label {
   font-size: var(--text-small);
@@ -1203,10 +1230,11 @@ kbd {
   align-items: center;
   gap: 5px;
   font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
   color: var(--text-2);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 2px 9px;
+  background: var(--ghost-hover);
+  border-radius: var(--radius-sm);
+  padding: 2px 7px;
   white-space: nowrap;
 }
 .git-chip.tabs-git {
@@ -2983,28 +3011,23 @@ kbd {
     padding-bottom: calc(56px + env(safe-area-inset-bottom));
   }
   .topbar {
-    height: 50px;
-    padding: 0 10px;
+    height: auto;
+    min-height: 50px;
+    padding: 6px 10px;
     gap: 8px;
+    flex-wrap: wrap;
   }
-  .topbar-path,
   .view-switch,
   .desktop-only {
     display: none !important;
   }
-  .launch-bar {
-    padding: 8px 10px;
-    gap: 8px;
-  }
-  .launch-target {
-    min-width: 0;
-    flex-basis: 100%;
-  }
   .launch-label {
     display: none;
   }
-  .launch-actions {
-    flex: 1;
+  /* Launch buttons take their own row under the title. */
+  .launch-actions:has(.launch-button) {
+    order: 1;
+    flex: 1 0 100%;
   }
   .launch-button {
     flex: 1;
@@ -4222,4 +4245,46 @@ kbd {
   font: inherit;
   font-weight: 600;
   padding: 3px 6px;
+}
+
+/* macOS window chrome (desktop only, data-chrome="mac-inset"): inset traffic
+   lights over a translucent sidebar. The toolbar and sidebar head are the
+   window's drag regions; every control inside them opts out. */
+:root[data-chrome="mac-inset"],
+:root[data-chrome="mac-inset"] body,
+:root[data-chrome="mac-inset"] .app-shell {
+  background: transparent;
+}
+:root[data-chrome="mac-inset"] .main {
+  background: var(--bg-window);
+}
+:root[data-chrome="mac-inset"] .sidebar {
+  background: color-mix(in srgb, var(--bg-sidebar) 55%, transparent);
+  padding-top: 0;
+}
+:root[data-chrome="mac-inset"] .sidebar-head {
+  height: 52px;
+  margin-bottom: calc(-1 * var(--space-2));
+  justify-content: flex-end;
+}
+:root[data-chrome="mac-inset"] .sidebar-head :is(.brand-mark, .brand-name) {
+  display: none;
+}
+:root[data-chrome="mac-inset"] .sidebar-collapsed .topbar {
+  padding-inline-start: 84px;
+}
+:root[data-chrome="mac-inset"] :is(.topbar, .sidebar-head) {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+:root[data-chrome="mac-inset"]
+  :is(.topbar, .sidebar-head)
+  :is(button, summary, a, input, select, textarea, [role="menu"], [role="dialog"], .popover, .launch-options, .view-switch, .git-chip) {
+  -webkit-app-region: no-drag;
+}
+/* Native drag regions ignore stacking: anything that can sit over the
+   toolbar must opt out or its clicks would move the window instead. */
+:root[data-chrome="mac-inset"]
+  :is(.modal-backdrop, .modal, .palette, .toasts, .popover, .drawer-scrim, [role="dialog"], [role="menu"], [role="alertdialog"]) {
+  -webkit-app-region: no-drag;
 }

@@ -32,6 +32,7 @@ import {
   GitBranch,
   Database,
   Moon,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import type {
   ExecutionHostView,
@@ -85,7 +86,6 @@ import {
   sessionLocation,
   sessionState,
   sessionTitle,
-  shortPath,
 } from "./sessions";
 import { BrandMark, ProviderGlyph, StatusBadge } from "./ui";
 import { AppearanceSettings } from "./AppearanceSettings";
@@ -1202,23 +1202,25 @@ export default function App() {
               <span>{hostStateLabel(h.state)}</span>
             </div>
           ))}
-          <div className="capabilities" aria-label="Installed tools">
-            {snapshot.capabilities.map((c) => (
-              <span
-                key={c.name}
-                className={c.available ? "ok" : "missing"}
-                title={c.detail}
-              >
-                {c.name}
-              </span>
-            ))}
-          </div>
+          {snapshot.capabilities.some((c) => !c.available) ? (
+            <p className="capabilities" aria-label="Missing tools">
+              Not installed:{" "}
+              {snapshot.capabilities
+                .filter((c) => !c.available)
+                .map((c) => (
+                  <span key={c.name} title={c.detail}>
+                    {c.name}
+                  </span>
+                ))}
+            </p>
+          ) : null}
           <button
-            className="foot-button"
+            className="icon-button foot-button"
             onClick={() => setSettingsPanel(true)}
             aria-label="Settings and connections"
+            title="Settings and connections"
           >
-            <Ellipsis size={16} /> Settings & connections
+            <SettingsIcon size={16} />
           </button>
         </footer>
       </aside>
@@ -1249,7 +1251,7 @@ export default function App() {
               <h1>Open a folder</h1>
             ) : project ? (
               <>
-                <h1>{project.name}</h1>
+                <h1 title={project.path}>{project.name}</h1>
                 {projectHost ? (
                   <span
                     className="host-badge"
@@ -1262,14 +1264,41 @@ export default function App() {
                     {projectHost.label}
                   </span>
                 ) : null}
-                <span className="topbar-path" title={project.path}>
-                  {project.hostId ? project.path : shortPath(project.path)}
-                </span>
               </>
             ) : (
               <h1>Welcome</h1>
             )}
           </div>
+          {/* Launch controls share the toolbar row. With a session open the
+              terminal's own bar takes over; "+" brings the Launchpad back. */}
+          {project && !showBrowser && !(view === "terminals" && session) ? (
+            <LaunchBar
+              launchers={view !== "terminals"}
+              project={project}
+              target={target}
+              onTarget={(path) =>
+                setTargets((current) => ({ ...current, [project.id]: path }))
+              }
+              capabilities={projectCapabilities}
+              choices={choices}
+              onChoices={(next) => {
+                setChoices(next);
+                try {
+                  localStorage.setItem(
+                    "workspace.launch.models",
+                    JSON.stringify(next.models),
+                  );
+                } catch {}
+              }}
+              onLaunch={(provider) => void launch(provider, view === "canvas")}
+              launching={launching}
+              disabledReason={disabledReason}
+              git={git}
+              onManageProfiles={() => setProfilesPanel(true)}
+            />
+          ) : (
+            <div className="topbar-spacer" />
+          )}
           {project && !showBrowser ? (
             <nav className="view-switch" aria-label="Views">
               <button
@@ -1419,36 +1448,6 @@ export default function App() {
           </div>
         ) : (
           <div className="workspace">
-            {/* With a session open the terminal gets the space; "+" brings
-                the Launchpad (and this bar) back. */}
-            {view === "terminals" && session ? null : (
-              <LaunchBar
-                launchers={view !== "terminals"}
-                project={project}
-                target={target}
-                onTarget={(path) =>
-                  setTargets((current) => ({ ...current, [project.id]: path }))
-                }
-                capabilities={projectCapabilities}
-                choices={choices}
-                onChoices={(next) => {
-                  setChoices(next);
-                  try {
-                    localStorage.setItem(
-                      "workspace.launch.models",
-                      JSON.stringify(next.models),
-                    );
-                  } catch {}
-                }}
-                onLaunch={(provider) =>
-                  void launch(provider, view === "canvas")
-                }
-                launching={launching}
-                disabledReason={disabledReason}
-                git={git}
-                onManageProfiles={() => setProfilesPanel(true)}
-              />
-            )}
             {problem ? (
               <LaunchNotice
                 hostLabel={projectHost?.label}

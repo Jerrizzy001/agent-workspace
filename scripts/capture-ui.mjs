@@ -1,5 +1,8 @@
 // Captures the main views in dark and light themes for redesign comparison.
 // Usage: npm run build && node scripts/capture-ui.mjs <output-dir>
+// Page screenshots cannot include native window materials, so the macOS
+// sidebar is drawn with its opaque fallback there; on macOS a real window
+// screenshot (<theme>-native.png) shows the translucent sidebar as users see it.
 import { _electron as electron } from "playwright";
 import { mkdtemp, mkdir, writeFile, realpath } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
@@ -38,6 +41,9 @@ for (const theme of ["dark", "light"]) {
     await page.evaluate((t) => localStorage.setItem("workspace.appearance", t), theme);
     await page.reload();
     await page.waitForFunction(() => !!window.workspace);
+    await page.addStyleTag({
+      content: ':root[data-chrome] .sidebar { background: var(--bg-sidebar) !important; }',
+    });
     const shot = async (name) => {
       await page.waitForTimeout(400);
       await page.screenshot({ path: path.join(out, `${theme}-${name}.png`) });
@@ -57,6 +63,27 @@ for (const theme of ["dark", "light"]) {
     await page.locator(".session-view .xterm-helper-textarea").focus();
     await page.keyboard.type("ls -la\n");
     await shot("02-session");
+    if (process.platform === "darwin") {
+      const b = await app.evaluate(({ BrowserWindow }) => {
+        const w = BrowserWindow.getAllWindows()[0];
+        w.setBounds({ x: 60, y: 60, width: 1280, height: 800 });
+        w.show();
+        w.focus();
+        return w.getBounds();
+      });
+      await page.waitForTimeout(800);
+      try {
+        execFileSync("screencapture", [
+          "-x", "-o", "-R", `${b.x},${b.y},${b.width},${b.height}`,
+          path.join(out, `${theme}-native.png`),
+        ]);
+      } catch (error) {
+        console.warn("Native screenshot skipped:", error.message.split("\n")[0]);
+      }
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0].setContentSize(1440, 900),
+      );
+    }
 
     await view("Board");
     await shot("03-board");

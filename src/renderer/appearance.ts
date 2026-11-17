@@ -21,6 +21,7 @@ let state = { mode: initialMode, resolved: resolve(initialMode) };
 const listeners = new Set<() => void>();
 function apply() {
   document.documentElement.dataset.theme = state.resolved;
+  window.workspace?.setWindowAppearance?.(state.mode);
   document
     .querySelector('meta[name="theme-color"]')
     ?.setAttribute(

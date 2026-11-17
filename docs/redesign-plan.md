@@ -5,7 +5,7 @@ Drafted 2026-11-17 against `codex/ux-repair` (v0.4.3). Rulebook: the `better-*` 
 polish, writing, accessibility). Evidence comes from `src/renderer/*.css`, `App.tsx`,
 `LaunchBar.tsx`, `SessionBoard.tsx` and the screenshots in `docs/screenshots/`.
 
-Status: direction B (Native Mac) chosen. Phases 0–2 implemented on `redesign/native-mac`;
+Status: direction B (Native Mac) chosen. Phases 0–3 implemented on `redesign/native-mac`;
 see §8.
 
 ---
@@ -354,3 +354,37 @@ vibrancy (Phase 3), the default theme (still Dark).
 Known: `verify:ux` failed once in five runs (passed on every re-run); hover rules outside the
 shared controls are still unguarded and move under `@media (hover: hover)` as each view is
 redone.
+
+### Phase 3: shell (done)
+- **One toolbar row (52px).** The second "Opens in" row is gone: launch controls (`.launch-bar`)
+  now sit in the toolbar. The temp path is no longer printed; it is the folder title's tooltip and
+  "Copy folder path" stays in the folder menu. "Opens in" only appears when it adds something
+  (a subfolder or worktree). The git chip is a quiet grey tag. On phones the toolbar wraps and the
+  launch buttons take their own row.
+- **macOS window chrome** (desktop macOS only, `data-chrome="mac-inset"` from preload):
+  `titleBarStyle: "hiddenInset"` with traffic lights at (20, 19), `vibrancy: "sidebar"`. The
+  toolbar and sidebar head are drag regions; every control and every overlay (dialogs, palette,
+  menus, toasts) opts out. The in-app Light/Dark/System choice is sent to `nativeTheme.themeSource`
+  so the translucent material matches the page. The brand mark and name are hidden on the desktop
+  (the traffic lights take that corner); the remote browser keeps them.
+- **Sidebar as a macOS source list:** 28px folder rows, 36px session rows, grey selection with
+  an accent icon, 11px sentence-case section labels, counts as plain tabular numbers, no footer
+  border. The footer is one line (connection status + a settings gear); tool chips only appear when
+  something is missing ("Not installed: codex").
+- `scripts/capture-ui.mjs` draws the sidebar with its opaque fallback in page screenshots (they
+  cannot include native materials) and also saves a real window screenshot on macOS when the
+  terminal has Screen Recording permission.
+
+Not verified: the real translucent sidebar on screen. This terminal lacks Screen Recording
+permission and app access was declined, so only page screenshots exist. Check it by opening the
+built app.
+
+Checks: smoke, UX, board, workflows, lifecycle, mobile, transcript connect, agent control and
+keep-awake pass. `verify:appearance` failed once in the batch and passed alone. `verify:accounts`
+fails because "Launch options" is not in the toolbar while a session is open; it fails the same way
+on the commit before the redesign started, so it predates this work. The Phase 4 **New** button,
+always in the toolbar, removes the cause. Keyboard walk: every toolbar, sidebar and Board control is
+reachable by Tab in visual order with a visible focus ring.
+
+Moved to Phase 4: the single **New** split button (needs the launcher redesign, since the three
+launch buttons double as the Launchpad's targets).
