@@ -15,7 +15,6 @@ import type {
 } from "../shared/team-contracts";
 import { errorText } from "./sessions";
 import { TeamTaskThread } from "./TaskComments";
-import "./team.css";
 
 export const syncLabel = (s: TeamSyncState) =>
   s === "synced"

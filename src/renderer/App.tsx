@@ -72,6 +72,7 @@ import { mergeSnapshot } from "./snapshot";
 import { paletteMatches } from "./palette-search";
 import { FirstRunChecklist, installHints } from "./FirstRunChecklist";
 import {
+  SettingsGroup,
   SettingsRow,
   hostsState,
   useProfilesState,
@@ -1833,19 +1834,15 @@ export default function App() {
             aria-label="Settings and connections"
           >
             <header>
-              <h2>Settings & connections</h2>
+              <h2>Settings</h2>
               <button
+                className="icon-button"
                 aria-label="Close settings"
                 onClick={() => setSettingsPanel(false)}
               >
-                ×
+                <X size={16} />
               </button>
             </header>
-            <p>
-              Set up accounts and optional tools. Your folders and running
-              sessions stay where they are.
-            </p>
-            <AppearanceSettings />
             <SettingsRows
               hosts={hosts}
               open={settingsPanel}
@@ -2417,100 +2414,120 @@ function SettingsRows({
     next();
   };
   return (
-    <div className="settings-rows">
-      {power && !isRemoteBrowser ? (
-        <label
-          className="settings-row keep-awake"
-          title={
-            "Prevents this computer from sleeping while a local Claude or Codex session reports it is working. " +
-            "The display can still sleep. Needs input, done, exit or a quiet turn longer than 20 minutes releases it. " +
-            "Codex needs trusted lifecycle hooks; shell sessions never keep it awake."
-          }
-        >
-          <span className="settings-row-icon" aria-hidden="true">
-            <Moon size={14} />
-          </span>
-          <span className="settings-row-label">
-            Keep awake during agent work
-          </span>
-          <span
-            className="settings-row-state keep-awake-status"
-            data-active={power.active}
+    <div className="settings-groups">
+      <SettingsGroup title="General">
+        <AppearanceSettings />
+        {power && !isRemoteBrowser ? (
+          <label
+            className="settings-row keep-awake"
+            title={
+              "Prevents this computer from sleeping while a local Claude or Codex session reports it is working. " +
+              "The display can still sleep. Needs input, done, exit or a quiet turn longer than 20 minutes releases it. " +
+              "Codex needs trusted lifecycle hooks; shell sessions never keep it awake."
+            }
           >
-            {!power.enabled
-              ? "Off"
-              : power.active
-                ? `Keeping awake · ${power.sessions.length} ${power.sessions.length === 1 ? "session" : "sessions"} working`
-                : "On · idle"}
-          </span>
-          <input
-            type="checkbox"
-            role="switch"
-            checked={power.enabled}
-            disabled={powerBusy}
-            aria-label="Keep awake during agent work"
-            onChange={(e) => togglePower(e.target.checked)}
+            <span className="settings-row-icon tile-indigo" aria-hidden="true">
+              <Moon size={13} />
+            </span>
+            <span className="settings-row-text">
+              <span className="settings-row-label">
+                Keep awake during agent work
+              </span>
+              <span
+                className="settings-row-detail keep-awake-status"
+                data-active={power.active}
+              >
+                {!power.enabled
+                  ? "Off"
+                  : power.active
+                    ? `Keeping awake · ${power.sessions.length} ${power.sessions.length === 1 ? "session" : "sessions"} working`
+                    : "On · idle"}
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              role="switch"
+              checked={power.enabled}
+              disabled={powerBusy}
+              aria-label="Keep awake during agent work"
+              onChange={(e) => togglePower(e.target.checked)}
+            />
+          </label>
+        ) : null}
+      </SettingsGroup>
+      <SettingsGroup title="Input">
+        {dictationAvailable() && !isRemoteBrowser ? (
+          <SettingsRow
+            icon={<Mic size={13} />}
+            tone="red"
+            label="Voice dictation"
+            name="Voice dictation settings"
+            state={states.dictation}
+            onOpen={go(openDictationSettings)}
           />
-        </label>
-      ) : null}
-      {dictationAvailable() && !isRemoteBrowser ? (
-        <SettingsRow
-          icon={<Mic size={14} />}
-          label="Voice dictation"
-          name="Voice dictation settings"
-          state={states.dictation}
-          onOpen={go(openDictationSettings)}
-        />
-      ) : null}
-      {assistAvailable() && !isRemoteBrowser ? (
-        <SettingsRow
-          icon={<Sparkles size={14} />}
-          label="AI suggestions"
-          name="AI suggestions settings"
-          state={states.assist}
-          onOpen={go(openAssistSettings)}
-        />
-      ) : null}
-      {profilesAvailable() && !isRemoteBrowser ? (
-        <SettingsRow
-          icon={<KeyRound size={14} />}
-          label="Claude profiles"
-          state={profilesState}
-          onOpen={go(openProfiles)}
-        />
-      ) : null}
-      {window.workspace.ssh && !isRemoteBrowser ? (
-        <SettingsRow
-          icon={<Server size={14} />}
-          label="SSH hosts"
-          state={hostsState(hosts)}
-          onOpen={go(openSSH)}
-        />
-      ) : null}
-      {window.workspace.team && !isRemoteBrowser ? (
-        <SettingsRow
-          icon={<Users size={14} />}
-          label="Team"
-          state={states.team}
-          onOpen={go(openTeam)}
-        />
-      ) : null}
-      {window.workspace.remote ? (
-        <SettingsRow
-          icon={<Smartphone size={14} />}
-          label="Remote access"
-          name="Remote access settings"
-          state={states.remote}
-          onOpen={go(openRemote)}
-        />
-      ) : null}
+        ) : null}
+        {assistAvailable() && !isRemoteBrowser ? (
+          <SettingsRow
+            icon={<Sparkles size={13} />}
+            tone="purple"
+            label="AI suggestions"
+            name="AI suggestions settings"
+            state={states.assist}
+            onOpen={go(openAssistSettings)}
+          />
+        ) : null}
+      </SettingsGroup>
+      <SettingsGroup title="Accounts">
+        {profilesAvailable() && !isRemoteBrowser ? (
+          <SettingsRow
+            icon={<KeyRound size={13} />}
+            tone="orange"
+            label="Claude profiles"
+            state={profilesState}
+            onOpen={go(openProfiles)}
+          />
+        ) : null}
+        {window.workspace.team && !isRemoteBrowser ? (
+          <SettingsRow
+            icon={<Users size={13} />}
+            tone="green"
+            label="Team"
+            state={states.team}
+            onOpen={go(openTeam)}
+          />
+        ) : null}
+      </SettingsGroup>
+      <SettingsGroup title="Connections">
+        {window.workspace.ssh && !isRemoteBrowser ? (
+          <SettingsRow
+            icon={<Server size={13} />}
+            tone="grey"
+            label="SSH hosts"
+            state={hostsState(hosts)}
+            onOpen={go(openSSH)}
+          />
+        ) : null}
+        {window.workspace.remote ? (
+          <SettingsRow
+            icon={<Smartphone size={13} />}
+            tone="blue"
+            label="Remote access"
+            name="Remote access settings"
+            state={states.remote}
+            onOpen={go(openRemote)}
+          />
+        ) : null}
+      </SettingsGroup>
       {!isRemoteBrowser ? (
-        <SettingsRow
-          icon={<Database size={14} />}
-          label="Workspace data"
-          state="Backups, export and history"
-          onOpen={go(openData)}
-        />
+        <SettingsGroup title="Data">
+          <SettingsRow
+            icon={<Database size={13} />}
+            tone="grey"
+            label="Workspace data"
+            state="Backups, export and history"
+            onOpen={go(openData)}
+          />
+        </SettingsGroup>
       ) : null}
     </div>
   );

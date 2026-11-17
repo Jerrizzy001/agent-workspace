@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { X } from "lucide-react";
 import type { Session, Snapshot } from "../shared/contracts";
 
 /** Local owner only: explicit data maintenance, without touching running processes. */
@@ -58,8 +59,12 @@ export function WorkspaceDataPanel({
       >
         <header>
           <h2>Workspace data</h2>
-          <button aria-label="Close workspace data" onClick={onClose}>
-            ×
+          <button
+            className="icon-button"
+            aria-label="Close workspace data"
+            onClick={onClose}
+          >
+            <X size={16} />
           </button>
         </header>
         <p>

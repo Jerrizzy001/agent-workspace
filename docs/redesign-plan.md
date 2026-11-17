@@ -421,3 +421,49 @@ fails its last isolation check: a Claude transcript appears in the fixture's def
 under a project named after the app's own checkout rather than any session folder. So it comes
 from a Claude process started in the app's working directory, not from a launched session. Cause
 not yet found.
+
+### Phase 5: settings and panels (done)
+- **Settings sheet.** It is titled "Settings" (its accessible name is unchanged), and the intro paragraph is gone. Rows are grouped into
+  titled inset lists, as in System Settings: General (Appearance, Keep awake), Input (Voice
+  dictation, AI suggestions), Accounts (Claude profiles, Team), Connections (SSH hosts, Remote
+  access) and Data (Workspace data). Each row has a coloured icon tile (white glyph, 3:1 or better), the
+  current state on the right and a chevron. In light, white groups sit on a grey sheet.
+- **Deviation from 4.7.** There is no left nav. Each entry opens its own sheet, which the command palette and
+  the tests also open directly. With eight entries, a nav column would add a click without adding
+  structure, so the grouped list does that job.
+- **Appearance** is now a row with a segmented control (Light / Dark / System). It still uses real radio
+  inputs, laid invisibly over each segment, in place of the three radio cards. **Keep awake** is a row with
+  an AppKit-sized switch (`input[role=switch]`, styled globally). The off track uses
+  `--switch-off`, which passes 3:1. In forced colours it falls back to the native control.
+- **Panel chrome.** Titles no longer carry icons. The generic eyebrows ("This computer", "Team",
+  "This session") are gone. Every close button is the same 28px icon button with a 16px ×.
+  The Team sheet title changes from "Team members, comments and assignments" to "Team".
+- **One stylesheet.** `profiles.css`, `ssh-hosts.css`, `remote-access.css`, `team.css` and
+  `agent-control.css` (1,233 lines) are replaced by `panels.css`, organised by primitive:
+  - **Sheet sizes.**
+  - **Intro copy.**
+  - **Sections:** separated by space, not rules.
+  - **Disclosures.**
+  - **Item cards:** raised surface plus a shadow ring. Pending items are outlined only.
+  - **Status dots.**
+  - **Notices:** a leading bar coloured by severity.
+  - **Tags:** grey unless they report a state.
+  - **Check rows.**
+  - **Secrets and codes.**
+- **Other boxes.** The setup guide, the voice and AI radio cards, the AI input preview and the readable
+  transcript also lose their borders. A selected radio card gets a 2px accent ring.
+- **Layout fixes.** "Check default account" no longer stretches across the card. A lone button in a sheet
+  keeps its natural width.
+- **Tests and captures.**
+  - `verify-team.mjs` now expects the dialog name "Team".
+  - `verify-appearance.mjs` now waits for focus to reach "Show folders and sessions", which moves on
+    the next animation frame. Its immediate check failed about half the time, on Phase 4 too.
+  - `capture-ui.mjs` also captures SSH, Remote access, Profiles, Team and Workspace data (08–12).
+
+Checks, run one at a time:
+- **Pass:** smoke, SSH, remote desktop, team, agent control, keep-awake, assist, UX and transcript connect.
+- **Appearance** passed 3 of 3 after the wait fix.
+- **Dictation** failed once because its leftover check reads the system clipboard, and that
+  held text copied during the run. It passed on rerun.
+- **`verify:accounts`** still fails only its final default-folder isolation check, as in Phase 4.
+- **`npm test`:** 144 pass, 0 fail.

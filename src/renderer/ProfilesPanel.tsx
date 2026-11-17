@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import {
   CheckCircle2,
-  KeyRound,
   LoaderCircle,
   Plus,
   RefreshCw,
@@ -20,7 +19,6 @@ import type {
 } from "../shared/contracts";
 import { createId } from "./id";
 import { errorText } from "./sessions";
-import "./profiles.css";
 
 /** Desktop owner only. Remote browsers have no profiles API. */
 export const profilesAvailable = () => !!window.workspace.profiles;
@@ -118,13 +116,12 @@ export function ProfilesPanel({
       >
         <header>
           <div>
-            <div className="eyebrow">This computer</div>
             <h2 id="profiles-title">
-              <KeyRound size={17} /> Claude profiles
+              Claude profiles
             </h2>
           </div>
           <button className="icon-button" onClick={onClose} aria-label="Close">
-            <X size={18} />
+            <X size={16} />
           </button>
         </header>
         <p className="profiles-intro">
@@ -174,6 +171,8 @@ export function ProfilesPanel({
                   {accounts.default.email || ""} · {accounts.default.detail}
                 </span>
               ) : null}
+            </div>
+            <div className="profile-actions">
               <button
                 className="button small"
                 disabled={!!busy}

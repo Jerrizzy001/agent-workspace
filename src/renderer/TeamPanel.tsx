@@ -7,7 +7,6 @@ import {
   RefreshCw,
   ShieldAlert,
   Trash2,
-  Users,
   X,
 } from "lucide-react";
 import type {
@@ -20,7 +19,6 @@ import type {
 } from "../shared/team-contracts";
 import { errorText } from "./sessions";
 import { OutboxRow, TeamTaskThread } from "./TaskComments";
-import "./team.css";
 
 const roleLabel = (role: ProjectRole) =>
   role === "admin" ? "Admin" : role === "member" ? "Member" : "Viewer";
@@ -98,10 +96,8 @@ export function TeamPanel({
       >
         <header>
           <div>
-            <div className="eyebrow">Team</div>
             <h2 id="team-panel-title">
-              <Users size={18} aria-hidden="true" /> Team members, comments and
-              assignments
+              Team
             </h2>
             <p>
               Share chosen task titles, descriptions and status with your team.
@@ -114,7 +110,7 @@ export function TeamPanel({
             aria-label="Close team panel"
             onClick={onClose}
           >
-            <X size={18} />
+            <X size={16} />
           </button>
         </header>
         {!status ? (

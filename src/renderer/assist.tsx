@@ -123,7 +123,6 @@ export function AssistSettings() {
       >
         <header>
           <div>
-            <div className="eyebrow">This computer</div>
             <h2 id="assist-title">AI suggestions</h2>
           </div>
           <button
@@ -131,7 +130,7 @@ export function AssistSettings() {
             onClick={closeAssistSettings}
             aria-label="Close"
           >
-            <X size={18} />
+            <X size={16} />
           </button>
         </header>
         {settingsNotice ? (
@@ -339,7 +338,7 @@ export function AssistCommitDialog({
           <h2>Suggest commit message</h2>
         </div>
         <button className="icon-button" onClick={close} aria-label="Close">
-          <X size={18} />
+          <X size={16} />
         </button>
       </header>
       {preview ? (
@@ -518,7 +517,7 @@ export function AssistNameDialog({
           <h2>Suggest a name</h2>
         </div>
         <button className="icon-button" onClick={close} aria-label="Close">
-          <X size={18} />
+          <X size={16} />
         </button>
       </header>
       <fieldset className="assist-sources" disabled={running}>

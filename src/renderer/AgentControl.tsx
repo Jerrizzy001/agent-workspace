@@ -8,7 +8,6 @@ import {
   type AgentControlState,
   type ControllerVerb,
 } from "../shared/controller-contracts";
-import "./agent-control.css";
 
 const VERB_LABELS: Record<ControllerVerb, { label: string; detail: string }> = {
   status: {
@@ -149,11 +148,10 @@ function AgentControlDialog({
       >
         <header>
           <div>
-            <div className="eyebrow">This session</div>
             <h2 id="agent-control-title">Agent control</h2>
           </div>
           <button className="icon-button" onClick={close} aria-label="Close">
-            <X size={18} />
+            <X size={16} />
           </button>
         </header>
         <p className="muted">

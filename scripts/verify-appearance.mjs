@@ -119,11 +119,13 @@ try {
     .waitFor({ state: "hidden" });
   const sidebarCollapsedWidth = (await terminal().boundingBox()).width;
   assert.ok(sidebarCollapsedWidth > initialWidth + 200);
-  assert.equal(
-    await page
-      .getByRole("button", { name: "Show folders and sessions", exact: true })
-      .evaluate((el) => el === document.activeElement),
-    true,
+  // Focus moves on the next animation frame after the sidebar collapses.
+  await poll(
+    () =>
+      page
+        .getByRole("button", { name: "Show folders and sessions", exact: true })
+        .evaluate((el) => el === document.activeElement),
+    "focus moves to Show folders and sessions",
   );
   await page
     .getByRole("button", { name: "Collapse files panel", exact: true })

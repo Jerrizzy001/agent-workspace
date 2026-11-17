@@ -94,7 +94,8 @@ try {
   await op.getByRole("button", { name: "Settings and connections" }).click();
   await op.getByRole("button", { name: "Team", exact: true }).click();
   const panel = op.getByRole("dialog", {
-    name: /Team members, comments and assignments/,
+    name: "Team",
+    exact: true,
   });
   await panel.waitFor();
   const secret = (await teamStatus(op)).secretStorage;
@@ -196,7 +197,8 @@ try {
   await mp.getByRole("button", { name: "Settings and connections" }).click();
   await mp.getByRole("button", { name: "Team", exact: true }).click();
   const mpanel = mp.getByRole("dialog", {
-    name: /Team members, comments and assignments/,
+    name: "Team",
+    exact: true,
   });
   await mpanel.getByLabel("Team service address").fill(service.url);
   await mpanel.getByLabel(/Invitation code/).fill(code);

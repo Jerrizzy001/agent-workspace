@@ -5,6 +5,7 @@ import { BrowserRoot } from "./BrowserRoot";
 import { ErrorBoundary } from "./ErrorBoundary";
 import "./tokens.css";
 import "./styles.css";
+import "./panels.css";
 import "./appearance";
 
 if (window.workspace?.windowChrome)

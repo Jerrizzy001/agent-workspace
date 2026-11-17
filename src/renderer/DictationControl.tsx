@@ -340,7 +340,6 @@ export function DictationSettings() {
       >
         <header>
           <div>
-            <div className="eyebrow">This computer</div>
             <h2 id="dictation-title">Voice dictation</h2>
           </div>
           <button
@@ -348,7 +347,7 @@ export function DictationSettings() {
             onClick={closeDictationSettings}
             aria-label="Close"
           >
-            <X size={18} />
+            <X size={16} />
           </button>
         </header>
         {state.settingsNotice && !selected?.installed ? (

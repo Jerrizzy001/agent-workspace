@@ -7,7 +7,6 @@ import {
   Plug,
   PlugZap,
   RefreshCw,
-  Server,
   ShieldAlert,
   Trash2,
   X,
@@ -19,7 +18,6 @@ import type {
   Project,
 } from "../shared/contracts";
 import { errorText } from "./sessions";
-import "./ssh-hosts.css";
 
 export const hostStateLabel = (state: ExecutionHostView["state"]) =>
   state === "connected"
@@ -142,15 +140,19 @@ export function SSHProjectsPanel({
         <header>
           <div>
             <h2 id="ssh-title">
-              <Server size={18} /> SSH hosts
+              SSH hosts
             </h2>
             <p>
               Run Claude, Codex and shells on another computer while this window
               stays the interface.
             </p>
           </div>
-          <button aria-label="Close SSH hosts" onClick={onClose}>
-            <X size={18} />
+          <button
+            className="icon-button"
+            aria-label="Close SSH hosts"
+            onClick={onClose}
+          >
+            <X size={16} />
           </button>
         </header>
         <ol className="connection-steps">

@@ -91,9 +91,31 @@ for (const theme of ["dark", "light"]) {
     await shot("04-canvas");
     await view("Terminals");
 
-    await page.getByRole("button", { name: "Settings and connections", exact: true }).first().click();
+    const openSettings = () =>
+      page.getByRole("button", { name: "Settings and connections", exact: true }).first().click();
+    await openSettings();
     await shot("05-settings");
     await page.keyboard.press("Escape");
+    for (const [row, name] of [
+      ["SSH hosts", "08-ssh"],
+      ["Remote access settings", "09-remote"],
+      ["Claude profiles", "10-profiles"],
+      ["Team", "11-team"],
+      ["Workspace data", "12-data"],
+    ]) {
+      await openSettings();
+      const button = page
+        .getByRole("dialog", { name: "Settings and connections" })
+        .getByRole("button", { name: row, exact: true });
+      if (!(await button.count())) {
+        await page.keyboard.press("Escape");
+        continue;
+      }
+      await button.click();
+      await shot(name);
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(150);
+    }
 
     await page.locator(".session-view summary[title=\"More actions\"]").click();
     await shot("06-menu");
@@ -103,7 +125,7 @@ for (const theme of ["dark", "light"]) {
     await page.keyboard.type("set");
     await shot("07-palette");
     await page.keyboard.press("Escape");
-    console.log(`${theme}: captured 7 views`);
+    console.log(`${theme}: captured views`);
   } finally {
     await app.close().catch(() => {});
     await cleanupFixture(fixture);

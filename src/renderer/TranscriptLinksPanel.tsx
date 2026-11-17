@@ -9,7 +9,6 @@ import type {
 } from "../shared/contracts";
 import { errorText, sessionState } from "./sessions";
 import { profileLabel, useProfiles } from "./ProfilesPanel";
-import "./profiles.css";
 
 const time = (iso: string) =>
   new Date(iso).toLocaleString([], {
@@ -195,11 +194,11 @@ export function TranscriptLinksPanel({
           <div>
             <div className="eyebrow">{titleOf(session)}</div>
             <h2 id="links-title">
-              <Link2 size={17} /> Connect agents
+              Connect agents
             </h2>
           </div>
           <button className="icon-button" onClick={onClose} aria-label="Close">
-            <X size={18} />
+            <X size={16} />
           </button>
         </header>
         <p>
