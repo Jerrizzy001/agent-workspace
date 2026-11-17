@@ -5,7 +5,7 @@ Drafted 2026-11-17 against `codex/ux-repair` (v0.4.3). Rulebook: the `better-*` 
 polish, writing, accessibility). Evidence comes from `src/renderer/*.css`, `App.tsx`,
 `LaunchBar.tsx`, `SessionBoard.tsx` and the screenshots in `docs/screenshots/`.
 
-Status: direction B (Native Mac) chosen. Phases 0–3 implemented on `redesign/native-mac`;
+Status: direction B (Native Mac) chosen. Phases 0–4 implemented on `redesign/native-mac`;
 see §8.
 
 ---
@@ -388,3 +388,36 @@ reachable by Tab in visual order with a visible focus ring.
 
 Moved to Phase 4: the single **New** split button (needs the launcher redesign, since the three
 launch buttons double as the Launchpad's targets).
+
+### Phase 4: views (done)
+- **New button.** The toolbar always has a split button: one click opens the provider used last
+  ("New Claude"), the caret opens a menu of Claude, Codex and Shell (arrow keys, Escape). The
+  launch bar now shows in every view, so "Launch options" is reachable with a session open.
+- **Launchpad.** The eyebrow, "Open an agent or a shell here" headline, three feature cards and
+  the disclaimer are replaced by the folder name, one line ("Choose an agent or a shell. Nothing
+  runs until you type.") and a 440px inset grouped list. Accessible names ("Open Shell here")
+  are unchanged. "Recently ended" uses the same row style.
+- **Session view.** The duplicate branch chip in the tab strip is gone (the toolbar has it).
+  Session tabs use the accent underline. The session bar is 48px with an unboxed glyph.
+  Status is a dot plus a word, with no pill. The voice bar is quieter.
+- **Board.** The explainer sentence is gone. Its one useful fact moved into the empty-lane hint.
+  Lanes are columns of space with a 600-weight title and a tabular count. Cards have a shadow ring.
+  "Needs you" gets a leading attention bar. Ended cards are outlined only. Card actions are ghost
+  buttons.
+- **Canvas.** The toolbar floats over the canvas as one rounded bar. "Connect agents" is a normal
+  button, so the toolbar's New button stays the only filled one. Nodes have 12px corners, an overlay
+  shadow and ghost toolbar buttons. Zoom controls and the minimap match.
+- **Files.** The inspector uses the window background. Tree and change rows are 28px with no mono.
+  The folder header is plain text with a hidden-when-disabled up button. "New sessions open in the
+  folder shown here" only appears inside a subfolder.
+- Test updated: `verify-workflows.mjs` waits for the "Open Shell here" button instead of the
+  removed headline.
+
+Checks (batch of 14): smoke, UX, lifecycle, mobile, transcript connect, agent control,
+keep-awake, dictation, image paste and context menu pass. Board, workflows and appearance failed in
+the batch and pass alone; appearance's focus check has now failed in two batches, so treat it as
+flaky under load. `verify:accounts` now gets past Launch options (the pre-existing failure). It then
+fails its last isolation check: a Claude transcript appears in the fixture's default `~/.claude`,
+under a project named after the app's own checkout rather than any session folder. So it comes
+from a Claude process started in the app's working directory, not from a launched session. Cause
+not yet found.

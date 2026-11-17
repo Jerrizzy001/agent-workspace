@@ -172,10 +172,6 @@ export function SessionBoard({
             <h2>Board</h2>
             {modeSwitch}
           </div>
-          <p>
-            Every session in this folder is a card. Moving a card only files it;
-            the process keeps running untouched.
-          </p>
         </div>
       </header>
       <div
@@ -248,7 +244,7 @@ export function SessionBoard({
               ) : null}
               {!cards.length ? (
                 <p className="lane-empty">
-                  Drop a card here or start a session with +.
+                  Drop a card here. Moving a card never stops its session.
                 </p>
               ) : null}
             </Lane>

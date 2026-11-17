@@ -33,6 +33,7 @@ import {
   Database,
   Moon,
   Settings as SettingsIcon,
+  ChevronRight,
 } from "lucide-react";
 import type {
   ExecutionHostView,
@@ -1269,11 +1270,10 @@ export default function App() {
               <h1>Welcome</h1>
             )}
           </div>
-          {/* Launch controls share the toolbar row. With a session open the
-              terminal's own bar takes over; "+" brings the Launchpad back. */}
-          {project && !showBrowser && !(view === "terminals" && session) ? (
+          {/* Launch controls share the toolbar row in every view: where new
+              sessions open, the New button and launch options. */}
+          {project && !showBrowser ? (
             <LaunchBar
-              launchers={view !== "terminals"}
               project={project}
               target={target}
               onTarget={(path) =>
@@ -1557,20 +1557,6 @@ export default function App() {
                           >
                             <Plus size={14} />
                           </button>
-                          {session && git ? (
-                            <span
-                              className={
-                                "git-chip tabs-git" +
-                                (git.available ? "" : " muted-chip")
-                              }
-                              title={git.message || ""}
-                            >
-                              <GitBranch size={12} aria-hidden="true" />
-                              {git.available
-                                ? `${git.branch || "detached"}${git.changes ? ` · ${git.changes} changed` : ""}`
-                                : "No Git"}
-                            </span>
-                          ) : null}
                         </div>
                       ) : null}
                       {session ? (
@@ -2173,8 +2159,10 @@ function Launchpad({
         <HostOfflineNotice host={host} onOpenHosts={onOpenHosts} />
       ) : (
         <div className="launchpad-card">
-          <p className="eyebrow">Ready in {where}</p>
-          <h2>Open an agent or a shell here</h2>
+          <h2>{where}</h2>
+          <p className="launchpad-sub">
+            Choose an agent or a shell. Nothing runs until you type.
+          </p>
           <div className="launchpad-options">
             {providers.map((provider) => {
               const cap = capability(capabilities, provider);
@@ -2194,36 +2182,35 @@ function Launchpad({
                   onClick={() => onLaunch(provider)}
                 >
                   {launching === provider ? (
-                    <RefreshCw size={22} className="spin" />
+                    <RefreshCw size={18} className="spin" />
                   ) : (
-                    <ProviderGlyph provider={provider} size={22} />
+                    <ProviderGlyph provider={provider} size={18} />
                   )}
-                  <strong>{providerName(provider)}</strong>
+                  <span className="launchpad-option-text">
+                    <strong>{providerName(provider)}</strong>
+                    <span id={`launchpad-${provider}-hint`}>
+                      {missing
+                        ? "Not found on this host"
+                        : provider === "claude"
+                          ? "Claude Code"
+                          : provider === "codex"
+                            ? "Codex CLI"
+                            : "A terminal in this folder"}
+                    </span>
+                  </span>
                   {chips[provider] && !missing ? (
                     <small className="launchpad-chip">{chips[provider]}</small>
                   ) : null}
-                  <span id={`launchpad-${provider}-hint`}>
-                    {missing
-                      ? "Not found on this host"
-                      : provider === "claude"
-                        ? "Claude Code, ready for your first message"
-                        : provider === "codex"
-                          ? "Codex CLI, ready for your first message"
-                          : "A terminal in this folder"}
-                  </span>
+                  <ChevronRight size={14} className="launchpad-chevron" />
                 </button>
               );
             })}
           </div>
-          <p className="hint">
-            Nothing is sent until you type. Sessions keep running when you
-            switch folders or views, and after you close the window.
-          </p>
         </div>
       )}
       {recent.length ? (
         <div className="recent-sessions">
-          <h3 className="section-label">Recently ended here</h3>
+          <h3 className="launchpad-section">Recently ended</h3>
           {recent.map((s) => (
             <div key={s.id} className="recent-session">
               <ProviderGlyph provider={s.provider} />

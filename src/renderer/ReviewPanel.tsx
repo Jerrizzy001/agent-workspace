@@ -465,7 +465,7 @@ export function ReviewPanel({
               {directory ? "/" + directory : ""}
             </span>
           </div>
-          {controlled && !worktreePath ? (
+          {controlled && !worktreePath && directory ? (
             <p className="files-hint">
               New sessions open in the folder shown here.
             </p>

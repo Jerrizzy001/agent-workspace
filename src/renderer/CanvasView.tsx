@@ -798,7 +798,7 @@ export function CanvasView({
     <div className="canvas-container" ref={container}>
       <div className="canvas-actions" role="toolbar" aria-label="Canvas">
         <button
-          className="button primary small"
+          className="button small"
           disabled={!local}
           title="Share a reviewed snapshot between agents. A line never starts work automatically."
           onClick={() => setChooser(true)}
