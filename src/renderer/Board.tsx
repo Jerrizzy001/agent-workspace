@@ -81,13 +81,8 @@ export function Board({
             <h2>Board</h2>
             {modeSwitch}
           </div>
-          <p>
-            Track a piece of work, then attach an existing agent or start a new
-            one. Task stage is your plan; session badges show whether a process
-            is running.
-          </p>
         </div>
-        <button className="button primary small" onClick={onNewTask}>
+        <button className="button small" onClick={onNewTask}>
           <Plus size={14} />
           New task
         </button>

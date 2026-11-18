@@ -265,9 +265,11 @@ export function LaunchBar({
             title={git.message || ""}
           >
             <GitBranch size={12} />
-            {git.available
-              ? `${git.branch || "detached"}${git.changes ? ` · ${git.changes} changed` : ""}`
-              : "No Git"}
+            <span className="git-chip-text">
+              {git.available
+                ? `${git.branch || "detached"}${git.changes ? ` · ${git.changes} changed` : ""}`
+                : "No Git"}
+            </span>
           </span>
         ) : null}
       </div>

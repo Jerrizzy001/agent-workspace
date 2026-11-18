@@ -961,9 +961,11 @@ kbd {
   background: var(--surface);
   text-align: left;
 }
-.recent-card:hover {
-  border-color: var(--line-strong);
-  background: var(--surface-2);
+@media (hover: hover) {
+  .recent-card:hover {
+    border-color: var(--line-strong);
+    background: var(--surface-2);
+  }
 }
 .recent-card > svg {
   color: var(--accent);
@@ -1009,9 +1011,11 @@ kbd {
   color: var(--text-2);
   text-align: left;
 }
-.places button:hover {
-  background: var(--surface-2);
-  color: var(--text);
+@media (hover: hover) {
+  .places button:hover {
+    background: var(--surface-2);
+    color: var(--text);
+  }
 }
 .places button.active {
   background: var(--accent-soft);
@@ -1057,9 +1061,11 @@ kbd {
   color: var(--text-2);
   white-space: nowrap;
 }
-.crumbs button:hover {
-  background: var(--surface-3);
-  color: var(--text);
+@media (hover: hover) {
+  .crumbs button:hover {
+    background: var(--surface-3);
+    color: var(--text);
+  }
 }
 .crumbs button[aria-current] {
   color: var(--text);
@@ -1099,8 +1105,10 @@ kbd {
   gap: 8px;
   border-radius: var(--radius-sm);
 }
-.entry:hover {
-  background: var(--surface-2);
+@media (hover: hover) {
+  .entry:hover {
+    background: var(--surface-2);
+  }
 }
 .entry-main {
   flex: 1;
@@ -1129,17 +1137,23 @@ kbd {
   margin-right: 6px;
   color: var(--text-dim);
 }
-.entry:hover .entry-open,
 .entry-open:focus-visible {
   color: var(--text);
+}
+@media (hover: hover) {
+  .entry:hover .entry-open {
+    color: var(--text);
+  }
 }
 .entry-file {
   padding: 6px 9px;
   color: var(--text-3);
   min-height: 32px;
 }
-.entry-file:hover {
-  background: none;
+@media (hover: hover) {
+  .entry-file:hover {
+    background: none;
+  }
 }
 .entries-empty {
   color: var(--text-3);
@@ -1211,6 +1225,10 @@ kbd {
 .git-chip {
   display: inline-flex;
   align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   gap: 5px;
   font-size: var(--text-small);
   font-variant-numeric: tabular-nums;
@@ -1219,6 +1237,14 @@ kbd {
   border-radius: var(--radius-sm);
   padding: 2px 7px;
   white-space: nowrap;
+}
+.git-chip > svg {
+  flex: none;
+}
+.git-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .git-chip.tabs-git {
   margin-left: auto;
@@ -1446,9 +1472,13 @@ kbd {
   margin-left: -6px;
   color: var(--text-dim);
 }
-.session-identity strong:hover .session-rename-button,
 .session-rename-button:focus-visible {
   color: var(--text);
+}
+@media (hover: hover) {
+  .session-identity strong:hover .session-rename-button {
+    color: var(--text);
+  }
 }
 .session-rename {
   width: min(320px, 100%);
@@ -2128,8 +2158,10 @@ kbd {
   text-align: left;
   font-weight: 600;
 }
-.card-title:hover {
-  color: var(--accent);
+@media (hover: hover) {
+  .card-title:hover {
+    color: var(--accent);
+  }
 }
 .board-card p {
   color: var(--text-3);
@@ -2161,9 +2193,11 @@ kbd {
   font-size: var(--text-small);
   border-radius: var(--radius-sm);
 }
-.board-add:hover {
-  color: var(--text);
-  background: var(--surface-2);
+@media (hover: hover) {
+  .board-add:hover {
+    color: var(--text);
+    background: var(--surface-2);
+  }
 }
 /* Session board: running sessions as cards in owner-named lanes */
 .board-title {
@@ -2475,8 +2509,10 @@ kbd {
   border: 1px solid var(--line);
   text-align: left;
 }
-.attempt-row:hover {
-  background: var(--surface-2);
+@media (hover: hover) {
+  .attempt-row:hover {
+    background: var(--surface-2);
+  }
 }
 .attempt-row > span:nth-child(2) {
   flex: 1;
@@ -3105,11 +3141,14 @@ kbd {
     padding: 8px 10px;
     flex-wrap: wrap;
   }
+  /* Compact touch targets at the end of the row, not stretched tiles. */
   .session-actions {
-    width: 100%;
+    margin-inline-start: auto;
+    gap: var(--space-1);
   }
-  .session-actions .button {
-    flex: 1;
+  .session-actions :is(.button, .icon-button) {
+    flex: none;
+    min-width: 36px;
     height: 36px;
   }
   .session-tabs {
@@ -3393,6 +3432,22 @@ kbd {
 .terminal-voice-bar.compact .terminal-voice-shortcut {
   display: none;
 }
+@media (max-width: 900px) {
+  .terminal-voice-bar {
+    flex-wrap: nowrap;
+  }
+  .terminal-voice-help {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+@media (hover: none) {
+  .terminal-voice-shortcut {
+    display: none;
+  }
+}
 .dictation-indicator {
   display: inline-flex;
   align-items: center;
@@ -3451,8 +3506,10 @@ kbd {
   height: 24px;
   padding: 0 8px;
 }
-.dictation-stop:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--status-danger) 34%, transparent);
+@media (hover: hover) {
+  .dictation-stop:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--status-danger) 34%, transparent);
+  }
 }
 .dictation-notices {
   position: fixed;
@@ -4506,4 +4563,16 @@ input[type="checkbox"][role="switch"]:focus-visible {
 }
 .new-menu .launch-item.is-missing small {
   color: var(--status-attention);
+}
+
+/* Narrow layout inside the Mac window (reached by zooming in): the sidebar
+   becomes a drawer over content, where the window's vibrancy cannot show,
+   so it needs an opaque fill; and the toolbar clears the traffic lights. */
+@media (max-width: 900px) {
+  :root[data-chrome="mac-inset"] .sidebar {
+    background: var(--bg-sidebar);
+  }
+  :root[data-chrome="mac-inset"] .topbar {
+    padding-inline-start: 84px;
+  }
 }

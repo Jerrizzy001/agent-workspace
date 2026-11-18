@@ -506,3 +506,40 @@ UX and context menu all pass. Three fail:
   host's accounts. They fail outside the UI. The provider runs didn't complete, and
   `remote-provider` calls `remote.enable` without the `sharedProjects` the core now requires.
   That script predates the redesign.
+
+### Phase 7: mobile and review (done)
+- **New capture script.** `scripts/capture-narrow.mjs <dir>` captures, in both themes, a 320px viewport (terminal,
+  drawer, Settings), 200% zoom (terminal, Settings) and a right-to-left document (terminal, Board,
+  Canvas, Settings). It writes `overflow.json`, listing anything wider than the viewport. Nothing
+  scrolls sideways at any size. The phone screenshots from `verify:mobile` are in `phase-7/remote-*`.
+- **Fixed:**
+  - **Drawer was see-through (high).** In the Mac window, zooming to 200% switches to the narrow layout. The
+    sidebar becomes a drawer over content, where the window's vibrancy can't show, so it was
+    see-through. It now has an opaque fill, and the narrow toolbar clears the traffic lights.
+  - **Session actions** on narrow screens were stretched into equal tiles, with End as a wide box.
+    They are now 36px controls at the end of the row.
+  - **Voice bar** at 320px wrapped to three lines. It now stays on one line with the hint ellipsised, and the
+    keyboard shortcut is hidden on touch devices.
+  - **Branch chip** cut off mid-word ("main · 4 chan"). It now ellipsises.
+  - **Board Tasks view** still had its explainer paragraph, now removed. Its filled "New task" button is now a
+    regular button, so the toolbar's New stays the only filled button in the view.
+  - **Hover styles.** Eleven hover rules that only change colour are now inside `@media (hover: hover)`.
+    Rules that also cover `:focus-visible` were split, so keyboard focus is unchanged.
+- **Review, remaining (none high):**
+  - *Low:* menu-item highlight rules combine `:hover` with `:focus-visible` and aren't gated. Menus close
+    on tap, so touch never sees a stuck highlight.
+  - *Low:* in right-to-left, directional arrows ("Move to →") don't flip. The app has no right-to-left locale.
+  - *Low:* the toolbar keeps a separate Appearance button beside the Settings gear. It's kept
+    because `verify:appearance` opens Settings through it.
+  - *Medium:* phone session actions are 36px, below the 44px HIG size used by the bottom navigation.
+  - *Known:* the narrow layout in the Mac window at 300% zoom wraps the toolbar to two rows.
+    That's about 333 CSS px.
+
+Checks: `npm test` gives 144 pass, 0 fail. In a sequential run of 21 UI suites, 18 pass, including `verify:mobile`
+and `verify:mobile-webkit`. Two clipboard-based suites failed in the batch and pass alone:
+- **`image-paste`.**
+- **`dictation`:** a leftover-text dialog was still covering the page when it clicked.
+
+`verify:accounts` fails only its final default-folder isolation check, as in Phases 4 to 6.
+`verify:mobile` timed out once on its "Reconnecting · input paused" banner in an earlier
+run and passed on rerun.
