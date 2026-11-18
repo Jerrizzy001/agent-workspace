@@ -1,3 +1,4 @@
+import { workspaceSocket } from "../src/core/socket.ts";
 import { cleanupFixture } from "./fixture-cleanup.mjs";
 import { _electron as electron } from "playwright";
 import {
@@ -147,7 +148,7 @@ try {
     await new Promise((r) => setTimeout(r, 2000));
   }
   // Remount and reopen must retain identities, without delivering the prompts again.
-  const socket = path.join(tmpdir(), `aw-${createHash("sha256").update(await realpath(path.join(fixture, "data"))).digest("hex").slice(0, 20)}.sock`);
+  const socket = workspaceSocket(await realpath(path.join(fixture, "data")));
   const panePid = (s) => execFileSync("/opt/homebrew/bin/tmux", ["-S", socket, "display-message", "-p", "-t", s.launch.session.backendName, "#{pane_pid}"], { encoding: "utf8" }).trim();
   for (const s of sessions) { s.panePid = panePid(s); await invoke("session.detach", s.sp); }
   const attemptsBefore = (await invoke("snapshot")).attempts.map(v => v.id).sort();

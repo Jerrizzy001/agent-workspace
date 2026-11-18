@@ -1,16 +1,17 @@
 {
-  "platform": "Playwright driving installed Google Chrome (Chromium); synthetic touch phone viewports, not a physical iOS/Android device",
-  "browserVersion": "156.0.8078.79",
+  "platform": "Playwright driving Chromium at /opt/pw-browsers/chromium on linux; synthetic touch phone viewports, not a physical iOS/Android device",
+  "browserVersion": "153.0.8010.12",
   "passed": [
     "pairing accepts owner secret, rejects incorrect secret; no credential localStorage",
-    "390×844 touch layout creates task and shell; per-attempt model fields preserved; terminal input creates server file",
+    "390×844 touch layout: task modal fits portrait/landscape; launch options default to CLI models; one tap opens a shell with no task; terminal input creates server file",
     "touch keyboard focus, Enter and Ctrl C work; bracketed multiline paste waits for Enter; arrow keys honor application and normal cursor modes",
+    "phone session board: lanes scroll with snap; Move to… by touch places the card remotely; tap opens a full-screen live card; closing keeps the same running session",
     "delayed note acknowledgements, canceled unload, stale event/reload snapshots and canvas remounts preserve exact visible/durable text; removed notes stay removed",
     "manual sign out flushes the latest pending canvas note before revoking access",
     "touch project/task drawer, files editor, horizontally scrolling board and persistent canvas note",
     "portrait, landscape and keyboard-height viewport resizing preserve terminal focus and prevent body overflow",
     "network loss pauses input, rejects unsent commands, reattaches same generation and never relaunches/replays",
-    "full Chromium profile close/reopen restores cookie authentication, selected task, original process PID and note without duplicate attempt",
+    "full Chromium profile close/reopen restores cookie authentication, selected session, original process PID and note without a duplicate launch",
     "two browsers share one terminal; 10000-line output triggers real WS resync, final visible rows match tmux, ACKs stay bounded without disconnect and subsequent typing works",
     "mobile worktree creation, scoped file read/save and tracked diff use valid remote command scopes; main repository file is preserved",
     "wide browser retains desktop layout; PWA manifest and worker available; cache contains no HTML/API/private workspace responses",
@@ -18,8 +19,8 @@
     "sign out revokes cookie access and removes private workspace UI"
   ],
   "burst": {
-    "renderedRows": 22,
-    "firstRow": 9978,
+    "renderedRows": 30,
+    "firstRow": 9970,
     "lastRow": 9999,
     "resyncEvents": 1,
     "transportDisconnects": 0

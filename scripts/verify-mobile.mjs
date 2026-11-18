@@ -1,3 +1,4 @@
+import { pollFunction, workspaceSnapshotWithNotes } from "./poll-function.mjs";
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
@@ -10,7 +11,9 @@ import { cleanupFixture } from "./fixture-cleanup.mjs";
 
 const fixture = await mkdtemp(path.join(tmpdir(), "aw-mobile-"));
 const repo = path.join(fixture, "phone-project");
-const screenshotDir = path.resolve("docs/screenshots/remote");
+const screenshotDir = path.resolve(
+  process.env.WORKSPACE_EVIDENCE_DIR || path.join(fixture, "screenshots"),
+);
 await mkdir(repo);
 await mkdir(screenshotDir, { recursive: true });
 await writeFile(path.join(repo, "hello.txt"), "Shared workspace file\n");
@@ -124,7 +127,7 @@ try {
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await page.getByText("Connected to workspace", { exact: true }).waitFor();
   await page
-    .locator(".workspace-heading h1")
+    .locator(".topbar-title h1")
     .filter({ hasText: "phone-project" })
     .waitFor();
   assert.equal(
@@ -140,6 +143,13 @@ try {
     "pairing accepts owner secret, rejects incorrect secret; no credential localStorage",
   );
 
+  // Planning is optional; check the phone modal fits, then launch with one tap.
+  await page
+    .getByRole("navigation", { name: "Workspace navigation" })
+    .getByRole("button", { name: "Board", exact: true })
+    .click();
+  // The board opens on live sessions; tasks are its second mode.
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await page.getByRole("button", { name: "New task", exact: true }).click();
   await page
     .getByPlaceholder("What do you want to work on?")
@@ -147,13 +157,6 @@ try {
   await page
     .getByPlaceholder("Add context, constraints, or an intended outcome.")
     .fill("Shared terminal, files and notes.");
-  await page
-    .locator(".modal")
-    .getByRole("button", { name: "Create task", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Start an attempt", exact: true })
-    .click();
   await noOverflow(page);
   const dialogBounds = await page.getByRole("dialog").boundingBox();
   assert.ok(dialogBounds.width <= 390 && dialogBounds.height <= 844);
@@ -167,21 +170,24 @@ try {
   assert.ok(landscapeDialog.width <= 844 && landscapeDialog.height <= 390);
   await noOverflow(page);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("button", { name: "Codex", exact: false }).click();
-  assert.equal(
-    await page.getByLabel("Model optional").inputValue(),
-    "gpt-6.1-sol",
-  );
-  await page.getByRole("button", { name: "Claude", exact: false }).click();
-  assert.equal(
-    await page.getByLabel("Model optional").inputValue(),
-    "claude-opus-4-6",
-  );
-  await page.getByRole("button", { name: "Shell", exact: false }).click();
   await page
     .locator(".modal")
-    .getByRole("button", { name: "Start attempt", exact: true })
+    .getByRole("button", { name: "Create task", exact: true })
     .click();
+  await page.getByRole("button", { name: "Close task details" }).click();
+  await page
+    .getByRole("navigation", { name: "Workspace navigation" })
+    .getByRole("button", { name: "Terminal", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Launch options" }).click();
+  assert.equal(await page.getByLabel("Claude model").inputValue(), "");
+  assert.equal(await page.getByLabel("Codex model").inputValue(), "");
+  const options = await page
+    .getByRole("dialog", { name: "Launch options" })
+    .boundingBox();
+  assert.ok(options.x >= 0 && options.x + options.width <= 390);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Open Shell here" }).click();
   await page.getByRole("button", { name: "Focus terminal keyboard" }).waitFor();
   await poll(
     () =>
@@ -200,12 +206,20 @@ try {
     "phone command creates file",
   );
   const originalPid = await read("mobile-pid.txt");
-  const original = await page.evaluate(() =>
-    window.workspace.invoke("snapshot"),
+  const original = await page.evaluate(workspaceSnapshotWithNotes);
+  assert.equal(original.sessions.length, 1);
+  assert.equal(original.attempts.length, 0);
+  // Agent control is granted only from the desktop window.
+  assert.equal(
+    await page.evaluate(() => "agentControl" in window.workspace),
+    false,
   );
-  assert.equal(original.attempts.length, 1);
+  assert.equal(
+    await page.getByRole("button", { name: /Agent control/ }).count(),
+    0,
+  );
   checks.push(
-    "390×844 touch layout creates task and shell; per-attempt model fields preserved; terminal input creates server file",
+    "390×844 touch layout: task modal fits portrait/landscape; launch options default to CLI models; one tap opens a shell with no task; terminal input creates server file",
   );
 
   await page.getByRole("button", { name: "Paste", exact: true }).click();
@@ -259,19 +273,19 @@ try {
 
   await page
     .getByRole("navigation", { name: "Workspace navigation" })
-    .getByRole("button", { name: "Tasks", exact: true })
+    .getByRole("button", { name: "Folders", exact: true })
     .click();
   await page
-    .locator(".sidebar .task-link")
-    .filter({ hasText: "Continue from my phone" })
+    .locator(".sidebar .session-row")
+    .filter({ hasText: "Shell" })
     .waitFor({ state: "visible" });
   await page.screenshot({
     animations: "disabled",
     path: path.join(screenshotDir, "phone-project-drawer.png"),
   });
   await page
-    .locator(".sidebar .task-link")
-    .filter({ hasText: "Continue from my phone" })
+    .locator(".sidebar .session-row")
+    .filter({ hasText: "Shell" })
     .click();
   await page
     .getByRole("navigation", { name: "Workspace navigation" })
@@ -279,7 +293,7 @@ try {
     .click();
   await page
     .locator(".panel-tabs")
-    .getByRole("button", { name: "files", exact: true })
+    .getByRole("button", { name: "Files", exact: true })
     .click();
   await page
     .getByRole("button", { name: "mobile-proof.txt", exact: true })
@@ -301,6 +315,63 @@ try {
     .getByRole("navigation", { name: "Workspace navigation" })
     .getByRole("button", { name: "Board", exact: true })
     .click();
+  // Live session board by touch: lanes scroll with snap, Move to… files the
+  // card through the gateway, and a tap opens the full-screen live card.
+  await page.getByRole("button", { name: "Sessions", exact: true }).click();
+  await page.locator(".lanes").waitFor();
+  assert.equal(
+    await page
+      .locator(".lanes")
+      .evaluate(
+        (element) =>
+          element.scrollWidth > element.clientWidth &&
+          getComputedStyle(element).scrollSnapType.startsWith("x"),
+      ),
+    true,
+  );
+  await noOverflow(page);
+  const phoneCard = page.locator(".session-card").filter({ hasText: "Shell" });
+  await phoneCard.getByRole("button", { name: /^Move to… \(/ }).tap();
+  await phoneCard.getByRole("menuitem", { name: "Review" }).tap();
+  await poll(
+    async () =>
+      (await page.evaluate(workspaceSnapshotWithNotes)).sessions[0].lane ===
+      "review",
+    "phone Move to Review",
+  );
+  await page
+    .locator('.lane[data-lane="review"] .session-card')
+    .filter({ hasText: "Shell" })
+    .waitFor();
+  await page
+    .locator('.lane[data-lane="review"]')
+    .evaluate((element) => element.scrollIntoView({ inline: "start" }));
+  await noOverflow(page);
+  await page.screenshot({
+    animations: "disabled",
+    path: path.join(screenshotDir, "board-phone.png"),
+  });
+  await page.locator('.lane[data-lane="review"] .session-card-open').tap();
+  const phoneLive = page.getByRole("dialog", { name: /^Live card/ });
+  await phoneLive.waitFor();
+  await page.getByRole("button", { name: "Focus terminal keyboard" }).waitFor();
+  const liveBounds = await phoneLive.boundingBox();
+  assert.ok(
+    liveBounds.x <= 1 && liveBounds.width >= 389,
+    "live card is full-screen",
+  );
+  await noOverflow(page);
+  await page.getByRole("button", { name: "Close live card" }).tap();
+  await phoneLive.waitFor({ state: "detached" });
+  const placedPhone = (await page.evaluate(workspaceSnapshotWithNotes))
+    .sessions[0];
+  assert.equal(placedPhone.status, "running");
+  assert.equal(placedPhone.generation, original.sessions[0].generation);
+  assert.equal(placedPhone.placementRevision, 1);
+  checks.push(
+    "phone session board: lanes scroll with snap; Move to… by touch places the card remotely; tap opens a full-screen live card; closing keeps the same running session",
+  );
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   assert.equal(
     await page
       .locator(".board")
@@ -336,13 +407,11 @@ try {
   await canvasNote.fill("The same workspace note,");
   await poll(
     async () =>
-      (await page.evaluate(() => window.workspace.invoke("snapshot"))).notes[0]
-        ?.body === "The same workspace note,",
+      (await page.evaluate(workspaceSnapshotWithNotes)).notes[0]?.body ===
+      "The same workspace note,",
     "first note snapshot before delayed acknowledgement",
   );
-  const firstNoteSnapshot = await page.evaluate(() =>
-    window.workspace.invoke("snapshot"),
-  );
+  const firstNoteSnapshot = await page.evaluate(workspaceSnapshotWithNotes);
   assert.equal(
     await page.evaluate(() => {
       const event = new Event("beforeunload", { cancelable: true });
@@ -366,8 +435,8 @@ try {
   assert.equal(await canvasNote.inputValue(), continuedNote);
   await poll(
     async () =>
-      (await page.evaluate(() => window.workspace.invoke("snapshot"))).notes[0]
-        ?.body === continuedNote,
+      (await page.evaluate(workspaceSnapshotWithNotes)).notes[0]?.body ===
+      continuedNote,
     "continued note serializes after first acknowledgement",
   );
   await new Promise((resolve) => setTimeout(resolve, 700));
@@ -381,8 +450,7 @@ try {
     "stale acknowledged snapshot cannot revert the local draft",
   );
   assert.equal(
-    (await page.evaluate(() => window.workspace.invoke("snapshot"))).notes[0]
-      .body,
+    (await page.evaluate(workspaceSnapshotWithNotes)).notes[0].body,
     continuedNote,
   );
   await page
@@ -412,9 +480,7 @@ try {
     "a stale reload cannot rebind an older note on remount",
   );
   await page.evaluate(() => globalThis.__restoreNoteInvoke());
-  const latestNoteSnapshot = await page.evaluate(() =>
-    window.workspace.invoke("snapshot"),
-  );
+  const latestNoteSnapshot = await page.evaluate(workspaceSnapshotWithNotes);
   assert.equal(latestNoteSnapshot.notes[0].body, continuedNote);
   await page.evaluate((snapshot) => {
     window.workspace.emit({
@@ -428,7 +494,11 @@ try {
     .getByRole("button", { name: "Terminal", exact: true })
     .click();
   await page.getByRole("button", { name: "Canvas", exact: true }).click();
-  assert.equal(await canvasNote.count(), 0, "removed notes stay removed on remount");
+  assert.equal(
+    await canvasNote.count(),
+    0,
+    "removed notes stay removed on remount",
+  );
   await page.evaluate(
     (snapshot) => window.workspace.emit({ type: "snapshot", snapshot }),
     latestNoteSnapshot,
@@ -450,9 +520,8 @@ try {
   await page.getByText("Connected to workspace", { exact: true }).waitFor();
   await poll(
     async () =>
-      (
-        await page.evaluate(() => window.workspace.invoke("snapshot"))
-      ).notes[0]?.body === continuedNote + ".",
+      (await page.evaluate(workspaceSnapshotWithNotes)).notes[0]?.body ===
+      continuedNote + ".",
     "pending note flush before explicit sign out",
   );
   await page.getByRole("button", { name: "Canvas", exact: true }).click();
@@ -542,15 +611,13 @@ try {
     "reattach after network drop",
   );
   assert.equal(await read("phone-once.txt"), "once\n");
-  const afterReconnect = await page.evaluate(() =>
-    window.workspace.invoke("snapshot"),
-  );
+  const afterReconnect = await page.evaluate(workspaceSnapshotWithNotes);
   assert.equal(afterReconnect.sessions[0].id, original.sessions[0].id);
   assert.equal(
     afterReconnect.sessions[0].generation,
     original.sessions[0].generation,
   );
-  assert.equal(afterReconnect.attempts.length, 1);
+  assert.equal(afterReconnect.sessions.length, 1);
   checks.push(
     "network loss pauses input, rejects unsent commands, reattaches same generation and never relaunches/replays",
   );
@@ -563,8 +630,8 @@ try {
   await page.goto(info.url);
   await page.getByText("Connected to workspace", { exact: true }).waitFor();
   await page
-    .locator(".task-heading h2")
-    .filter({ hasText: "Continue from my phone" })
+    .locator(".session-identity strong")
+    .filter({ hasText: "Shell" })
     .waitFor();
   await poll(
     () =>
@@ -583,16 +650,14 @@ try {
     "same PID after browser restart",
   );
   assert.equal(await read("phone-once.txt"), "once\n");
-  const afterRestart = await page.evaluate(() =>
-    window.workspace.invoke("snapshot"),
-  );
-  assert.equal(afterRestart.attempts.length, 1);
+  const afterRestart = await page.evaluate(workspaceSnapshotWithNotes);
+  assert.equal(afterRestart.sessions.length, 1);
   assert.equal(
     afterRestart.notes[0].body,
     "The same workspace note, written from a phone viewport.",
   );
   checks.push(
-    "full Chromium profile close/reopen restores cookie authentication, selected task, original process PID and note without duplicate attempt",
+    "full Chromium profile close/reopen restores cookie authentication, selected session, original process PID and note without a duplicate launch",
   );
 
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -612,11 +677,11 @@ try {
   await second.getByText("Connected to workspace", { exact: true }).waitFor();
   await second
     .getByRole("navigation", { name: "Workspace navigation" })
-    .getByRole("button", { name: "Tasks", exact: true })
+    .getByRole("button", { name: "Folders", exact: true })
     .click();
   await second
-    .locator(".sidebar .task-link")
-    .filter({ hasText: "Continue from my phone" })
+    .locator(".sidebar .session-row")
+    .filter({ hasText: "Shell" })
     .click();
   await poll(
     () =>
@@ -723,7 +788,7 @@ try {
     .click();
   await page
     .locator(".panel-tabs")
-    .getByRole("button", { name: "worktrees", exact: true })
+    .getByRole("button", { name: "Worktrees", exact: true })
     .click();
   await page
     .getByLabel("New worktree branch", { exact: true })
@@ -737,9 +802,14 @@ try {
     .waitFor();
   await page
     .getByRole("navigation", { name: "Workspace navigation" })
-    .getByRole("button", { name: "Terminal", exact: true })
+    .getByRole("button", { name: "Board", exact: true })
     .click();
-  await page.getByRole("button", { name: "New attempt", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Continue from my phone", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Start an attempt", exact: true })
+    .click();
   const worktreeOption = await page
     .getByLabel("Working directory")
     .locator("option")
@@ -761,7 +831,7 @@ try {
     .click();
   await page
     .locator(".panel-tabs")
-    .getByRole("button", { name: "files", exact: true })
+    .getByRole("button", { name: "Files", exact: true })
     .click();
   await page.getByRole("button", { name: "hello.txt", exact: true }).click();
   await page.locator(".editor-overlay").waitFor();
@@ -775,7 +845,7 @@ try {
     .first()
     .waitFor({ state: "attached" });
   await page.locator(".monaco-editor .view-lines").click();
-  await page.keyboard.press("Meta+A");
+  await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("Worktree edit from phone\n", { delay: 4 });
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await poll(
@@ -792,7 +862,7 @@ try {
   await page.getByRole("button", { name: "Close editor", exact: true }).click();
   await page
     .locator(".panel-tabs")
-    .getByRole("button", { name: "changes", exact: true })
+    .getByRole("button", { name: /^Changes/ })
     .click();
   await page
     .getByRole("button", { name: "Refresh files and git", exact: true })
@@ -826,7 +896,7 @@ try {
     "mobile worktree creation, scoped file read/save and tracked diff use valid remote command scopes; main repository file is preserved",
   );
 
-  await page.waitForFunction(async () =>
+  await pollFunction(page, async () =>
     Boolean(await navigator.serviceWorker.getRegistration()),
   );
   const cachedPaths = await page.evaluate(async () => {
@@ -854,7 +924,7 @@ try {
   );
   await page
     .locator(".panel-tabs")
-    .getByRole("button", { name: "files", exact: true })
+    .getByRole("button", { name: "Files", exact: true })
     .click();
   await page.getByRole("button", { name: "hello.txt", exact: true }).click();
   await page
@@ -862,7 +932,7 @@ try {
     .first()
     .waitFor({ state: "attached" });
   await page.locator(".monaco-editor .view-lines").click();
-  await page.keyboard.press("Meta+A");
+  await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("Unsaved editor draft", { delay: 4 });
   await poll(
     () => page.getByRole("button", { name: "Save", exact: true }).isEnabled(),
@@ -899,8 +969,7 @@ try {
     path.join(screenshotDir, "mobile-verification.json"),
     JSON.stringify(
       {
-        platform:
-          "Playwright driving installed Google Chrome (Chromium); synthetic touch phone viewports, not a physical iOS/Android device",
+        platform: `Playwright driving ${process.env.WORKSPACE_BROWSER ? "Chromium at " + process.env.WORKSPACE_BROWSER : "installed Google Chrome (Chromium)"} on ${process.platform}; synthetic touch phone viewports, not a physical iOS/Android device`,
         browserVersion: context.browser()?.version(),
         passed: checks,
         burst: burstMetrics,

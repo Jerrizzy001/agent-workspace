@@ -1,0 +1,932 @@
+/* Settings panels: SSH hosts, remote access, team, Claude profiles,
+   connected agents and agent control. One file, organised by the shared
+   primitive each pattern uses, instead of one stylesheet per feature.
+   Rules: group with space rather than lines; items sit on raised surfaces
+   with a shadow ring; status is a dot plus words; notices carry a leading
+   bar; tags are grey unless they report a state. */
+
+/* ---- Sheet sizes ---------------------------------------------------- */
+.modal:is(.ssh-hosts, .remote-access, .profiles-panel) {
+  width: min(640px, 100%);
+}
+.modal:is(.team-panel, .transcript-links) {
+  width: min(720px, 100%);
+}
+.modal.agent-control {
+  width: min(560px, 100%);
+}
+
+/* Header subtitle and intro copy */
+.modal > header p {
+  margin-top: var(--space-1);
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+:is(
+    .ssh-intro,
+    .ssh-notice,
+    .ssh-help,
+    .profiles-intro,
+    .profiles-foot,
+    .profiles-support p,
+    .transcript-links p,
+    .remote-detail,
+    .modal.remote-access li,
+    .modal.agent-control p,
+    .team-task-description,
+    .team-preview ul,
+    .transcript-source-picker p
+  ) {
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.ssh-help ol,
+.modal.remote-access ol,
+.team-preview ul,
+.ssh-fingerprints ul,
+.remote-projects ul {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-5);
+}
+:is(.team-panel, .transcript-links, .task-team, .remote-access, .setup-guide) h3,
+.ssh-add h3 {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+.team-panel h4,
+.agent-control-audit h3,
+.agent-control-form legend {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-small);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* ---- Sections: separated by space, not rules ------------------------ */
+:is(
+    .team-folder,
+    .team-outbox,
+    .team-projects,
+    .team-project,
+    .ssh-add-wrap,
+    .transcript-share,
+    .profile-add,
+    .task-team
+  ) {
+  margin-top: var(--space-2);
+}
+.modal.team-panel {
+  gap: var(--space-5);
+}
+.team-connect,
+.team-thread,
+.team-folder-publish,
+.team-comment-form,
+.team-comment-edit,
+.ssh-add,
+.ssh-browser,
+.transcript-share,
+.task-team,
+.agent-control-form,
+.modal.remote-access fieldset {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.agent-control-form,
+.modal.remote-access fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.modal.remote-access fieldset:disabled,
+.modal.remote-access fieldset:disabled :is(label, legend, span, p, small, strong) {
+  color: var(--text-disabled);
+}
+
+/* ---- Disclosures ---------------------------------------------------- */
+:is(
+    .ssh-add summary,
+    .ssh-help summary,
+    .profiles-support summary,
+    .modal.remote-access summary
+  ) {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  cursor: default;
+}
+.ssh-add-wrap > summary {
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: default;
+}
+.ssh-add {
+  padding-top: var(--space-3);
+}
+.ssh-add details {
+  display: grid;
+  gap: var(--space-3);
+}
+.ssh-add details > :is(label, .ssh-row) {
+  margin-top: var(--space-3);
+}
+.profiles-support p {
+  margin-top: var(--space-2);
+}
+
+/* ---- Item cards: raised surface with a ring ------------------------- */
+:is(
+    .ssh-host,
+    .profile-row,
+    .link-row,
+    .team-identity,
+    .team-members li,
+    .team-comment,
+    .team-project-row,
+    .team-shared-tasks button,
+    .remote-pair,
+    .transcript-source-picker
+  ) {
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-border);
+  padding: var(--space-3) var(--space-4);
+}
+/* Not-yet-real items (default sign-in, unsent comments) are outlined only. */
+.profile-row.is-default,
+.team-comment.pending {
+  background: transparent;
+}
+.ssh-host-list,
+.profile-list,
+.link-list,
+.team-projects ul,
+.team-members,
+.team-shared-tasks,
+.team-comments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+:is(.team-project-row, .team-shared-tasks button) {
+  width: 100%;
+  text-align: left;
+  color: var(--text-primary);
+}
+@media (hover: hover) {
+  :is(.team-project-row, .team-shared-tasks button):hover {
+    box-shadow: var(--shadow-border-hover);
+  }
+}
+
+/* Card layouts */
+.ssh-host {
+  display: grid;
+  gap: var(--space-2);
+}
+.ssh-host-head,
+.team-project-head,
+.task-team-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.task-team-head {
+  flex-wrap: wrap;
+}
+:is(.team-project-head, .task-team-head) h3 {
+  flex: 1;
+}
+.ssh-host-name,
+.profile-name,
+.team-identity > div,
+.team-members li > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.team-identity > div {
+  min-width: 180px;
+}
+.profile-row,
+.team-identity,
+.team-members li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+.team-members li {
+  flex-wrap: nowrap;
+  padding: var(--space-2) var(--space-3);
+}
+.link-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-1) var(--space-3);
+  align-items: center;
+  font-size: var(--text-small);
+}
+.link-row > strong,
+.link-row .muted {
+  grid-column: 1;
+}
+.link-row > button,
+.link-row .link-actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+.link-row .link-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+.link-row.revoked,
+.link-row.revoked :is(strong, .muted) {
+  color: var(--text-disabled);
+}
+.team-project-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.team-shared-tasks button {
+  display: grid;
+  gap: 2px;
+}
+.team-comment {
+  padding: var(--space-2) var(--space-3);
+}
+.team-comment header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--text-tertiary);
+}
+.team-comment header strong {
+  color: var(--text-primary);
+}
+.team-comment header em {
+  font-style: normal;
+}
+.team-comment-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+}
+.team-comment-body {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.team-comment-form textarea,
+.team-comment-edit textarea {
+  min-height: 54px;
+}
+.team-comment-form .button {
+  justify-self: end;
+}
+.team-comment-edit div {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* Secondary lines under a name: paths, ids, member details */
+:is(
+    .ssh-host-name small,
+    .profile-name small,
+    .profile-remove-data small,
+    .team-identity small
+  ) {
+  font: var(--text-caption) / 1.4 var(--mono);
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:is(.profile-remove-data small, .team-identity small) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+:is(
+    .team-members small,
+    .team-shared-tasks small,
+    .team-project-row small,
+    .team-outbox-row small,
+    .team-sync-label,
+    .ssh-meta,
+    .ssh-state,
+    .transcript-meta
+  ) {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-tertiary);
+}
+.ssh-state {
+  color: var(--text-secondary);
+}
+.team-project-row small {
+  flex: 1;
+}
+
+/* Inline actions in a card */
+.ssh-actions,
+.profile-actions,
+.profile-remove-actions,
+.team-outbox-actions,
+.remote-files,
+.remote-actions,
+.ssh-places,
+.ssh-browser-foot,
+.transcript-share-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.profile-actions,
+.profile-remove-actions {
+  justify-content: flex-end;
+}
+.ssh-actions .danger {
+  margin-left: auto;
+}
+.team-outbox-actions {
+  margin-left: auto;
+}
+.transcript-share-row {
+  align-items: flex-end;
+}
+.transcript-share-row label {
+  flex: 1 1 220px;
+}
+
+/* ---- Status dots ---------------------------------------------------- */
+:is(.ssh-dot, .remote-dot, .team-dot) {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-neutral);
+}
+:is(.ssh-dot.connected, .remote-dot.enabled, .team-dot.online) {
+  background: var(--status-running);
+}
+:is(.ssh-dot.connecting, .ssh-dot.reconnecting) {
+  background: var(--status-attention);
+}
+.remote-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+.host-connection {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+.host-connection > span:last-child {
+  margin-left: auto;
+  color: var(--text-tertiary);
+}
+.profile-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+.profile-state.state-ready svg,
+.transcript-meta .complete,
+.ssh-entries em {
+  color: var(--status-running);
+}
+.profile-state.state-problem,
+.danger-text,
+.ssh-actions .danger {
+  color: var(--status-danger);
+}
+.transcript-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+}
+.transcript-meta .partial {
+  color: var(--status-attention);
+}
+
+/* ---- Notices: a leading bar says how serious ------------------------ */
+:is(
+    .ssh-problem,
+    .profiles-warning,
+    .profiles-error,
+    .team-warning,
+    .team-notice,
+    .team-error,
+    .agent-control-unavailable
+  ) {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  box-shadow: inset 3px 0 0 var(--status-attention);
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.agent-control-unavailable {
+  box-shadow: inset 3px 0 0 var(--status-neutral);
+}
+:is(.ssh-problem.danger, .profiles-error, .team-warning, .team-error) {
+  background: var(--danger-soft);
+  box-shadow: inset 3px 0 0 var(--status-danger);
+  color: var(--text-primary);
+}
+:is(.ssh-problem, .team-warning) strong {
+  color: var(--text-primary);
+}
+:is(.ssh-problem, .team-warning) p {
+  margin: var(--space-1) 0 0;
+}
+/* An active grant is good news: accent tint, no bar. */
+.agent-control-grant {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+.agent-control-grant .muted {
+  grid-column: 1;
+  font-size: var(--text-small);
+}
+.agent-control-grant button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+/* ---- Tags ----------------------------------------------------------- */
+:is(
+    .ssh-tools span,
+    .host-badge,
+    .profile-chip,
+    .team-chip,
+    .redaction-list button
+  ) {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  min-height: 18px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: var(--bg-selected);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+:is(.ssh-tools span, .redaction-list button) {
+  font-family: var(--mono);
+}
+.host-badge {
+  max-width: 110px;
+}
+.host-badge .ssh-dot {
+  width: 6px;
+  height: 6px;
+}
+.topbar-title .host-badge {
+  margin-left: var(--space-1);
+}
+.profile-chip {
+  max-width: 120px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.lineage-chip {
+  max-width: 260px;
+  background: var(--bg-selected);
+  color: var(--text-secondary);
+}
+.lineage-chip.unknown,
+.team-chip:is(.pending, .sending, .local-changes) {
+  color: var(--status-attention);
+}
+.ssh-tools .missing,
+.team-chip:is(.conflict, .failed, .revoked) {
+  background: var(--danger-soft);
+  color: var(--status-danger);
+}
+.team-chip.synced {
+  color: var(--status-running);
+}
+.ssh-tools,
+.redaction-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+/* ---- Check rows: control left, text right --------------------------- */
+.modal :is(
+    .agent-control-verb,
+    .profile-remove-data,
+    .transcript-consent,
+    .remote-checkbox
+  ) {
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: var(--space-2);
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+:is(.agent-control-verb, .profile-remove-data, .transcript-consent, .remote-checkbox)
+  input {
+  flex: none;
+  width: auto;
+  margin: 3px 0 0;
+}
+.agent-control-verb > span {
+  display: grid;
+  gap: 2px;
+}
+.agent-control-verb .muted {
+  font-size: var(--text-small);
+}
+
+/* ---- Secrets, codes and fingerprints -------------------------------- */
+:is(.remote-pair output, .ssh-fingerprints code, .team-invitation code) {
+  font: var(--text-small) / 1.6 var(--mono);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.remote-pair output {
+  display: block;
+}
+.remote-pair .remote-secret {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-window);
+  font-size: var(--text-heading);
+}
+.ssh-help code,
+.ssh-intro code,
+.agent-control-audit li code {
+  font-size: var(--text-small);
+  overflow-wrap: anywhere;
+}
+.team-preview pre {
+  max-height: 240px;
+  overflow: auto;
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  font: var(--text-small) / 1.5 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.modal .transcript-preview {
+  width: 100%;
+  min-height: 220px;
+  max-height: 340px;
+  font: var(--text-small) / 1.5 var(--mono);
+  white-space: pre-wrap;
+  resize: vertical;
+}
+
+/* ---- SSH ------------------------------------------------------------ */
+.ssh-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+.ssh-add > .button,
+.team-connect > .button {
+  justify-self: start;
+}
+.ssh-fingerprints {
+  margin-top: var(--space-2);
+}
+.ssh-browser-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.ssh-browser-head code {
+  flex: 1;
+  font-size: var(--text-small);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ssh-entries {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1);
+  max-height: 300px;
+  overflow-y: auto;
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-border);
+}
+.ssh-entries button {
+  width: 100%;
+  min-height: var(--control-md);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  text-align: left;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+@media (hover: hover) {
+  .ssh-entries button:hover:not(:disabled) {
+    background: var(--ghost-hover);
+  }
+}
+.ssh-entries button span {
+  flex: 1;
+}
+.ssh-entries em {
+  font-style: normal;
+  font-size: var(--text-small);
+}
+.ssh-empty,
+.team-empty {
+  padding: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--text-tertiary);
+}
+.ssh-browser-foot .muted {
+  font-size: var(--text-small);
+}
+.connection-steps [aria-current="step"] {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* ---- Remote access -------------------------------------------------- */
+.remote-files button,
+.remote-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.remote-projects strong {
+  font-size: var(--text-small);
+  color: var(--text-primary);
+}
+.modal.remote-access .remote-qr {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+.modal.remote-access .remote-qr img {
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  image-rendering: pixelated;
+}
+.modal.remote-access .remote-qr > div {
+  flex: 1;
+  min-width: 200px;
+  display: grid;
+  gap: var(--space-3);
+}
+
+/* ---- Profiles ------------------------------------------------------- */
+.profile-remove {
+  flex-basis: 100%;
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+  font-size: var(--text-small);
+  line-height: 1.5;
+}
+.profile-remove p {
+  margin: 0;
+  color: var(--text-primary);
+}
+.profile-add {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+.profile-add label {
+  flex: 1;
+}
+.transcript-source-picker label {
+  font-weight: 600;
+}
+.transcript-source-picker select {
+  width: 100%;
+}
+.transcript-source-picker p {
+  margin-top: var(--space-2);
+}
+
+/* ---- Team ----------------------------------------------------------- */
+.team-folder-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+.team-folder-row span {
+  flex: 1;
+  line-height: 1.5;
+}
+.team-folder-publish form {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+.team-folder-publish form label {
+  flex: 1;
+}
+.team-invite {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: end;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+.team-invite .form-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.team-invitation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+.team-outbox-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  font-size: var(--text-small);
+}
+.team-outbox-row small {
+  flex-basis: 100%;
+}
+.team-assignee {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+.modal .team-assignee label,
+.team-assignee label {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+}
+.team-assignee small {
+  flex-basis: 100%;
+  font-size: var(--text-small);
+}
+.team-thread-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-small);
+  color: var(--text-primary);
+}
+.board-card .team-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--text-tertiary);
+}
+.board-card .team-card-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* ---- Agent control -------------------------------------------------- */
+.button.agent-control-on {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.agent-control-limits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+.agent-control-limits label {
+  flex: 1 1 180px;
+}
+.agent-control-audit ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+  max-height: 210px;
+  overflow-y: auto;
+}
+.agent-control-audit li {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+.agent-control-audit li time {
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.agent-control-audit li span {
+  overflow-wrap: anywhere;
+}
+.agent-control-audit li:is(.outcome-denied, .outcome-error) span,
+.agent-control-audit li.outcome-unknown span {
+  color: var(--status-attention);
+}
+
+@media (max-width: 640px) {
+  .ssh-row,
+  .team-invite {
+    grid-template-columns: 1fr;
+  }
+  .remote-files {
+    flex-direction: column;
+  }
+}
+
+/* ---- Radio cards (voice model, AI provider) ------------------------- */
+.modal :is(.dictation-model, .assist-provider):has(input:checked) {
+  box-shadow: 0 0 0 2px var(--accent-ink);
+}
+
+/* Remote access steps: the fieldset legend reads as a step heading, like
+   the h3 steps that follow it. */
+.modal.remote-access legend {
+  margin-bottom: var(--space-2);
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* The default row describes itself in words, not a path. */
+.profile-row.is-default .profile-name small {
+  font-family: var(--font);
+  white-space: normal;
+}
+
+/* A lone action in a sheet keeps its natural width, as AppKit buttons do. */
+.modal > :is(button, .button) {
+  align-self: flex-start;
+}

@@ -1,0 +1,50 @@
+{
+  "passed": true,
+  "checks": [
+    "Folder path navigation and one-click shell; typed output; persistent session rename",
+    "Command/Ctrl-S writes the file; editor expands; Saved feedback",
+    "A failed Claude turn visibly reports Turn failed, permits branching, and returns to Ready after another fixture turn",
+    "An existing saved canvas layout is fitted after the flow initializes; cards start within the visible canvas",
+    "Canvas source chooser \u2192 preview \u2192 explicit consent \u2192 directed connection; minimal read permission; instructions insert without submitting; keyboard focus containment",
+    "Recipient reads only its linked snapshot; Canvas shows reads; revocation removes connection",
+    "Canvas note editing, rename, archive, undo and keyboard move controls preserve the body",
+    "Task attaches existing session without launching another process",
+    "Owner-only account check shows allowlisted identity; no extra credential fields",
+    "Settings dialogs initialize/contain keyboard focus, close with Escape, fit the window; microphone refusal has a recovery message",
+    "Remote access defaults off, requires folder choice, shares only selected local folders, and keeps footer reachable",
+    "Search discovers Connect agents and connection settings; Escape dismisses the palette",
+    "Final output appears immediately on exit without switching views or stale attach errors",
+    "Direct worktree launch starts in the chosen isolated folder and preserves its review location"
+  ],
+  "version": "0.4.0",
+  "unitTests": {
+    "total": 128,
+    "passed": 126,
+    "failed": 0,
+    "skipped": 2
+  },
+  "upgrade": {
+    "fromSchema": 8,
+    "toSchema": 9,
+    "recordsBefore": 35,
+    "recordsAfter": 35,
+    "missingRecords": 0,
+    "sessionIdentityChanges": 0,
+    "liveSessions": 2,
+    "sameLivePids": 2
+  },
+  "artifacts": {
+    "macZip": {
+      "path": "release/ux-0.4.0-final/Agent Workspace-0.4.0-arm64-mac.zip",
+      "sha256": "d0ebdc6e76cf6efdbd81eef9a57726714b883b8eeb9147fe093e5d11a41e77f7"
+    },
+    "appAsar": {
+      "path": "release/mac-arm64/Agent Workspace.app/Contents/Resources/app.asar",
+      "sha256": "4a27a9aa03a02976514314f267c9870715747cecabaaffafcb503bf78928d680"
+    },
+    "serverArchive": {
+      "path": "release/agent-workspace-server-0.4.0.tar.gz",
+      "sha256": "7b8b5a9a5784295162131e804399c309d11ba4bb77544fa4ce956348d4451e62"
+    }
+  }
+}

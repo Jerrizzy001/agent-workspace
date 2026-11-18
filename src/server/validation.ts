@@ -1,6 +1,8 @@
 import { COMMANDS, type Command } from "../shared/contracts.js";
+import { remoteAllowed } from "../shared/command-policy.js";
 const fields: Record<string, string[]> = {
   snapshot: [],
+  "note.read": ["noteId", "projectId"],
   "task.create": ["projectId", "title", "description"],
   "task.update": ["taskId", "revision", "title", "description", "status"],
   "attempt.start": [
@@ -9,6 +11,16 @@ const fields: Record<string, string[]> = {
     "model",
     "prompt",
     "worktreePath",
+    "idempotencyKey",
+  ],
+  "terminal.open": [
+    "projectId",
+    "provider",
+    "model",
+    "prompt",
+    "path",
+    "worktreePath",
+    "resumeSessionId",
     "idempotencyKey",
   ],
   "files.list": ["projectId", "worktreePath", "path"],
@@ -29,7 +41,21 @@ const fields: Record<string, string[]> = {
   "worktree.create": ["projectId", "branch"],
   "layout.save": ["projectId", "positions"],
   "note.create": ["projectId", "title", "body"],
-  "note.update": ["noteId", "projectId", "title", "body"],
+  "note.update": ["noteId", "projectId", "title", "body", "revision"],
+  "session.canvas": ["sessionId", "generation", "hidden"],
+  "session.task": ["sessionId", "generation", "taskId"],
+  "note.archive": ["noteId", "revision", "archived"],
+  "session.rename": ["sessionId", "generation", "title", "titleRevision"],
+  "session.place": [
+    "sessionId",
+    "generation",
+    "lane",
+    "order",
+    "placementRevision",
+  ],
+  "lane.rename": ["projectId", "laneId", "name", "revision"],
+  "lane.add": ["projectId", "name", "revision"],
+  "lane.remove": ["projectId", "laneId", "revision"],
 };
 for (const name of [
   "attach",
@@ -60,12 +86,22 @@ const required: Record<string, string[]> = {
   "task.create": ["projectId", "title"],
   "task.update": ["taskId", "revision"],
   "attempt.start": ["taskId", "idempotencyKey"],
+  "terminal.open": ["projectId", "provider", "idempotencyKey"],
   "files.write": ["projectId", "path", "content", "expectedHash"],
   "note.create": ["projectId", "title"],
-  "note.update": ["noteId"],
+  "note.read": ["noteId"],
+  "note.update": ["noteId", "revision"],
   "layout.save": ["projectId", "positions"],
   "git.commit": ["projectId", "message"],
   "worktree.create": ["projectId", "branch"],
+  "session.canvas": ["hidden"],
+  "session.task": ["taskId"],
+  "note.archive": ["noteId", "revision", "archived"],
+  "session.rename": ["title", "titleRevision"],
+  "session.place": ["lane", "placementRevision"],
+  "lane.rename": ["projectId", "laneId", "name", "revision"],
+  "lane.add": ["projectId", "name", "revision"],
+  "lane.remove": ["projectId", "laneId", "revision"],
 };
 export function validateCommand(
   command: unknown,
@@ -74,6 +110,7 @@ export function validateCommand(
   if (
     typeof command !== "string" ||
     !COMMANDS.includes(command as Command) ||
+    !remoteAllowed(command as Command) ||
     !fields[command]
   )
     throw new Error("Command is not available remotely");
@@ -104,13 +141,26 @@ export function validateCommand(
   }
   for (const [k, v] of Object.entries(p)) {
     if (v === undefined) continue;
-    if (["generation", "revision", "sequence", "cols", "rows"].includes(k)) {
+    if (
+      [
+        "generation",
+        "revision",
+        "titleRevision",
+        "placementRevision",
+        "sequence",
+        "cols",
+        "rows",
+      ].includes(k)
+    ) {
       if (
         !Number.isSafeInteger(v) ||
         Number(v) < 0 ||
         (["cols", "rows"].includes(k) && (Number(v) < 2 || Number(v) > 500))
       )
         throw new Error("Invalid " + k);
+    } else if (k === "order") {
+      if (typeof v !== "number" || !Number.isFinite(v) || Math.abs(v) > 1e12)
+        throw new Error("Invalid order");
     } else if (k === "positions") {
       if (
         !v ||
@@ -131,7 +181,7 @@ export function validateCommand(
         )
       )
         throw new Error("Invalid paths");
-    } else if (k === "staged") {
+    } else if (["staged", "hidden", "archived"].includes(k)) {
       if (typeof v !== "boolean") throw new Error("Invalid staged");
     } else if (k === "expectedHash" && v === null) {
       /* new file */

@@ -38,21 +38,9 @@ try {
     (p) => window.workspace.invoke("project.add", { path: p }),
     repo,
   );
-  await page.getByRole("button", { name: "Create task", exact: true }).click();
-  await page
-    .getByPlaceholder("What do you want to work on?")
-    .fill("UI acceptance");
-  await page
-    .getByRole("button", { name: "Create task", exact: true })
-    .last()
-    .click();
-  await page
-    .getByRole("button", { name: "Start an attempt", exact: true })
-    .click();
-  await page.getByRole("button", { name: /Shell Your local shell/ }).click();
-  await page
-    .getByRole("button", { name: "Start attempt", exact: true })
-    .click();
+  // Folder-first launch: one click opens a shell; no task or attempt form.
+  await page.getByRole("button", { name: "Open Shell here" }).waitFor();
+  await page.getByRole("button", { name: "Open Shell here", exact: true }).click();
   await page.locator(".xterm-helper-textarea").waitFor();
   await page.waitForTimeout(500);
   await page.locator(".xterm-helper-textarea").focus();
@@ -81,6 +69,12 @@ try {
       ?.textContent?.includes("CORE_RECONNECTED_789"),
   );
   await page.getByRole("button", { name: "Board", exact: true }).click();
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
+  await page.getByRole("button", { name: "New task", exact: true }).click();
+  await page
+    .getByPlaceholder("What do you want to work on?")
+    .fill("UI acceptance");
+  await page.getByRole("button", { name: "Create task", exact: true }).click();
   await page.getByLabel("Status for UI acceptance").selectOption("review");
   await page.waitForFunction(
     () =>
@@ -93,13 +87,13 @@ try {
   await note.fill("UI note persists");
   await note.blur();
   await page.screenshot({ path: path.join(fixture, "canvas.png") });
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
-  await page.getByRole("button", { name: "files", exact: true }).click();
+  await page.getByRole("button", { name: "Terminals", exact: true }).click();
+  await page.getByRole("button", { name: "Files", exact: true }).click();
   await page.getByRole("button", { name: "hello.txt", exact: true }).click();
   const editor = page.locator(".monaco-editor textarea").first();
   await editor.waitFor();
   await page.locator(".monaco-editor .view-lines").click();
-  await page.keyboard.press("Meta+A");
+  await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("after UI save\n");
   await page.waitForFunction(
     () => !document.querySelector(".editor-overlay .secondary")?.disabled,
@@ -146,8 +140,8 @@ try {
       passed: true,
       fixture,
       checks: [
-        "task controls",
-        "attempt controls",
+        "one-click folder shell (no task form)",
+        "board task controls",
         "terminal typing",
         "core crash reconnect",
         "dirty editor window close and native quit cancelled",

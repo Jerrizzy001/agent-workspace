@@ -1,3 +1,4 @@
+import { workspaceSocket } from "../src/core/socket.ts";
 import { realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -9,7 +10,7 @@ export async function cleanupFixture(fixture) {
   let data;
   try { data = await realpath(path.join(fixture, "data")); }
   catch (error) { if (error.code === "ENOENT") return; throw error; }
-  const socket = path.join(tmpdir(), `aw-${createHash("sha256").update(data).digest("hex").slice(0, 20)}.sock`);
+  const socket = workspaceSocket(data);
   try {
     execFileSync(process.env.WORKSPACE_TMUX || "/opt/homebrew/bin/tmux", ["-S", socket, "kill-server"], { encoding: "utf8", stdio: "pipe" });
   } catch (error) {

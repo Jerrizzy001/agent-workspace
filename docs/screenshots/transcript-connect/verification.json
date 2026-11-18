@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "fixture": "/private/var/folders/c8/n091_9297kz0dtp0vbsk1lzm0000gn/T/aw-connect-Ng6piu",
+  "checks": [
+    "Codex can open Connect agents before a source exists; the empty state explains how to create a Claude conversation",
+    "A single local Claude source is preselected and Codex stays the recipient; selecting a source creates no link or permission",
+    "Multiple sources are labeled by name, state and time; only this folder is listed; switching source clears the previous preview, redactions and consent",
+    "Connecting from Codex grants only transcript.read; instructions insert into the same Codex process without submitting or reading",
+    "After Enter the Codex fixture reads only the selected Claude snapshot through real awctl; revocation blocks its next read"
+  ]
+}

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { run } from "./process.js";
+import { StringDecoder } from "node:string_decoder";
+import { run, runStream } from "./process.js";
 export interface StatusFile {
   path: string;
   index: string;
@@ -18,27 +19,51 @@ export function gitPath(value: unknown): string {
     throw new Error("Invalid Git path");
   return value;
 }
-export async function gitStatus(root: string) {
-  const parts = (
-    await run(
-      "git",
-      ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
-      root,
-    )
-  ).split("\0");
+export async function gitStatus(root: string, includeIgnored = false) {
   const files: StatusFile[] = [];
-  for (let i = 0; i < parts.length; i++) {
-    const line = parts[i]!;
-    if (!line) continue;
-    const file: StatusFile = {
-      index: line[0]!,
-      working: line[1]!,
-      path: line.slice(3),
-    };
-    if (/[RC]/.test(file.index) || /[RC]/.test(file.working))
-      file.originalPath = parts[++i];
-    files.push(file);
-  }
+  const decoder = new StringDecoder("utf8");
+  let pending = "";
+  let rename: StatusFile | undefined;
+  await runStream(
+    "git",
+    [
+      "status",
+      "--porcelain=v1",
+      "-z",
+      "--untracked-files=all",
+      ...(includeIgnored ? ["--ignored=matching"] : []),
+    ],
+    root,
+    (chunk) => {
+      pending += decoder.write(chunk);
+      let end: number;
+      while ((end = pending.indexOf("\0")) >= 0) {
+        const line = pending.slice(0, end);
+        pending = pending.slice(end + 1);
+        if (rename) {
+          rename.originalPath = line;
+          rename = undefined;
+          continue;
+        }
+        if (!line) continue;
+        const file = {
+          index: line[0]!,
+          working: line[1]!,
+          path: line.slice(3),
+        };
+        files.push(file);
+        if (files.length > 200_000)
+          throw new Error(
+            "Git status exceeds 200,000 files. Add generated folders to .gitignore and refresh.",
+          );
+        if (/[RC]/.test(file.index) || /[RC]/.test(file.working)) rename = file;
+      }
+      if (pending.length > 1024 * 1024)
+        throw new Error("Invalid Git status record");
+    },
+  );
+  if (pending || rename || decoder.end())
+    throw new Error("Incomplete Git status output");
   return {
     branch: (await run("git", ["branch", "--show-current"], root)).trim(),
     files,

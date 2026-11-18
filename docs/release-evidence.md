@@ -1,54 +1,82 @@
-# Agent Workspace 0.2.0 verification evidence
+# Agent Workspace 0.4.0 verification evidence
 
-Date: 2026-10-30. Distribution: unsigned internal alpha. Desktop target: macOS arm64. Standalone host targets exercised: macOS arm64 and Linux aarch64.
+For later verification, see [0.4.3 layout and appearance](appearance-and-panels.md), [0.4.2 transcript connections](transcript-connect.md) and [0.4.1 voice typing](voice-typing.md). This page preserves the 0.4.0 audit evidence.
 
-## Artifacts
-
-| Artifact | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `release/Agent Workspace-0.2.0-arm64-mac.zip` | 145,579,784 | `850bcbad5e13d3f06b84adfdeb37feee4f7f4ad1551b92b6c925c9fed9de9f05` |
-| `release/agent-workspace-server-0.2.0.tar.gz` | 3,683,484 | `de575598bd0ea1c5d7a42f20b177cbf168225c351f2f2b8bab340b7b8585457e` |
-| Packaged `app.asar` | 163,540,975 | `e5959189a3a6b550f9e1721d34c3e58df60ffe8d9e02902f1047d89ae7d26397` |
-
-The application was copied outside the checkout with `ditto` to a disposable temporary directory. Its `app.asar` hash matched the release copy. The copied runtime reported application version 0.2.0, `app.isPackaged === true`, Electron 45.1.0, Node.js 24.22.1 and arm64. Electron-builder rebuilt node-pty 1.1.0 for the packaged Electron runtime. Signing is explicitly disabled; the default Electron application icon remains.
-
-These final artifacts include the note snapshot/remount fix. The final copied application passed smoke, native lifecycle, remote desktop recovery and live remote Codex checks. The final standalone archive passed a fresh independent `npm ci` and browser/native-PTY smoke. The final browser bundle passed the expanded mobile note regression. Exact final results and hashes are in [release-verification.json](screenshots/remote/release-verification.json). The retained 0.1.1 rollback zip has SHA-256 `9fd673950ba33e3f343f60ab6576279210e449fa9df0a5e9b3c281b7ca9946c8`.
-
-## Behavior and architecture
-
-The desktop gateway reuses its existing utility core, SQLite database, registered projects and tmux sessions. It does not create a second core. The gateway begins off on every application launch. Management IPC accepts only the active desktop window's main frame. Pairing is revealed only through that local interface; TLS files are chosen through native file pickers. The desktop panel lists the projects shared when access was enabled. Adding a project requires stopping and enabling access again to share it.
-
-A paired browser has host-account workspace control through a named-command protocol. The gateway enforces owner cookie authentication, exact Host/Origin checks, a fixed project allowlist, command fields, session generations, per-connection viewer identities, message and queue limits, and bounded terminal output. Browser cookies are HttpOnly, SameSite=Strict and Secure over HTTPS, expire after 12 hours, and are separate for independent gateways on one host name. Revocation closes active connections, invalidates cookies and rotates the pairing code. Pairing codes are kept in an owner-only local file and are absent from HTTP routes, URLs and logs.
-
-Non-loopback listeners require TLS. Private-network HTTPS and an HTTPS reverse proxy are documented; no tunnel, DNS record, public listener or external service is configured automatically. The browser client disables input during disconnection, clears unsent buffers, never replays uncertain input and reattaches existing sessions after reconnection. Touch controls use xterm's bracketed-paste and application-cursor modes.
-
-The standalone server archive contains a bundled Node entrypoint, the same browser assets and PWA files, a minimal package manifest and lock, and a native-helper permission repair. Its dependencies are installed for the destination host's Node runtime; it has no Electron dependencies or Electron rebuild hooks.
+Date: 2026-11-02 (America/Toronto), following the November 1 audit. The macOS arm64 app was packaged, exercised in disposable workspaces, installed over the existing local app, and opened successfully. See [the finding-by-finding repair map](ux-repairs.md) and [machine-readable results](screenshots/ux-repairs/verification.json). Earlier evidence is retained in [release-evidence-0.3.0.md](release-evidence-0.3.0.md).
 
 ## Verification
 
-All fixture checks use disposable repositories, isolated data directories and exact fixture cleanup. Core ownership, terminal and desktop UI checks are serialized when they share the desktop/native runtime.
+Host tools: Node 24.12.0; packaged Electron 45.1.0; macOS arm64. Providers in the test suites are fixtures; no live model-generation call was made. No subagents were used for these repairs.
 
-- TypeScript typecheck passed. All 29 tests passed, including the original 16 regressions and two final note snapshot tests. Gateway tests exercise real HTTP/HTTPS and WebSocket connections, unauthorized clients, project and viewer isolation, scoped snapshots, origin and static-path rejection, secure cookies, independent gateway cookies, revocation/login races, session expiry during authorization, bounded queued mutations and RPC flooding.
-- The original desktop, smoke, visible UI, workflows, lifecycle and terminal suites passed after the remote changes. The lifecycle fixture now waits for a completed reconnect before typing. It separately verifies no-blur note autosave, then a cancelled native close retaining the exact draft, a user refocus and append without replacing content, and exact persistence after reopening. It does not require the operating system to preserve DOM focus through native close cancellation. The board fixture waits for the async status move before dragging. The forced-resync fixture waits for an emitted marker before blocking the renderer, so its command has actually reached the shell despite input batching.
-- The desktop remote fixture verifies default-off state, insecure network rejection and foreign-window management rejection; a phone-sized Chrome browser pairs using the desktop's bundled assets; the authenticated remote protocol sees the same desktop session ID, generation, shell PID and output; a real utility-process crash emits reconnect/recovery events; revoke closes active sockets, clears private browser UI and rotates pairing; stopping the gateway leaves the desktop shell alive.
-- Canvas notes keep a controlled local draft independent of incoming snapshots, serialize saves and fence older snapshots using acknowledged metadata. App snapshot delivery retains newer versions of notes still present in the incoming project scope, while accepting removals and other incoming fields. The regression delays save acknowledgement by 600ms, continues typing after a cancelled unload, injects stale event and reload snapshots, remounts the canvas, verifies removed notes stay removed, then checks exact UI/core content, immediate sign-out flush and browser restart. The native fixture also verifies continued typing and exact note persistence after actual application quit/reopen.
-- Chrome 156.0.8078.79 passed all 14 browser workflow groups at touch phone viewports and desktop width: pairing, task/shell creation, preserved provider model fields, terminal input, bracketed multiline paste, normal/application cursor modes, note flush, files/board/canvas, portrait/landscape/keyboard-height resizing, actual offline input rejection, full browser restart with unchanged PID, two-client streams and resync, scoped worktree file save/diff, static-only PWA cache and dirty sign-out cancellation. The final 10,000-line stream produced one real resync, zero transport disconnections and 22 distinct final rows (9978–9999) matching tmux. All seven refreshed Chrome screenshots were visually inspected.
-- WebKit 27.2 passed four groups over fixture HTTPS/WSS: Secure/HttpOnly/SameSite pairing cookies under CSP, touch task/shell creation and real file-producing input, reload preserving session/generation with responsive landscape, and sign-out clearing private UI. JSON evidence and inspected screenshots are under `docs/screenshots/remote/`.
-- A fresh standalone archive was extracted outside the source checkout and installed with `npm ci`. Its own native PTY, browser pairing, real shell input/capture and PWA manifest worked without the checkout's dependencies. This caught and fixed the executable permission on node-pty's published macOS spawn helper.
-- The standalone archive also ran inside an isolated, unprivileged Linux aarch64 container using the official image `node:24-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c`, Node.js v24.22.2 and tmux 3.3a. A disposable, self-signed HTTPS listener was published only to the Mac's loopback interface. A phone-sized Chrome context with fixture-only certificate trust paired, launched a real Linux shell and edited a file. Terminating and restarting only the host process preserved the exact tmux session ID, generation and pane PID; the browser re-paired and successfully sent further input. The fixture container and its image tag were removed.
+| Gate | Result |
+| --- | --- |
+| TypeScript | Passed |
+| Automated tests | 128 total: 126 passed, 0 failed, 2 opt-in skipped |
+| Packaged UX regression | 14 workflow checks passed, including a saved legacy canvas layout, connect/read/revoke/renew, explicit instruction insertion without Enter, failed-turn UI, note restore, editor keyboard save, task attachment and selected-folder sharing |
+| Packaged lifecycle | 6 checks passed: reconnect, final output, End, focused note autosave, cancelled close, persistence through quit/reopen |
+| Packaged desktop smoke | 9 checks passed: shell, board, canvas, editor and crash recovery |
+| Desktop recovery/IPC | 4 checks passed, including repeated real core crashes and same persistent session/generation |
+| General workflow regression | 15 checks passed, including drag, note moves, conflicts, staging, commit, worktrees and non-Git folders |
+| Session board | 10 checks passed |
+| Agent control | 10 checks passed, including permission refusal, scoped commands, child isolation, revoke and unchanged PIDs |
+| Profiles / branches / transcript links | 10 fixture checks passed, including redaction and cross-profile consent |
+| AI suggestions | 6 fixture checks passed; no paid calls |
+| Team flow | 8 checks passed with two app instances, a fake issuer and ephemeral test credential storage |
+| Remote desktop/browser | 7 checks passed: pairing, scope, real shell, reconnect, revoke and default-off restart |
+| Terminal fidelity | 7 checks passed, including Unicode, alternate screens, a 10,000-line burst and backpressure/resync |
+| Keep awake | 9 checks passed against Electron's blocker API and fixture Claude hooks |
+| Packaged SSH + fresh server archive | 10 checks passed on a disposable real OpenSSH server: host-key refusal, probe, connect, folder navigation, shell, connection loss/recovery with the same PID, file edit, Git and detach |
+| Standalone archive installation | Fresh `npm ci`, browser pairing, real shell, SSH helper handshake and owner-command refusal passed outside the checkout; team service and its setup guide are included |
 
-The browser client is a responsive web app with installable PWA metadata and reconnect/offline status while the app is open. Only static assets are cached; HTML and API responses are not cached. A fresh offline launch is not supported. It is not a native iOS or Android application. WebKit/Chromium checks use desktop browser engines and phone viewport/touch emulation. No physical phone, mobile soft keyboard, public Internet route, external tunnel installation, Intel Mac or Linux x86_64 installation is claimed. Linux provider CLIs were not tested or given host credentials.
+The last packaged UX run was repeated after the initial-fit correction and passed all 14 checks. Actual user data was then reopened and its canvas visually inspected; preserved cards fit automatically without moving their stored positions.
 
-## Live remote provider evidence
+## Actual upgrade proof
 
-The final copied packaged application launched exactly one Codex `gpt-6.1-sol` task using the host's existing authentication and codex-cli 0.166.0 at 2026-10-30 17:42 UTC. A paired phone-sized Chrome browser invoked the gateway, which launched the attempt through the desktop's existing core into a disposable managed worktree. The model created the exact requested newline-terminated proof file and appended exactly one execution line; the original repository remained unchanged. Closing and reopening the browser preserved the attempt ID, session ID, generation 1 and tmux pane PID 39194, with the execution count still one after reconnection. The fixture then terminated its session and removed its exact tmux socket. The durable result is [provider-verification.json](screenshots/remote/provider-verification.json).
+The installed app remains at the same filesystem location, preserving the application directory identity. Consistent database backups and the previous app contents were kept locally under `release/upgrade-backups/` (ignored by Git).
 
-## Prior provider evidence
+- Database migrated from schema 8 to 9.
+- 35 records before and after; no record IDs missing.
+- No changes to existing session identity, generation, project, working directory, backend name or socket.
+- Both originally running sessions retained their actual tmux pane process IDs.
+- The updated app opened with its local core connected. No existing agent prompt was submitted or replayed.
+- The existing failed Claude turn now shows **Check terminal**, because an older CLI process cannot retroactively emit the newly added failure hook. The owner can inspect it and use **More actions → Mark turn idle…**. Its billing/model selection was not changed.
 
-The 0.1.1 live Claude and Codex file-edit and process-continuity proof is preserved in [the previous release evidence](release-evidence-0.1.1.md). Those checks used the same core provider-launch path and existing local authentication. They do not establish remote provider execution by themselves. The remote provider check is a separate opt-in command that can consume model usage.
+## Artifact fingerprints
 
-## Reproduction
+| Artifact | SHA-256 |
+| --- | --- |
+| `Agent Workspace-0.4.0-arm64-mac.zip` | `d0ebdc6e76cf6efdbd81eef9a57726714b883b8eeb9147fe093e5d11a41e77f7` |
+| Installed `app.asar` | `4a27a9aa03a02976514314f267c9870715747cecabaaffafcb503bf78928d680` |
+| `agent-workspace-server-0.4.0.tar.gz` | `7b8b5a9a5784295162131e804399c309d11ba4bb77544fa4ce956348d4451e62` |
 
-`npm run package` produces the unsigned macOS app and zip. `npm run package:server` produces the standalone server archive. `npm run verify:remote-desktop`, `npm run verify:mobile`, `npm run verify:server-release` and `npm run verify:linux-server` exercise the new paths. Docker checks honor the current Docker context or `WORKSPACE_DOCKER_HOST`; browser checks use installed Chrome unless a browser channel is supplied. `WORKSPACE_APP_EXECUTABLE` selects a copied packaged app for desktop fixtures. Run desktop UI checks serially.
+## Screenshots
 
-The package remains an alpha with no signing, notarization, updater, collaboration roles, provider-specific structured approvals, usage accounting, reboot continuity or performance-budget claim. Live processes continue in tmux across view disconnects and host-process restarts; a reboot ends those processes. Vite reports large locally bundled Monaco chunks. Project shell access retains the host account's normal permissions.
+The screenshots in [screenshots/ux-repairs/](screenshots/ux-repairs/) come from the packaged test app with disposable data and fixture providers. They were visually inspected. They are not captures of the owner's private conversations.
+
+![Connected canvas](screenshots/ux-repairs/02-connected-canvas.png)
+
+![Expanded editor](screenshots/ux-repairs/01-expanded-editor.png)
+
+## Limits
+
+The app is unsigned/not notarized. No physical-phone, microphone-recognition, real two-account isolation, production identity-provider/TLS deployment, or live paid-provider turn was claimed from these checks. Those environments still require the owner's setup. The two skipped automated checks explicitly opt into real Claude usage and real-model dictation.
+
+System credential storage is checked only on an explicit Team setup action, or asynchronously when restoring an existing saved team connection. Unconfigured local workspaces do not initialize Keychain. Native credential APIs were checked against Electron's installed declarations and official documentation; automated team sign-in uses test-only encrypted storage, not a claim of real Keychain login persistence.
+
+## Backend audit remediation — 10 November 2026 (local source)
+
+Scope: the **Backend and core audit** section of [the shared audit](https://claude.ai/artifact/B66LRg283AGHjBBPJYCbo9), applied on `codex/ux-repair`. This is source/build verification with disposable data, not a packaged upgrade or an installed release.
+
+- The SQLite record index invalidates per record, including direct SQL deletes and external writes; rollback failures invalidate cached views. Snapshot note bodies are fetched separately, and note writes require a revision. Desktop IPC and browser event streams use record deltas with epochs/sequences and full resynchronization. The gateway authorizes against its pushed state instead of taking a new snapshot for every command.
+- Startup skips ended sessions, including legacy records without a backend socket. Ended history older than 30 days is archived out of live snapshots and can be restored. Tasks and archived notes have revision-checked delete controls; task deletion retains ended sessions and refuses live sessions or published Team mappings.
+- Transcript listings index exports once and return bounded excerpts, never full export bodies. Canvas and transcript panels subscribe to link changes instead of polling every five seconds.
+- Git status streams without the old 4 MiB exec buffer. Commits have a two-minute subprocess limit and longer end-to-end request limits. tmux has a separate queue. Unknown outcomes remain explicit and are never retried automatically.
+- Worktrees expose their location, accept an optional absolute destination, and can be removed only without running/unknown sessions or dirty, untracked, or ignored files. Removal retains the branch and is serialized against launches.
+- Codex lifecycle hooks are invocation-local, explicitly target their own tmux pane, and retain Codex's hook-trust review. Tracking begins only after a validated identity report; saved conversation IDs support exact resume. CLI exits still report their exit status. Branching and transcript export remain Claude-only.
+- Core crash count resets after one stable minute. Daily online SQLite backups retain seven copies separately from pre-migration backups; owner exports remain until explicitly removed. Workspace data controls expose export, history restoration and deletion.
+- Large terminal input is split into bounded Unicode-safe writes, with existing input failure/disconnect rules retained. Fresh workspaces prefer durable tmux sockets when the Unix path limit permits; persisted sockets are preserved. A missing socket reports unknown instead of ended. Settings changes emit an event, new files respect the default mode/umask, and schema 10 removes the unused events table.
+- Fixture runners use the actual socket-selection rule. Async bridge predicates use explicit awaited polling; lifecycle/mobile checks fetch note bodies on demand. Mobile screenshots now default to their disposable fixture directory.
+
+Validation: `npm run typecheck`, `npm test` (**139 tests: 137 passed, 2 opt-in skipped**), `npm run build`, `npm run smoke:ui`, `npm run verify:lifecycle`, `npm run verify:workflows`, `npm run verify:mobile` (**15 scenarios**) and `npm run verify:backend` passed. The new data panel screenshot was visually inspected. Build still reports the existing large-chunk warning.
+
+The regressions include 1,000 ended sessions (including legacy socketless records), 200 transcript exports, a 2 MiB note, stale/missing note revisions, scoped delta delivery, independent process queues, streaming over 4 MiB, safe worktree deletion, backup integrity, exact Unicode paste, and loss/recovery of a live tmux socket without changing its process. A Codex fixture verifies working/needs-input/done and exact resume while its hook environment deliberately points to the wrong pane. Installed Codex CLI **0.166.0** accepted the generated configuration and lists stable hooks enabled. No real model turn, physical phone, production SSH host, application packaging, installation, signing, or deployment is established by this remediation.

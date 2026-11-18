@@ -1,0 +1,27 @@
+{
+  "passed": true,
+  "fixture": "/var/folders/c8/n091_9297kz0dtp0vbsk1lzm0000gn/T/workspace-dictation-0iu3EN",
+  "engine": "sherpa-onnx tiny.en",
+  "microphone": "in-memory WAV stream; real permission check; sandbox enabled",
+  "transcript": "Hello World! Please open the Read Me file and list every test in the project.",
+  "installSeconds": 11,
+  "capture": "worklet",
+  "leftover": "Please open the READ ME FIVE",
+  "checks": [
+    "dictation API present for the desktop owner; no model installed or downloaded by default",
+    "foreign window: every dictation action and its microphone are refused; the app window cannot open a camera",
+    "oversized, non-PCM, unowned phrases and unknown models are rejected",
+    "Voice typing is labeled and reachable below the terminal at the minimum 1000 x 680 desktop size",
+    "terminal voice settings explain where to type; shortcut does not start a recording behind the dialog",
+    "consented download of tiny.en verified and installed (11s, network)",
+    "type-as-you-talk: both phrases typed at the prompt, nothing executed (\"Hello World! Please open the Read Me file and list every test in the project.\")",
+    "Stop removes the indicator, releases the microphone tracks and ends the recording",
+    "pressing Enter runs the dictated line exactly once (shell echoed it)",
+    "mic button starts and the shortcut stops dictation outside the terminal; tracks released",
+    "window blur stops dictation and releases the microphone",
+    "canvas voice bar starts and stops dictation",
+    "microphone test ends after ten seconds and removes the Stop test control",
+    "session switch mid-phrase stops dictation; untyped text shown with Copy, typed nowhere (\"Please open the READ ME FIVE\")",
+    "no audio file in the app data folder (102 entries checked)"
+  ]
+}

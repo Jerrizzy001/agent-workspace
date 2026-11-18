@@ -28,7 +28,7 @@ try {
   const published=docker(['port',container,'8787/tcp']).trim();const port=Number(published.split(':').at(-1));const origin=`https://127.0.0.1:${port}`;
   function start(){docker(['exec','--detach',container,'sh','-c',`node /app/dist/server/headless.mjs --data-dir /fixture/data --project /fixture/repo --host 0.0.0.0 --port 8787 --tls-cert /fixture/tls/cert.pem --tls-key /fixture/tls/key.pem --public-origin ${origin} > /fixture/server.log 2>&1 & echo $! > /fixture/server.pid; wait $!`]);}
   start();
-  browser=await chromium.launch({headless:true,channel:process.env.WORKSPACE_BROWSER_CHANNEL || 'chrome'});
+  browser=await chromium.launch({headless:true,...(process.env.WORKSPACE_BROWSER?{executablePath:process.env.WORKSPACE_BROWSER}:{channel:process.env.WORKSPACE_BROWSER_CHANNEL || 'chrome'})});
   const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,ignoreHTTPSErrors:true});const page=await context.newPage();page.setDefaultTimeout(30000);
   for(let i=0;i<100;i++){try{const r=await context.request.get(origin+'/api/status');if(r.status()===200)break;}catch{}await new Promise(r=>setTimeout(r,100));}
   const secret=docker(['exec',container,'cat','/fixture/data/remote-pairing.secret']).trim();

@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
@@ -20,7 +20,7 @@ try{
   child=spawn(process.execPath,['dist/server/headless.mjs','--data-dir',path.join(fixture,'data'),'--project',repo,'--port','0'],{cwd:serverDir,env:{...process.env,NODE_PATH:''},stdio:['ignore','pipe','pipe']});
   const status=await new Promise((resolve,reject)=>{let out='';const timer=setTimeout(()=>reject(new Error('Host startup timed out')),15000);child.once('exit',code=>{clearTimeout(timer);reject(new Error('Host exited '+code));});child.stdout.on('data',bytes=>{out+=bytes;const line=out.split('\n').find(l=>l.startsWith('{'));if(line){clearTimeout(timer);resolve(JSON.parse(line));}});});
   const secret=(await readFile(path.join(fixture,'data','remote-pairing.secret'),'utf8')).trim();
-  browser=await chromium.launch({headless:true,channel:process.env.WORKSPACE_BROWSER_CHANNEL || 'chrome'});const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+  browser=await chromium.launch({headless:true,...(process.env.WORKSPACE_BROWSER?{executablePath:process.env.WORKSPACE_BROWSER}:{channel:process.env.WORKSPACE_BROWSER_CHANNEL || 'chrome'})});const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(status.url);await page.getByLabel('Pairing code').fill(secret);await page.getByRole('button',{name:'Connect',exact:true}).click();
   await page.getByText('Connected to workspace',{exact:true}).waitFor();const invoke=(command,payload={})=>page.evaluate(({command,payload})=>window.workspace.invoke(command,payload),{command,payload});
@@ -34,5 +34,23 @@ try{
   const manifest=await page.request.get(status.url+'/manifest.webmanifest');assert.equal(manifest.status(),200);assert.equal((await manifest.json()).display,'standalone');
   assert.equal((await page.request.get(status.url+'/sw.js')).status(),200);assert.deepEqual(errors,[]);checks.push('fresh archive npm ci has no Electron hooks; Node24 native terminal loads independently of checkout');checks.push('bundled browser assets, mobile pairing, authenticated real shell input/capture and PWA manifest work outside checkout');
   await invoke('session.terminate',viewer);
+  // The SSH helper ships in the archive: run its fixed launcher directly (no
+  // SSH) and speak the framed protocol to it.
+  {
+    const frame=m=>{const b=Buffer.from(JSON.stringify(m));const h=Buffer.alloc(4);h.writeUInt32BE(b.length);return Buffer.concat([h,b]);};
+    const helper=spawn(path.join(serverDir,'bin','aw-ssh-helper'),['--data-dir',path.join(fixture,'helper-data')],{cwd:fixture,env:{...process.env,AW_NODE:process.execPath,NODE_PATH:''},stdio:['pipe','pipe','pipe']});
+    let buffer=Buffer.alloc(0),seen=false;const frames=[];
+    helper.stdout.on('data',b=>{buffer=Buffer.concat([buffer,b]);if(!seen){const at=buffer.indexOf('\nAW-STDIO-HOST\n');if(at<0)return;buffer=buffer.subarray(at+15);seen=true;}while(buffer.length>=4&&buffer.length>=4+buffer.readUInt32BE(0)){frames.push(JSON.parse(buffer.subarray(4,4+buffer.readUInt32BE(0)).toString()));buffer=buffer.subarray(4+buffer.readUInt32BE(0));}});
+    const next=async k=>{for(let i=0;i<300;i++){const at=frames.findIndex(f=>f.k===k);if(at>=0)return frames.splice(at,1)[0];await new Promise(r=>setTimeout(r,50));}throw new Error('helper frame '+k);};
+    const hello=await next('hello');assert.equal(hello.helperVersion,pkg.version);assert.deepEqual(hello.protocol,{min:1,max:1});assert.ok(hello.tools.find(t=>t.name==='node'&&t.available));
+    helper.stdin.write(frame({k:'start',protocol:1}));const ready=await next('ready');assert.match(ready.hostId,/^[0-9a-f]{32}$/);
+    helper.stdin.write(frame({k:'req',id:1,op:'register',path:repo}));assert.equal((await next('res')).result.path,await realpath(repo));
+    helper.stdin.write(frame({k:'req',id:2,op:'invoke',command:'settings.read',payload:{key:'keepAwake'}}));assert.match((await next('res')).error,/not available remotely/);
+    helper.stdin.write(frame({k:'bye'}));assert.equal(await new Promise(r=>helper.once('exit',r)),0);
+    checks.push('archive ships bin/aw-ssh-helper: greeting, start, folder registration and owner-command refusal work outside checkout');
+  }
+  assert.match(await readFile(path.join(serverDir,'team-service.md'),'utf8'),/Team service/);
+  const teamCli=await readFile(path.join(serverDir,'dist/team/server.mjs'),'utf8');assert.ok(teamCli.length>1000);
+  checks.push('archive includes the bundled team service and its setup guide');
   console.log(JSON.stringify({passed:true,checks}));
 }finally{await browser?.close();if(child){child.kill('SIGTERM');await new Promise(resolve=>{if(child.exitCode!==null)resolve();else child.once('exit',resolve);});}await cleanupFixture(fixture);}

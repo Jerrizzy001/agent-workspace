@@ -1,6 +1,6 @@
 {
   "name": "agent-workspace",
-  "version": "0.2.0",
+  "version": "0.4.3",
   "private": true,
   "description": "A desktop and secure remote browser workspace for coding agents",
   "main": "dist/desktop/main.cjs",
@@ -11,12 +11,24 @@
     "test": "tsx --test tests/*.test.ts",
     "postinstall": "electron-rebuild -f -w node-pty && node scripts/prepare-native.mjs",
     "package": "npm run build && electron-builder --mac dir zip --publish never",
+    "make-icons": "node scripts/make-icons.mjs",
     "smoke": "node scripts/smoke-electron.mjs",
     "smoke:ui": "node scripts/smoke-ui.mjs",
     "verify:desktop": "node scripts/verify-desktop.mjs",
     "verify:workflows": "node scripts/verify-workflows.mjs",
+    "verify:backend": "node scripts/verify-backend-ui.mjs",
     "verify:lifecycle": "node scripts/verify-lifecycle-ui.mjs",
+    "verify:board": "node scripts/verify-board.mjs",
+    "verify:agent-control": "node scripts/verify-agent-control.mjs",
+    "verify:accounts": "node scripts/verify-accounts.mjs",
+    "verify:transcript-connect": "node scripts/verify-transcript-connect.mjs",
+    "verify:appearance": "node scripts/verify-appearance.mjs",
+    "verify:ssh": "node scripts/verify-ssh.mjs",
+    "verify:keep-awake": "node scripts/verify-keep-awake.mjs",
     "verify:terminal": "node scripts/verify-terminal-modes.mjs",
+    "verify:image-paste": "node scripts/verify-image-paste.mjs",
+    "verify:dictation": "node scripts/verify-dictation.mjs",
+    "verify:assist": "node scripts/verify-assist.mjs",
     "verify:providers": "node scripts/verify-providers.mjs",
     "build:server": "vite build && node scripts/build-desktop.mjs",
     "start:server": "node dist/server/headless.mjs",
@@ -28,24 +40,34 @@
     "verify:linux-server": "node scripts/verify-linux-server.mjs",
     "verify:mobile": "node scripts/verify-mobile.mjs",
     "verify:remote-provider": "node scripts/verify-remote-provider.mjs",
-    "verify:mobile-webkit": "node scripts/verify-mobile-webkit.mjs"
+    "verify:mobile-webkit": "node scripts/verify-mobile-webkit.mjs",
+    "start:team": "node dist/team/server.mjs",
+    "verify:team": "node scripts/verify-team.mjs",
+    "verify:ux": "node scripts/verify-ux-repairs.mjs",
+    "verify:context-menu": "node scripts/verify-context-menu.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "4.7.0",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",
     "@xyflow/react": "12.12.0",
+    "jose": "6.2.14",
     "lucide-react": "0.577.0",
     "monaco-editor": "0.57.0",
     "node-pty": "1.1.0",
+    "openid-client": "6.8.8",
+    "qrcode": "1.5.4",
     "react": "19.3.1",
     "react-dom": "19.3.1",
+    "sherpa-onnx-node": "2.0.1",
+    "unbzip2-stream": "1.4.3",
     "ws": "8.22.0",
     "zustand": "5.0.12"
   },
   "devDependencies": {
     "@electron/rebuild": "4.2.1",
     "@types/node": "24.10.1",
+    "@types/qrcode": "1.5.6",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@types/ws": "8.18.2",
@@ -69,11 +91,18 @@
       "package.json"
     ],
     "asarUnpack": [
-      "node_modules/node-pty/**/*"
+      "node_modules/node-pty/**/*",
+      "node_modules/sherpa-onnx-*/**/*",
+      "dist/cli/**/*"
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
       "identity": null,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Agent Workspace uses the microphone only while you dictate into a terminal. Speech is transcribed on this Mac; the audio is not saved or sent anywhere."
+      },
       "target": [
         "dir",
         "zip"

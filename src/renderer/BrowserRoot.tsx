@@ -1,7 +1,15 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
-import { ArrowUpRight, LockKeyhole, LogOut, RefreshCw } from "lucide-react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  ArrowUpRight,
+  Eye,
+  EyeOff,
+  LockKeyhole,
+  LogOut,
+  RefreshCw,
+} from "lucide-react";
 import App from "./App";
 import { remoteWorkspace } from "./remote";
+import { BrandMark } from "./ui";
 import { canLeaveWorkspace } from "./leaveWorkspace";
 
 export function BrowserRoot() {
@@ -12,11 +20,47 @@ function RemoteRoot() {
   const remote = remoteWorkspace!;
   const state = useSyncExternalStore(remote.subscribeState, remote.getState);
   const [secret, setSecret] = useState("");
+  const [revealed, setRevealed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // A scanned one-time link carries its code in the fragment (#pair=…). Take
+  // it once and drop it from the address bar and history straight away.
+  const [linkCode] = useState(() => {
+    const code = new URLSearchParams(location.hash.slice(1)).get("pair");
+    if (code)
+      history.replaceState(null, "", location.pathname + location.search);
+    return code?.trim() || "";
+  });
+  const usedLink = useRef(false);
+  const signIn = async (value: string) => {
+    setBusy(true);
+    setError("");
+    try {
+      await remote.login(value.trim());
+      setSecret("");
+      return "";
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      setError(message);
+      return message;
+    } finally {
+      setBusy(false);
+    }
+  };
   useEffect(() => {
     void remote.initialize();
   }, [remote]);
+  useEffect(() => {
+    if (!linkCode || usedLink.current || state.status !== "signed-out") return;
+    usedLink.current = true;
+    void signIn(linkCode).then((failure) => {
+      // Only a rejected code means the link is spent; keep other errors as is.
+      if (/not accepted/.test(failure))
+        setError(
+          "This pairing link was already used or has expired. Show a new QR code on the workspace computer, or enter the pairing code.",
+        );
+    });
+  }, [linkCode, state.status]);
   useEffect(() => {
     const viewport = window.visualViewport;
     const resize = () =>
@@ -45,46 +89,52 @@ function RemoteRoot() {
       <main className="pairing-screen">
         <form
           className="pairing-card"
-          onSubmit={async (event) => {
+          onSubmit={(event) => {
             event.preventDefault();
-            setBusy(true);
-            setError("");
-            try {
-              await remote.login(secret);
-              setSecret("");
-            } catch (reason) {
-              setError(
-                reason instanceof Error ? reason.message : String(reason),
-              );
-            } finally {
-              setBusy(false);
-            }
+            void signIn(secret);
           }}
         >
-          <div className="pairing-logo">a·</div>
-          <div className="eyebrow">YOUR WORKSPACE, WITH YOU</div>
+          <div className="pairing-logo">
+            <BrandMark size={40} />
+          </div>
+          <div className="eyebrow">Agent Workspace</div>
           <h1>Connect to your workspace.</h1>
           <p>
             Use the{" "}
             {state.authMode === "password"
               ? "password configured on your server"
-              : "pairing code shown by the workspace owner"}
-            . Your tasks and terminals stay on that machine.
+              : "QR code or pairing code shown by the workspace owner"}
+            . Your folders and terminals stay on that machine.
           </p>
           <label htmlFor="pairing-secret">
             <LockKeyhole size={16} />
             {state.authMode === "password" ? "Server password" : "Pairing code"}
           </label>
-          <input
-            id="pairing-secret"
-            type="password"
-            autoComplete="current-password"
-            autoFocus
-            required
-            value={secret}
-            onChange={(event) => setSecret(event.target.value)}
-            disabled={busy || state.status !== "signed-out"}
-          />
+          <div className="pairing-input">
+            <input
+              id="pairing-secret"
+              type={revealed ? "text" : "password"}
+              autoComplete="current-password"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              autoFocus={!linkCode}
+              required
+              value={secret}
+              onChange={(event) => setSecret(event.target.value)}
+              disabled={busy || state.status !== "signed-out"}
+            />
+            <button
+              type="button"
+              className="pairing-reveal"
+              aria-pressed={revealed}
+              aria-controls="pairing-secret"
+              onClick={() => setRevealed((value) => !value)}
+            >
+              {revealed ? <EyeOff size={16} /> : <Eye size={16} />}
+              {revealed ? "Hide" : "Show"}
+            </button>
+          </div>
           {error || state.error ? (
             <p className="pairing-error" role="alert">
               {error || state.error}

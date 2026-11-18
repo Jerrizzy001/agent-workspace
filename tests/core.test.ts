@@ -1,3 +1,4 @@
+import { workspaceSocket } from "../src/core/socket.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -99,16 +100,7 @@ test("persistent core, file conflict, worktree and session ownership", async () 
       cols: 80,
       rows: 24,
     });
-    const sessionSocket = path.join(
-      os.tmpdir(),
-      "aw-" +
-        crypto
-          .createHash("sha256")
-          .update(fs.realpathSync(dataDir))
-          .digest("hex")
-          .slice(0, 20) +
-        ".sock",
-    );
+    const sessionSocket = workspaceSocket(fs.realpathSync(dataDir));
     const paneSize = () =>
       execFileSync(
         "/opt/homebrew/bin/tmux",
@@ -205,6 +197,11 @@ test("persistent core, file conflict, worktree and session ownership", async () 
       first.session.backendName + "-neighbor",
       "/bin/sh",
     ]);
+    await call("session.input", {
+      ...session,
+      data: "printf 'END_CAPTURE_OK\\n'\r",
+    });
+    await new Promise((r) => setTimeout(r, 150));
     await call("session.terminate", session);
     assert.doesNotThrow(() =>
       execFileSync(
@@ -219,10 +216,9 @@ test("persistent core, file conflict, worktree and session ownership", async () 
         { stdio: "ignore" },
       ),
     );
-    await assert.rejects(
-      call("session.capture", session),
-      /find session|no such session/,
-    );
+    const finalScreen = await call("session.capture", session);
+    assert.equal(finalScreen.saved, true);
+    assert.match(finalScreen.data, /END_CAPTURE_OK/);
     assert.equal(
       (await call("snapshot")).sessions.find(
         (s: any) => s.id === other.session.id,
@@ -268,16 +264,7 @@ test("persistent core, file conflict, worktree and session ownership", async () 
         await call("session.terminate", { sessionId: sid });
       } catch {}
     await core.close();
-    const socket = path.join(
-      os.tmpdir(),
-      "aw-" +
-        crypto
-          .createHash("sha256")
-          .update(fs.realpathSync(dataDir))
-          .digest("hex")
-          .slice(0, 20) +
-        ".sock",
-    );
+    const socket = workspaceSocket(fs.realpathSync(dataDir));
     try {
       execFileSync(
         process.env.WORKSPACE_TMUX || "/opt/homebrew/bin/tmux",
@@ -347,16 +334,7 @@ test("fresh provider launch receives exact task prompt as arguments without shel
   } finally {
     process.env.PATH = oldPath;
     await core?.close();
-    const socket = path.join(
-      os.tmpdir(),
-      "aw-" +
-        crypto
-          .createHash("sha256")
-          .update(fs.realpathSync(dataDir))
-          .digest("hex")
-          .slice(0, 20) +
-        ".sock",
-    );
+    const socket = workspaceSocket(fs.realpathSync(dataDir));
     try {
       execFileSync("/opt/homebrew/bin/tmux", ["-S", socket, "kill-server"], {
         stdio: "ignore",
@@ -376,16 +354,7 @@ test("detached shell exit is reconciled without reopening and private tmux has n
       if (event.type === "snapshot") snapshots.push(event.snapshot);
     },
   });
-  const socket = path.join(
-    os.tmpdir(),
-    "aw-" +
-      crypto
-        .createHash("sha256")
-        .update(fs.realpathSync(dataDir))
-        .digest("hex")
-        .slice(0, 20) +
-      ".sock",
-  );
+  const socket = workspaceSocket(fs.realpathSync(dataDir));
   try {
     const project: any = await core.invoke("project.add", { path: temp });
     const task: any = await core.invoke("task.create", {
@@ -486,7 +455,10 @@ test("legacy socket upgrade preserves old shell identity and independently targe
     // Real older sockets must remain discoverable beyond an arbitrary scan prefix.
     for (let i = 0; i < 70; i++)
       fs.writeFileSync(
-        path.join(isolatedSockets, `aw-${i.toString(16).padStart(20, "0")}.sock`),
+        path.join(
+          isolatedSockets,
+          `aw-${i.toString(16).padStart(20, "0")}.sock`,
+        ),
         "stale socket fixture",
       );
     const sid = crypto.randomUUID(),

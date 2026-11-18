@@ -2,12 +2,12 @@
   "id": "/",
   "name": "Agent Workspace",
   "short_name": "Workspace",
-  "description": "Your tasks, files, notes, and persistent agent terminals.",
+  "description": "Open Claude, Codex or a shell in any folder and keep every session running.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#151718",
-  "theme_color": "#1e2021",
+  "background_color": "#0b0d12",
+  "theme_color": "#0f1218",
   "icons": [
     {
       "src": "/icons/workspace-192.png",

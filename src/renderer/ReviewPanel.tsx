@@ -7,7 +7,18 @@ import {
   GitCommitHorizontal,
   Check,
   Minus,
+  PanelRightClose,
+  Maximize2,
+  Minimize2,
+  Sparkles,
 } from "lucide-react";
+import {
+  AssistCommitDialog,
+  assistAvailable,
+  loadAssistProvider,
+  openAssistSettings,
+  useAssist,
+} from "./assist";
 import type {
   FileContent,
   FileEntry,
@@ -17,35 +28,103 @@ import type {
 } from "../shared/contracts";
 const Editor = lazy(() => import("./editor"));
 
+export interface ReviewSummary {
+  branch: string;
+  changes: number;
+  available: boolean;
+  message?: string;
+}
 type Props = {
+  collapsed?: boolean;
+  onCollapse?: () => void;
   project: Project;
   worktreePath?: string;
   report: (e: unknown) => void;
   onDirtyChange?: (dirty: boolean) => void;
   refreshRevision?: number;
+  /** When provided, the Files location is owned by the caller (it sets where sessions open). */
+  directory?: string;
+  onDirectoryChange?: (directory: string) => void;
+  onSummary?: (summary: ReviewSummary) => void;
+  onOpenWorktree?: (
+    tree: Worktree,
+    provider?: "claude" | "codex" | "shell",
+  ) => void;
 };
+/** Explains why Git review is unavailable for a folder, and what would enable it. */
+function gitProblem(reason: unknown) {
+  const text = String(reason instanceof Error ? reason.message : reason);
+  if (/not a git repository/i.test(text))
+    return "This folder isn't a Git repository. Files and terminals work normally; run git init in a Shell here to review changes.";
+  if (/repository root/i.test(text))
+    return "This folder is inside a Git repository but isn't its root. Open the repository's top folder to review its changes.";
+  if (/ENOENT|spawn git/i.test(text))
+    return "Git isn't installed on this host. Files and terminals still work.";
+  return "Git review is unavailable for this folder: " + text;
+}
 export function ReviewPanel({
+  collapsed = false,
+  onCollapse,
   project,
   worktreePath,
   report,
   onDirtyChange,
   refreshRevision = 0,
+  directory: controlledDirectory,
+  onDirectoryChange,
+  onSummary,
+  onOpenWorktree,
 }: Props) {
   const request = useRef(0);
   const refreshTicket = useRef(0);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
-  const [tab, setTab] = useState<"changes" | "files" | "worktrees">("changes");
+  const [loadError, setLoadError] = useState("");
+  const [tab, setTab] = useState<"changes" | "files" | "worktrees">("files");
   const [status, setStatus] = useState<GitStatus>({ branch: "", files: [] });
   const [files, setFiles] = useState<FileEntry[]>([]);
-  const [directory, setDirectory] = useState("");
+  const [ownDirectory, setOwnDirectory] = useState("");
+  const controlled = controlledDirectory !== undefined && !!onDirectoryChange;
+  const directory = controlled ? controlledDirectory : ownDirectory;
+  const setDirectory = (value: string) =>
+    controlled ? onDirectoryChange!(value) : setOwnDirectory(value);
+  const summary = useRef(onSummary);
+  summary.current = onSummary;
   const [selected, setSelected] = useState<FileContent | null>(null);
   const [content, setContent] = useState("");
+  const [expanded, setExpanded] = useState(false);
   const [diff, setDiff] = useState("");
   const [message, setMessage] = useState("");
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [branch, setBranch] = useState("");
+  const [treeLocation, setTreeLocation] = useState("");
+  const [removingTree, setRemovingTree] = useState("");
   const scope = { projectId: project.id, worktreePath };
+  // AI draft: the staged fingerprint it was generated from, to flag staleness.
+  const assist = useAssist();
+  const [suggesting, setSuggesting] = useState(false);
+  const [draftSource, setDraftSource] = useState<string | null>(null);
+  const [draftStale, setDraftStale] = useState(false);
+  const draftRef = useRef<string | null>(null);
+  draftRef.current = draftSource;
+  async function checkDraft() {
+    const source = draftRef.current;
+    if (!source || !window.workspace.assist) return;
+    try {
+      const { stagedHash } = await window.workspace.assist.stagedHash(scope);
+      if (draftRef.current === source) setDraftStale(stagedHash !== source);
+    } catch {
+      if (draftRef.current === source) setDraftStale(true);
+    }
+  }
+  async function suggestMessage() {
+    const provider =
+      assist.provider ?? (await loadAssistProvider().catch(() => ""));
+    if (!provider)
+      openAssistSettings(
+        "AI suggestions are off. Choose a provider to draft commit messages; nothing is sent until you preview and click Generate.",
+      );
+    else setSuggesting(true);
+  }
   useEffect(() => {
     onDirtyChange?.(Boolean(selected && content !== selected.content));
   }, [selected, content, onDirtyChange]);
@@ -60,7 +139,7 @@ export function ReviewPanel({
   async function refresh() {
     const ticket = ++refreshTicket.current;
     setLoading(true);
-    setLoadError(false);
+    setLoadError("");
     try {
       const [git, entries, trees] = await Promise.allSettled([
         window.workspace.invoke<GitStatus>("git.status", scope),
@@ -74,17 +153,33 @@ export function ReviewPanel({
       if (entries.status === "fulfilled") setFiles(entries.value);
       else {
         setFiles([]);
-        report(entries.reason);
+        // A location that vanished returns the Files view to the folder root.
+        if (directory && controlled) setDirectory("");
+        else report(entries.reason);
       }
-      if (git.status === "fulfilled") setStatus(git.value);
-      else {
-        setStatus({ branch: "Git unavailable", files: [] });
-        setLoadError(true);
+      if (git.status === "fulfilled") {
+        setStatus(git.value);
+        void checkDraft();
+        summary.current?.({
+          branch: git.value.branch,
+          changes: git.value.files.length,
+          available: true,
+        });
+      } else {
+        const message = gitProblem(git.reason);
+        setStatus({ branch: "", files: [] });
+        setLoadError(message);
+        summary.current?.({
+          branch: "",
+          changes: 0,
+          available: false,
+          message,
+        });
       }
       setWorktrees(trees.status === "fulfilled" ? trees.value : []);
     } catch (e) {
       if (ticket === refreshTicket.current) {
-        setLoadError(true);
+        setLoadError(gitProblem(e));
         report(e);
       }
     } finally {
@@ -95,7 +190,9 @@ export function ReviewPanel({
     request.current++;
     setSelected(null);
     setDiff("");
-    setDirectory("");
+    if (!controlled) setOwnDirectory("");
+    // The caller remounts this panel per folder; a controlled location is kept.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id, worktreePath]);
   useEffect(() => {
     void refresh();
@@ -162,8 +259,22 @@ export function ReviewPanel({
   }
   async function commit() {
     try {
+      if (draftRef.current && window.workspace.assist) {
+        const { stagedHash } = await window.workspace.assist.stagedHash(scope);
+        if (stagedHash !== draftRef.current) {
+          setDraftStale(true);
+          if (
+            !confirm(
+              "The staged changes are different from when the AI draft was made. Commit with this message anyway?",
+            )
+          )
+            return;
+        }
+      }
       await window.workspace.invoke("git.commit", { ...scope, message });
       setMessage("");
+      setDraftSource(null);
+      setDraftStale(false);
       await refresh();
     } catch (e) {
       report(e);
@@ -185,15 +296,31 @@ export function ReviewPanel({
     }
   }
   return (
-    <aside className="review-panel">
+    <aside
+      className={"review-panel" + (collapsed ? " panel-collapsed" : "")}
+      aria-label="Files and changes"
+    >
       <div className="panel-tabs">
-        {(["changes", "files", "worktrees"] as const).map((t) => (
+        {(["files", "changes", "worktrees"] as const).map((t) => (
           <button
             key={t}
             className={tab === t ? "active" : ""}
+            aria-pressed={tab === t}
+            aria-label={
+              t === "changes" && status.files.length
+                ? `Changes, ${status.files.length} changed`
+                : undefined
+            }
             onClick={() => setTab(t)}
           >
-            {t}
+            {t === "files"
+              ? "Files"
+              : t === "changes"
+                ? "Changes"
+                : "Worktrees"}
+            {t === "changes" && status.files.length ? (
+              <span className="tab-count">{status.files.length}</span>
+            ) : null}
           </button>
         ))}
         <button
@@ -203,20 +330,30 @@ export function ReviewPanel({
         >
           <RefreshCw size={14} />
         </button>
+        {onCollapse && !selected && !diff ? (
+          <button
+            className="icon-button panel-collapse"
+            aria-label="Collapse files panel"
+            title="Collapse files panel"
+            onClick={onCollapse}
+          >
+            <PanelRightClose size={16} />
+          </button>
+        ) : null}
       </div>
       <div className="branch-line">
-        <span className="tiny-dot" />
-        {status.branch || "Repository"}
-        <span className="muted">{status.files.length} changes</span>
+        <span className={"tiny-dot" + (loadError ? " neutral" : "")} />
+        {loadError ? "No Git review" : status.branch || "Repository"}
+        {loadError ? null : (
+          <span className="muted">{status.files.length} changed</span>
+        )}
       </div>
       {tab === "changes" ? (
         <>
           <div className="file-list">
             {loading || loadError ? (
               <div className="quiet-empty">
-                {loading
-                  ? "Reading working tree…"
-                  : "Git features are unavailable for this folder. Files and shell sessions remain available."}
+                {loading ? "Reading working tree…" : loadError}
               </div>
             ) : status.files.length === 0 ? (
               <div className="quiet-empty">
@@ -267,9 +404,38 @@ export function ReviewPanel({
             <textarea
               aria-label="Commit message"
               value={message}
-              onChange={(e) => setMessage(e.target.value)}
+              onChange={(e) => {
+                setMessage(e.target.value);
+                if (!e.target.value.trim()) {
+                  setDraftSource(null);
+                  setDraftStale(false);
+                }
+              }}
               placeholder="Describe these changes…"
             />
+            {draftSource ? (
+              <p
+                className={"assist-draft-note" + (draftStale ? " stale" : "")}
+                role="status"
+              >
+                {draftStale
+                  ? "The staged changes are different from when this draft was made. Review it, or suggest again."
+                  : "AI draft from the staged changes. Edit it before committing."}
+              </p>
+            ) : null}
+            {assistAvailable() ? (
+              <button
+                className="button ghost small assist-suggest"
+                disabled={status.files.every(
+                  (f) => f.index === " " || f.index === "?",
+                )}
+                title="Preview the staged diff, then generate an editable draft"
+                onClick={() => void suggestMessage()}
+              >
+                <Sparkles size={13} />
+                Suggest message
+              </button>
+            ) : null}
             <button
               className="secondary full"
               disabled={!message.trim()}
@@ -285,16 +451,29 @@ export function ReviewPanel({
         <>
           <div className="directory-line">
             <button
-              onClick={() =>
-                setDirectory(directory.split("/").slice(0, -1).join("/"))
-              }
+              aria-label="Up one folder"
+              onClick={() => {
+                if (canDiscard())
+                  setDirectory(directory.split("/").slice(0, -1).join("/"));
+              }}
               disabled={!directory}
             >
               ↑
             </button>
-            <span>{directory || "/"}</span>
+            <span title={directory || "/"}>
+              {project.name}
+              {directory ? "/" + directory : ""}
+            </span>
           </div>
+          {controlled && !worktreePath && directory ? (
+            <p className="files-hint">
+              New sessions open in the folder shown here.
+            </p>
+          ) : null}
           <div className="file-list">
+            {!loading && !files.length ? (
+              <div className="quiet-empty">This folder is empty.</div>
+            ) : null}
             {files.map((file) => (
               <button
                 className="tree-entry"
@@ -314,12 +493,91 @@ export function ReviewPanel({
       ) : null}
       {tab === "worktrees" ? (
         <>
+          <p className="files-hint">
+            Worktrees give each agent an isolated copy of this repository.
+            Choose where to open files or start an agent below.
+          </p>
           <div className="worktree-list">
             {worktrees.map((tree) => (
               <div className="worktree-card" key={tree.path}>
                 <strong>{tree.branch || "Detached HEAD"}</strong>
                 <span>{tree.path}</span>
                 <code>{tree.head.slice(0, 8)}</code>
+                {window.workspace.profiles &&
+                !project.hostId &&
+                tree.path !== project.path ? (
+                  <button
+                    className="button ghost small"
+                    disabled={!!removingTree}
+                    onClick={async () => {
+                      if (
+                        selected &&
+                        content !== selected.content &&
+                        worktreePath === tree.path
+                      ) {
+                        report(
+                          new Error(
+                            "Save or discard the open file before removing its worktree",
+                          ),
+                        );
+                        return;
+                      }
+                      if (
+                        !confirm(
+                          `Remove the clean worktree at ${tree.path}? Its branch is kept. Dirty files and running sessions prevent removal.`,
+                        )
+                      )
+                        return;
+                      setRemovingTree(tree.path);
+                      try {
+                        await window.workspace.invoke("worktree.remove", {
+                          projectId: project.id,
+                          path: tree.path,
+                        });
+                        if (worktreePath === tree.path)
+                          onOpenWorktree?.({
+                            path: project.path,
+                            branch: "",
+                            head: "",
+                          });
+                        await refresh();
+                      } catch (error) {
+                        report(error);
+                      } finally {
+                        setRemovingTree("");
+                      }
+                    }}
+                  >
+                    {removingTree === tree.path
+                      ? "Removing…"
+                      : "Remove worktree…"}
+                  </button>
+                ) : null}
+                {onOpenWorktree ? (
+                  <div className="worktree-actions">
+                    <button
+                      className="button small"
+                      onClick={() => onOpenWorktree(tree)}
+                    >
+                      Open files here
+                    </button>
+                    {(["claude", "codex", "shell"] as const).map((p) => (
+                      <button
+                        className="button small"
+                        key={p}
+                        onClick={() => onOpenWorktree(tree, p)}
+                      >
+                        Open{" "}
+                        {p === "claude"
+                          ? "Claude"
+                          : p === "codex"
+                            ? "Codex"
+                            : "Shell"}{" "}
+                        here
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
@@ -328,9 +586,14 @@ export function ReviewPanel({
             onSubmit={(e) => {
               e.preventDefault();
               void window.workspace
-                .invoke("worktree.create", { projectId: project.id, branch })
+                .invoke("worktree.create", {
+                  projectId: project.id,
+                  branch,
+                  ...(treeLocation.trim() ? { path: treeLocation.trim() } : {}),
+                })
                 .then(() => {
                   setBranch("");
+                  setTreeLocation("");
                   return refresh();
                 })
                 .catch(report);
@@ -345,15 +608,83 @@ export function ReviewPanel({
                 required
               />
             </label>
+            {window.workspace.profiles && !project.hostId ? (
+              <label>
+                Worktree location (optional)
+                <input
+                  value={treeLocation}
+                  onChange={(event) => setTreeLocation(event.target.value)}
+                  placeholder={`${project.path}-worktree`}
+                />
+                <span className="hint">
+                  Use an absolute path beside your project, or leave blank for
+                  app storage.
+                </span>
+              </label>
+            ) : null}
             <button className="secondary full">Create worktree</button>
           </form>
         </>
       ) : null}
+      {suggesting ? (
+        <AssistCommitDialog
+          scope={scope}
+          onClose={() => setSuggesting(false)}
+          onDraft={(draft) => {
+            if (
+              message.trim() &&
+              message !== draft.message &&
+              !confirm(
+                "Replace the commit message you typed with the AI draft?",
+              )
+            )
+              return;
+            setMessage(draft.message);
+            setDraftSource(draft.stagedHash);
+            setDraftStale(false);
+            setSuggesting(false);
+          }}
+        />
+      ) : null}
       {selected || diff ? (
-        <div className="editor-overlay">
+        <div
+          className={"editor-overlay" + (expanded ? " editor-expanded" : "")}
+        >
           <header>
-            <span>{selected?.path || "Selected diff"}</span>
+            <span title={selected?.path || "Selected diff"}>
+              <span className="editor-file-name">
+                {selected?.path.split("/").pop() || "Selected diff"}
+              </span>
+              {selected?.path.includes("/") ? (
+                <span className="editor-file-dir">
+                  {selected.path.split("/").slice(0, -1).join("/")}
+                </span>
+              ) : null}
+              {selected ? (
+                <small role="status">
+                  {content === selected.content ? " · Saved" : " · Unsaved"}
+                </small>
+              ) : null}
+            </span>
             <div>
+              {onCollapse ? (
+                <button
+                  className="icon-button"
+                  aria-label="Collapse files panel"
+                  title="Collapse files panel"
+                  onClick={onCollapse}
+                >
+                  <PanelRightClose size={16} />
+                </button>
+              ) : null}
+              <button
+                className="icon-button"
+                onClick={() => setExpanded((v) => !v)}
+                aria-label={expanded ? "Restore editor panel" : "Expand editor"}
+                title={expanded ? "Restore editor panel" : "Expand editor"}
+              >
+                {expanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+              </button>
               {selected ? (
                 <button
                   className="secondary"
@@ -397,6 +728,9 @@ export function ReviewPanel({
           </header>
           <Suspense fallback={<p className="muted">Loading editor…</p>}>
             <Editor
+              onSave={() => {
+                if (selected && content !== selected.content) void save();
+              }}
               key={selected ? selected.path + selected.hash : "diff"}
               content={selected ? content : diff}
               path={selected?.path || "changes.diff"}

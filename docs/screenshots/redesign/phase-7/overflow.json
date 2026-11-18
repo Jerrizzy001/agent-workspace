@@ -1,0 +1,92 @@
+{
+  "light-320-terminal": {
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "offenders": []
+  },
+  "light-320-drawer": {
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "offenders": []
+  },
+  "light-320-settings": {
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "offenders": []
+  },
+  "light-zoom200-terminal": {
+    "scrollWidth": 720,
+    "clientWidth": 720,
+    "offenders": []
+  },
+  "light-zoom200-settings": {
+    "scrollWidth": 720,
+    "clientWidth": 720,
+    "offenders": []
+  },
+  "light-rtl-terminal": {
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "offenders": []
+  },
+  "light-rtl-board": {
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "offenders": []
+  },
+  "light-rtl-canvas": {
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "offenders": []
+  },
+  "light-rtl-settings": {
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "offenders": []
+  },
+  "dark-320-terminal": {
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "offenders": []
+  },
+  "dark-320-drawer": {
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "offenders": []
+  },
+  "dark-320-settings": {
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "offenders": []
+  },
+  "dark-zoom200-terminal": {
+    "scrollWidth": 720,
+    "clientWidth": 720,
+    "offenders": []
+  },
+  "dark-zoom200-settings": {
+    "scrollWidth": 720,
+    "clientWidth": 720,
+    "offenders": []
+  },
+  "dark-rtl-terminal": {
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "offenders": []
+  },
+  "dark-rtl-board": {
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "offenders": []
+  },
+  "dark-rtl-canvas": {
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "offenders": []
+  },
+  "dark-rtl-settings": {
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "offenders": []
+  }
+}
