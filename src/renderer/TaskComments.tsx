@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-// Styles: team.css, imported by TeamPanel and TaskTeam (kept out so tests can render this module).
+// Styles: panels.css, imported by main.tsx (kept out so tests can render this module).
 import {
   LoaderCircle,
   MessageSquare,

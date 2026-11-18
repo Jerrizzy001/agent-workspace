@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import {
   CheckCircle2,
-  KeyRound,
   LoaderCircle,
   Plus,
   RefreshCw,
@@ -20,7 +19,6 @@ import type {
 } from "../shared/contracts";
 import { createId } from "./id";
 import { errorText } from "./sessions";
-import "./profiles.css";
 
 /** Desktop owner only. Remote browsers have no profiles API. */
 export const profilesAvailable = () => !!window.workspace.profiles;
@@ -118,20 +116,19 @@ export function ProfilesPanel({
       >
         <header>
           <div>
-            <div className="eyebrow">This computer</div>
             <h2 id="profiles-title">
-              <KeyRound size={17} /> Claude profiles
+              Claude profiles
             </h2>
           </div>
           <button className="icon-button" onClick={onClose} aria-label="Close">
-            <X size={18} />
+            <X size={16} />
           </button>
         </header>
         <p className="profiles-intro">
-          A profile is a named Claude configuration folder. It is not proof of a
-          separate account. Use Check account to see which identity Claude
-          reports, then select the profile in Launch options. Sign-in stays
-          inside Claude; this app never changes your global account.
+          A profile is a separate Claude configuration folder, not a guarantee
+          of a separate account. Use Check account to see who Claude is signed
+          in as, then pick the profile in Launch options. You sign in inside
+          Claude; this app never changes your global account.
         </p>
         <details className="profiles-support">
           <summary>Which accounts can be separated?</summary>
@@ -174,6 +171,8 @@ export function ProfilesPanel({
                   {accounts.default.email || ""} · {accounts.default.detail}
                 </span>
               ) : null}
+            </div>
+            <div className="profile-actions">
               <button
                 className="button small"
                 disabled={!!busy}

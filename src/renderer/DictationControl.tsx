@@ -340,7 +340,6 @@ export function DictationSettings() {
       >
         <header>
           <div>
-            <div className="eyebrow">This computer</div>
             <h2 id="dictation-title">Voice dictation</h2>
           </div>
           <button
@@ -348,23 +347,22 @@ export function DictationSettings() {
             onClick={closeDictationSettings}
             aria-label="Close"
           >
-            <X size={18} />
+            <X size={16} />
           </button>
         </header>
         {state.settingsNotice && !selected?.installed ? (
           <p className="dictation-callout">{state.settingsNotice}</p>
         ) : null}
         <p className="muted">
-          Open a running Claude, Codex or shell session from the sidebar, then
-          click <strong>Voice typing</strong> below its terminal. You can also
-          press <kbd>{dictationShortcutLabel}</kbd> in the terminal. Speak
-          English; each phrase is typed when you pause. Press Enter yourself to
-          send.
+          Open a session, then click <strong>Voice typing</strong> below its
+          terminal, or press <kbd>{dictationShortcutLabel}</kbd> in the
+          terminal. Speak English; each phrase is typed when you pause. Press
+          Enter yourself to send.
         </p>
         <p className="muted">
-          Audio stays in memory on this computer and is transcribed here; it is
-          never saved or uploaded. After you press Enter, the agent's CLI may
-          send the text to its provider.
+          Audio stays in memory and is transcribed on this computer. It's never
+          saved or uploaded. Once you press Enter, the agent's CLI may send the
+          text to its provider.
         </p>
         <section className="setup-guide">
           <strong>

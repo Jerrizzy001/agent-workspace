@@ -205,7 +205,7 @@ try {
   const noteNode = page.locator(`.react-flow__node[data-id="${noteId}"]`);
   await noteNode.waitFor();
   assert.match(await noteNode.textContent(), /From the agent/);
-  assert.match(await noteNode.textContent(), /AGENT NOTE/);
+  assert.match(await noteNode.textContent(), /Agent note/);
   assert.equal(
     await noteNode.getByLabel("Canvas note").inputValue(),
     "Written by awctl",
@@ -223,7 +223,7 @@ try {
     2,
   );
   checks.push(
-    "the agent note (labelled AGENT NOTE, inert text) sits at the placed position and the opened shell is a canvas terminal",
+    "the agent note (labelled Agent note, inert text) sits at the placed position and the opened shell is a canvas terminal",
   );
 
   // The child has no grant of its own.

@@ -1,4 +1,10 @@
-import { useEffect, useId, useState, type ReactNode } from "react";
+import {
+  Children,
+  useEffect,
+  useId,
+  useState,
+  type ReactNode,
+} from "react";
 import { ChevronRight } from "lucide-react";
 import type { ExecutionHostView } from "../shared/contracts";
 import { useProfiles } from "./ProfilesPanel";
@@ -94,15 +100,47 @@ export function useProfilesState() {
     : "Default sign-in only";
 }
 
+export type TileTone =
+  | "blue"
+  | "indigo"
+  | "purple"
+  | "red"
+  | "orange"
+  | "green"
+  | "grey";
+
+/** A titled inset list, as in macOS System Settings. Renders nothing when
+ *  every row is unavailable on this device. */
+export function SettingsGroup({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  const id = useId();
+  if (!Children.toArray(children).length) return null;
+  return (
+    <section className="settings-group" aria-labelledby={id}>
+      <h3 id={id} className="settings-group-title">
+        {title}
+      </h3>
+      <div className="inset-list">{children}</div>
+    </section>
+  );
+}
+
 /** One Settings entry: what it is, what it is set to, and where it leads. */
 export function SettingsRow({
   icon,
+  tone = "grey",
   label,
   name,
   state,
   onOpen,
 }: {
   icon: ReactNode;
+  tone?: TileTone;
   label: string;
   /** Accessible name; defaults to the visible label. */
   name?: string;
@@ -117,7 +155,7 @@ export function SettingsRow({
       aria-describedby={state ? stateId : undefined}
       onClick={onOpen}
     >
-      <span className="settings-row-icon" aria-hidden="true">
+      <span className={"settings-row-icon tile-" + tone} aria-hidden="true">
         {icon}
       </span>
       <span className="settings-row-label">{label}</span>

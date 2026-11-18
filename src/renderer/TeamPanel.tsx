@@ -7,7 +7,6 @@ import {
   RefreshCw,
   ShieldAlert,
   Trash2,
-  Users,
   X,
 } from "lucide-react";
 import type {
@@ -20,7 +19,6 @@ import type {
 } from "../shared/team-contracts";
 import { errorText } from "./sessions";
 import { OutboxRow, TeamTaskThread } from "./TaskComments";
-import "./team.css";
 
 const roleLabel = (role: ProjectRole) =>
   role === "admin" ? "Admin" : role === "member" ? "Member" : "Viewer";
@@ -98,15 +96,13 @@ export function TeamPanel({
       >
         <header>
           <div>
-            <div className="eyebrow">Team</div>
             <h2 id="team-panel-title">
-              <Users size={18} aria-hidden="true" /> Team members, comments and
-              assignments
+              Team
             </h2>
             <p>
-              Share chosen task titles, descriptions and status with your team.
-              Files, prompts, transcripts and terminals never leave this
-              computer, and teammates get no access to your sessions.
+              Share the task titles, descriptions and status you choose. Files,
+              prompts, transcripts and terminals stay on this computer, and
+              teammates can't reach your sessions.
             </p>
           </div>
           <button
@@ -114,7 +110,7 @@ export function TeamPanel({
             aria-label="Close team panel"
             onClick={onClose}
           >
-            <X size={18} />
+            <X size={16} />
           </button>
         </header>
         {!status ? (
@@ -281,7 +277,7 @@ export function TeamPanel({
                   if (
                     confirm(
                       status.outbox.length
-                        ? `Disconnect? ${status.outbox.length} unsent change(s) and this computer's copy of team data will be removed.`
+                        ? `Disconnect from the team service? ${status.outbox.length} unsent ${status.outbox.length === 1 ? "change" : "changes"} and this computer's copy of team data will be removed.`
                         : "Disconnect from the team service? This computer's copy of team data is removed; your local tasks stay.",
                     )
                   )

@@ -9,24 +9,24 @@ self.MonacoEnvironment = {
   },
 };
 loader.config({ monaco });
-// Match the app's own surfaces instead of Monaco's stock grey (#1e1e1e).
+// Match the app's own surfaces (tokens.css).
 monaco.editor.defineTheme("workspace-dark", {
   base: "vs-dark",
   inherit: true,
   rules: [],
   colors: {
-    "editor.background": "#0d1015",
-    "editor.lineHighlightBackground": "#151a22",
-    "editor.lineHighlightBorder": "#151a2200",
-    "editorLineNumber.foreground": "#5d6779",
-    "editorLineNumber.activeForeground": "#a9b2c3",
-    "editorGutter.background": "#0d1015",
-    "editor.selectionBackground": "#8b9dff40",
-    "editorCursor.foreground": "#8b9dff",
-    "editorWidget.background": "#13171f",
-    "editorWidget.border": "#303a4a",
-    "scrollbarSlider.background": "#303a4a80",
-    "scrollbarSlider.hoverBackground": "#3b4659",
+    "editor.background": "#1e1e1e",
+    "editor.lineHighlightBackground": "#262626",
+    "editor.lineHighlightBorder": "#26262600",
+    "editorLineNumber.foreground": "#6e6e6e",
+    "editorLineNumber.activeForeground": "#a8a8a8",
+    "editorGutter.background": "#1e1e1e",
+    "editor.selectionBackground": "#3f638b",
+    "editorCursor.foreground": "#e6e6e6",
+    "editorWidget.background": "#2c2c2c",
+    "editorWidget.border": "#4a4a4a",
+    "scrollbarSlider.background": "#4a4a4a80",
+    "scrollbarSlider.hoverBackground": "#5a5a5a",
   },
 });
 monaco.editor.defineTheme("workspace-light", {
@@ -35,12 +35,12 @@ monaco.editor.defineTheme("workspace-light", {
   rules: [],
   colors: {
     "editor.background": "#ffffff",
-    "editor.lineHighlightBackground": "#f0f3f8",
-    "editor.lineHighlightBorder": "#f0f3f800",
-    "editorLineNumber.foreground": "#7a889f",
-    "editorLineNumber.activeForeground": "#1d2737",
-    "editor.selectionBackground": "#4054bd30",
-    "editorCursor.foreground": "#4054bd",
+    "editor.lineHighlightBackground": "#f5f5f5",
+    "editor.lineHighlightBorder": "#f5f5f500",
+    "editorLineNumber.foreground": "#8a8a8a",
+    "editorLineNumber.activeForeground": "#1d1d1f",
+    "editor.selectionBackground": "#b3d7ff",
+    "editorCursor.foreground": "#1d1d1f",
   },
 });
 export default function CodeEditor({
@@ -93,7 +93,8 @@ export default function CodeEditor({
         readOnly,
         minimap: { enabled: false },
         fontSize: 13,
-        padding: { top: 18 },
+        fontFamily: 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace',
+        padding: { top: 16 },
         scrollBeyondLastLine: false,
         automaticLayout: true,
       }}

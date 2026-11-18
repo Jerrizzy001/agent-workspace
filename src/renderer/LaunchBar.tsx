@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  ChevronDown,
   ChevronRight,
   FolderGit2,
   Folder,
@@ -44,7 +45,17 @@ export function savedModels(): LaunchChoices["models"] {
   }
 }
 
-/** The selected folder, where new sessions start, and one button per provider. */
+const lastKey = "workspace.launch.last";
+function savedLast(): Provider {
+  try {
+    const value = localStorage.getItem(lastKey);
+    if (value && (providers as string[]).includes(value)) return value as Provider;
+  } catch {}
+  return "claude";
+}
+
+/** Where new sessions start, and the toolbar's New button: one click opens
+ *  the provider used last; the menu picks another. */
 export function LaunchBar({
   project,
   target,
@@ -59,7 +70,7 @@ export function LaunchBar({
   onManageProfiles,
   launchers = true,
 }: {
-  /** False where the Launchpad's cards already offer the providers. */
+  /** False hides the New button (no project to launch into). */
   launchers?: boolean;
   project: Project;
   target: string;
@@ -80,6 +91,57 @@ export function LaunchBar({
     ? profiles.profiles.find((p) => p.id === choices.profileId)
     : undefined;
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [newOpen, setNewOpen] = useState(false);
+  const [last, setLast] = useState<Provider>(savedLast);
+  const newMenu = useRef<HTMLDivElement>(null);
+  const available = (p: Provider) => {
+    const cap = capability(capabilities, p);
+    return !cap || cap.available;
+  };
+  // The remembered provider, unless it is missing on this host.
+  const primary = available(last)
+    ? last
+    : providers.find((p) => available(p)) || last;
+  const launchWith = (provider: Provider) => {
+    setNewOpen(false);
+    setLast(provider);
+    try {
+      localStorage.setItem(lastKey, provider);
+    } catch {}
+    onLaunch(provider);
+  };
+  useEffect(() => {
+    if (!newOpen) return;
+    newMenu.current
+      ?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')
+      ?.focus();
+    const close = (event: MouseEvent) => {
+      if (!newMenu.current?.contains(event.target as Node)) setNewOpen(false);
+    };
+    const keys = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setNewOpen(false);
+        newMenu.current?.querySelector<HTMLButtonElement>(".new-caret")?.focus();
+        return;
+      }
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      const items = [
+        ...(newMenu.current?.querySelectorAll<HTMLButtonElement>(
+          '[role="menuitem"]:not(:disabled)',
+        ) || []),
+      ];
+      const at = items.indexOf(document.activeElement as HTMLButtonElement);
+      const next = event.key === "ArrowDown" ? at + 1 : at - 1;
+      items[(next + items.length) % items.length]?.focus();
+      event.preventDefault();
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", keys);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", keys);
+    };
+  }, [newOpen]);
   const [trees, setTrees] = useState<Worktree[] | null>(null);
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -114,6 +176,12 @@ export function LaunchBar({
     !!choices.models.claude.trim() ||
     !!choices.models.codex.trim() ||
     !!profile;
+  const chipFor = (provider: Provider) => {
+    const model = provider === "shell" ? "" : choices.models[provider].trim();
+    return provider === "claude" && profile
+      ? [profile.label, model].filter(Boolean).join(" · ")
+      : model;
+  };
   return (
     <div className="launch-bar">
       <div className="launch-target">
@@ -197,9 +265,11 @@ export function LaunchBar({
             title={git.message || ""}
           >
             <GitBranch size={12} />
-            {git.available
-              ? `${git.branch || "detached"}${git.changes ? ` · ${git.changes} changed` : ""}`
-              : "No Git"}
+            <span className="git-chip-text">
+              {git.available
+                ? `${git.branch || "detached"}${git.changes ? ` · ${git.changes} changed` : ""}`
+                : "No Git"}
+            </span>
           </span>
         ) : null}
       </div>
@@ -208,46 +278,74 @@ export function LaunchBar({
         role="group"
         aria-label={launchers ? "Open a session" : "Launch options"}
       >
-        {(launchers ? providers : []).map((provider) => {
-          const cap = capability(capabilities, provider);
-          const missing = !!cap && !cap.available;
-          const model =
-            provider === "shell" ? "" : choices.models[provider].trim();
-          const chip =
-            provider === "claude" && profile
-              ? [profile.label, model].filter(Boolean).join(" · ")
-              : model;
-          return (
+        {launchers ? (
+          <div
+            className="new-split"
+            ref={newMenu}
+            role="group"
+            aria-label="New session"
+          >
             <button
-              key={provider}
-              className={
-                "launch-button launch-" +
-                provider +
-                (missing ? " is-missing" : "")
-              }
+              className={"primary new-main launch-" + primary}
               disabled={!!disabledReason || !!launching}
               title={
                 disabledReason ||
-                (missing
-                  ? `${providerName(provider)} was not found on this host`
-                  : `${providerHint(provider)} in ${where}${chip ? ` · ${chip}` : ""}`)
+                `${providerHint(primary)} in ${where}${chipFor(primary) ? ` · ${chipFor(primary)}` : ""}`
               }
-              onClick={() => onLaunch(provider)}
+              onClick={() => launchWith(primary)}
             >
-              {launching === provider ? (
-                <LoaderCircle size={15} className="spin" />
+              {launching ? (
+                <LoaderCircle size={14} className="spin" />
               ) : (
-                <ProviderGlyph provider={provider} />
+                <ProviderGlyph provider={primary} />
               )}
-              <span className="launch-name">{providerName(provider)}</span>
-              {missing ? (
-                <small>Not found</small>
-              ) : chip ? (
-                <small>{chip}</small>
-              ) : null}
+              <span className="launch-name">New {providerName(primary)}</span>
             </button>
-          );
-        })}
+            <button
+              className="primary new-caret"
+              aria-label="Choose what to open"
+              aria-haspopup="menu"
+              aria-expanded={newOpen}
+              disabled={!!disabledReason || !!launching}
+              onClick={() => setNewOpen((open) => !open)}
+            >
+              <ChevronDown size={14} />
+            </button>
+            {newOpen ? (
+              <div className="popover menu new-menu" role="menu">
+                {providers.map((provider) => {
+                  const missing = !available(provider);
+                  const chip = chipFor(provider);
+                  return (
+                    <button
+                      key={provider}
+                      role="menuitem"
+                      className={
+                        "launch-item launch-" +
+                        provider +
+                        (missing ? " is-missing" : "")
+                      }
+                      title={
+                        missing
+                          ? `${providerName(provider)} was not found on this host`
+                          : `${providerHint(provider)} in ${where}${chip ? ` · ${chip}` : ""}`
+                      }
+                      onClick={() => launchWith(provider)}
+                    >
+                      <ProviderGlyph provider={provider} />
+                      <span className="launch-name">{providerName(provider)}</span>
+                      {missing ? (
+                        <small>Not found</small>
+                      ) : chip ? (
+                        <small>{chip}</small>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <div className="options-anchor" ref={panel}>
           <button
             className={

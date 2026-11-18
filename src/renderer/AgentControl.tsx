@@ -8,7 +8,6 @@ import {
   type AgentControlState,
   type ControllerVerb,
 } from "../shared/controller-contracts";
-import "./agent-control.css";
 
 const VERB_LABELS: Record<ControllerVerb, { label: string; detail: string }> = {
   status: {
@@ -149,19 +148,18 @@ function AgentControlDialog({
       >
         <header>
           <div>
-            <div className="eyebrow">This session</div>
             <h2 id="agent-control-title">Agent control</h2>
           </div>
           <button className="icon-button" onClick={close} aria-label="Close">
-            <X size={18} />
+            <X size={16} />
           </button>
         </header>
         <p className="muted">
           Lets the program in this terminal run <code>awctl</code> to read this
-          folder's canvas and make the changes you allow below. It cannot type
-          into terminals, end sessions, change files or Git, or grant itself
-          more. Other programs running as you could also read the grant while it
-          lasts.
+          folder's canvas and make the changes you allow below. It can't type
+          into terminals, end sessions, touch files or Git, or give itself more
+          access. While the grant lasts, other programs running as you could
+          read it too.
         </p>
         {grant ? (
           <div className="agent-control-grant" role="status">

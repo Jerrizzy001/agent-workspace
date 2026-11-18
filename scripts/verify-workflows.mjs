@@ -323,7 +323,7 @@ try {
 
   await page.locator(".folder-list button").filter({ hasText: "beta" }).click();
   await page
-    .getByText("Open an agent or a shell here", { exact: true })
+    .getByRole("button", { name: "Open Shell here", exact: true })
     .waitFor();
   await page
     .locator(".folder-list button")

@@ -248,7 +248,7 @@ try {
   await command("git.stage", { projectId: project.id, paths: ["notes.txt"] });
   await page.getByRole("button", { name: "Refresh files and git" }).click();
   await page
-    .getByText("Staged changes changed after this draft was generated", {
+    .getByText("The staged changes are different from when this draft was made", {
       exact: false,
     })
     .waitFor();

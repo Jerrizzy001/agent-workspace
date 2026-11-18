@@ -1,4 +1,4 @@
-import { Monitor, Moon, Sun } from "lucide-react";
+import { SunMoon } from "lucide-react";
 import {
   setAppearance,
   useAppearance,
@@ -6,22 +6,28 @@ import {
 } from "./appearance";
 
 const choices = [
-  { mode: "light", label: "Light", Icon: Sun },
-  { mode: "dark", label: "Dark", Icon: Moon },
-  { mode: "system", label: "System", Icon: Monitor },
-] satisfies { mode: AppearanceMode; label: string; Icon: typeof Sun }[];
+  { mode: "light", label: "Light" },
+  { mode: "dark", label: "Dark" },
+  { mode: "system", label: "System" },
+] satisfies { mode: AppearanceMode; label: string }[];
 
+/** Settings row: theme choice as a segmented control. Saved on this device. */
 export function AppearanceSettings() {
   const appearance = useAppearance();
   return (
-    <fieldset className="appearance-settings">
-      <legend>Appearance</legend>
+    <div className="settings-row appearance-row">
+      <span className="settings-row-icon tile-blue" aria-hidden="true">
+        <SunMoon size={13} />
+      </span>
+      <span className="settings-row-label">
+        Appearance
+      </span>
       <div
-        className="appearance-options"
+        className="segmented"
         role="radiogroup"
         aria-label="Color theme"
       >
-        {choices.map(({ mode, label, Icon }) => (
+        {choices.map(({ mode, label }) => (
           <label
             key={mode}
             className={appearance.mode === mode ? "selected" : ""}
@@ -33,12 +39,10 @@ export function AppearanceSettings() {
               checked={appearance.mode === mode}
               onChange={() => setAppearance(mode)}
             />
-            <Icon size={18} aria-hidden="true" />
-            <span>{label}</span>
+            {label}
           </label>
         ))}
       </div>
-      <p>Light, dark, or match your system. Saved on this device.</p>
-    </fieldset>
+    </div>
   );
 }

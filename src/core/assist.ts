@@ -327,7 +327,7 @@ export async function stagedSnapshot(root: string, exclude: string[]) {
     }
   }
   if ((await stagedHash(root)) !== hashBefore)
-    throw new Error("Staged changes changed while reading them. Preview again.");
+    throw new Error("The staged changes moved while being read. Preview again.");
   const omitted = files
     .filter((f) => !f.included)
     .map((f) => ({ path: f.path, reason: f.reason! }));

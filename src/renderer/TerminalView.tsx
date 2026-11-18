@@ -276,7 +276,7 @@ export function TerminalView({
       disableStdin: true,
       fontSize: 13,
       fontFamily:
-        '"JetBrains Mono", "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace',
+        'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace',
       lineHeight: 1.4,
       scrollback: 5000,
       theme: terminalThemes[getAppearance().resolved],
@@ -544,7 +544,7 @@ export function TerminalView({
       }
       if (inputBuffer.length + data.length > 2 * 1024 * 1024) {
         fail(
-          "Terminal input exceeded its limit. Unsent text was discarded; inspect the terminal before retrying.",
+          "Too much text was sent at once, so the unsent part was dropped. Check the terminal before trying again.",
         );
         return;
       }

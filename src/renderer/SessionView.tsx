@@ -386,7 +386,7 @@ export function SessionView({
               </button>
               <button
                 className="button danger small"
-                title="End this terminal process"
+                title="End this session"
                 onClick={() => {
                   if (
                     confirm(
@@ -411,7 +411,7 @@ export function SessionView({
                   onClick={() => onResume(session)}
                   title={
                     session.provider === "claude"
-                      ? "Continue this Claude conversation in a new terminal"
+                      ? "Continue this Claude conversation in a new session"
                       : "Open Codex's own list of earlier conversations here"
                   }
                 >

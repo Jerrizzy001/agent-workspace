@@ -686,6 +686,11 @@ export interface WorkspaceAPI {
   onMenu?: (listener: (action: MenuAction) => void) => () => void;
   /** Desktop only: shows a native right-click menu; resolves the chosen id or null. */
   contextMenu?: (items: ContextMenuItem[]) => Promise<string | null>;
+  /** Desktop macOS only: the window uses an inset title bar and a
+   *  translucent sidebar, so the page draws its own toolbar. */
+  windowChrome?: "mac-inset";
+  /** Desktop only: keeps native window materials in the app's appearance. */
+  setWindowAppearance?: (mode: "light" | "dark" | "system") => void;
 }
 declare global {
   interface Window {

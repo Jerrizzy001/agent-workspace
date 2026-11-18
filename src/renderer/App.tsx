@@ -32,6 +32,8 @@ import {
   GitBranch,
   Database,
   Moon,
+  Settings as SettingsIcon,
+  ChevronRight,
 } from "lucide-react";
 import type {
   ExecutionHostView,
@@ -70,6 +72,7 @@ import { mergeSnapshot } from "./snapshot";
 import { paletteMatches } from "./palette-search";
 import { FirstRunChecklist, installHints } from "./FirstRunChecklist";
 import {
+  SettingsGroup,
   SettingsRow,
   hostsState,
   useProfilesState,
@@ -85,7 +88,6 @@ import {
   sessionLocation,
   sessionState,
   sessionTitle,
-  shortPath,
 } from "./sessions";
 import { BrandMark, ProviderGlyph, StatusBadge } from "./ui";
 import { AppearanceSettings } from "./AppearanceSettings";
@@ -1202,23 +1204,25 @@ export default function App() {
               <span>{hostStateLabel(h.state)}</span>
             </div>
           ))}
-          <div className="capabilities" aria-label="Installed tools">
-            {snapshot.capabilities.map((c) => (
-              <span
-                key={c.name}
-                className={c.available ? "ok" : "missing"}
-                title={c.detail}
-              >
-                {c.name}
-              </span>
-            ))}
-          </div>
+          {snapshot.capabilities.some((c) => !c.available) ? (
+            <p className="capabilities" aria-label="Missing tools">
+              Not installed:{" "}
+              {snapshot.capabilities
+                .filter((c) => !c.available)
+                .map((c) => (
+                  <span key={c.name} title={c.detail}>
+                    {c.name}
+                  </span>
+                ))}
+            </p>
+          ) : null}
           <button
-            className="foot-button"
+            className="icon-button foot-button"
             onClick={() => setSettingsPanel(true)}
             aria-label="Settings and connections"
+            title="Settings and connections"
           >
-            <Ellipsis size={16} /> Settings & connections
+            <SettingsIcon size={16} />
           </button>
         </footer>
       </aside>
@@ -1249,7 +1253,7 @@ export default function App() {
               <h1>Open a folder</h1>
             ) : project ? (
               <>
-                <h1>{project.name}</h1>
+                <h1 title={project.path}>{project.name}</h1>
                 {projectHost ? (
                   <span
                     className="host-badge"
@@ -1262,14 +1266,40 @@ export default function App() {
                     {projectHost.label}
                   </span>
                 ) : null}
-                <span className="topbar-path" title={project.path}>
-                  {project.hostId ? project.path : shortPath(project.path)}
-                </span>
               </>
             ) : (
               <h1>Welcome</h1>
             )}
           </div>
+          {/* Launch controls share the toolbar row in every view: where new
+              sessions open, the New button and launch options. */}
+          {project && !showBrowser ? (
+            <LaunchBar
+              project={project}
+              target={target}
+              onTarget={(path) =>
+                setTargets((current) => ({ ...current, [project.id]: path }))
+              }
+              capabilities={projectCapabilities}
+              choices={choices}
+              onChoices={(next) => {
+                setChoices(next);
+                try {
+                  localStorage.setItem(
+                    "workspace.launch.models",
+                    JSON.stringify(next.models),
+                  );
+                } catch {}
+              }}
+              onLaunch={(provider) => void launch(provider, view === "canvas")}
+              launching={launching}
+              disabledReason={disabledReason}
+              git={git}
+              onManageProfiles={() => setProfilesPanel(true)}
+            />
+          ) : (
+            <div className="topbar-spacer" />
+          )}
           {project && !showBrowser ? (
             <nav className="view-switch" aria-label="Views">
               <button
@@ -1412,43 +1442,13 @@ export default function App() {
             <BrandMark size={44} />
             <h2>No folders are shared with this browser yet</h2>
             <p>
-              Folders live on the host computer. On the host, open the folder in
-              the desktop app, then stop and enable Remote access again, or
-              start the server with <code>--project /path/to/folder</code>.
+              Folders live on the host computer. Open the folder in the desktop
+              app there, then turn Remote access off and on again. Or start the
+              server with <code>--project /path/to/folder</code>.
             </p>
           </div>
         ) : (
           <div className="workspace">
-            {/* With a session open the terminal gets the space; "+" brings
-                the Launchpad (and this bar) back. */}
-            {view === "terminals" && session ? null : (
-              <LaunchBar
-                launchers={view !== "terminals"}
-                project={project}
-                target={target}
-                onTarget={(path) =>
-                  setTargets((current) => ({ ...current, [project.id]: path }))
-                }
-                capabilities={projectCapabilities}
-                choices={choices}
-                onChoices={(next) => {
-                  setChoices(next);
-                  try {
-                    localStorage.setItem(
-                      "workspace.launch.models",
-                      JSON.stringify(next.models),
-                    );
-                  } catch {}
-                }}
-                onLaunch={(provider) =>
-                  void launch(provider, view === "canvas")
-                }
-                launching={launching}
-                disabledReason={disabledReason}
-                git={git}
-                onManageProfiles={() => setProfilesPanel(true)}
-              />
-            )}
             {problem ? (
               <LaunchNotice
                 hostLabel={projectHost?.label}
@@ -1558,20 +1558,6 @@ export default function App() {
                           >
                             <Plus size={14} />
                           </button>
-                          {session && git ? (
-                            <span
-                              className={
-                                "git-chip tabs-git" +
-                                (git.available ? "" : " muted-chip")
-                              }
-                              title={git.message || ""}
-                            >
-                              <GitBranch size={12} aria-hidden="true" />
-                              {git.available
-                                ? `${git.branch || "detached"}${git.changes ? ` · ${git.changes} changed` : ""}`
-                                : "No Git"}
-                            </span>
-                          ) : null}
                         </div>
                       ) : null}
                       {session ? (
@@ -1848,19 +1834,15 @@ export default function App() {
             aria-label="Settings and connections"
           >
             <header>
-              <h2>Settings & connections</h2>
+              <h2>Settings</h2>
               <button
+                className="icon-button"
                 aria-label="Close settings"
                 onClick={() => setSettingsPanel(false)}
               >
-                ×
+                <X size={16} />
               </button>
             </header>
-            <p>
-              Set up accounts and optional tools. Your folders and running
-              sessions stay where they are.
-            </p>
-            <AppearanceSettings />
             <SettingsRows
               hosts={hosts}
               open={settingsPanel}
@@ -2174,8 +2156,10 @@ function Launchpad({
         <HostOfflineNotice host={host} onOpenHosts={onOpenHosts} />
       ) : (
         <div className="launchpad-card">
-          <p className="eyebrow">Ready in {where}</p>
-          <h2>Open an agent or a shell here</h2>
+          <h2>{where}</h2>
+          <p className="launchpad-sub">
+            Choose an agent or a shell. Nothing runs until you type.
+          </p>
           <div className="launchpad-options">
             {providers.map((provider) => {
               const cap = capability(capabilities, provider);
@@ -2195,36 +2179,35 @@ function Launchpad({
                   onClick={() => onLaunch(provider)}
                 >
                   {launching === provider ? (
-                    <RefreshCw size={22} className="spin" />
+                    <RefreshCw size={18} className="spin" />
                   ) : (
-                    <ProviderGlyph provider={provider} size={22} />
+                    <ProviderGlyph provider={provider} size={18} />
                   )}
-                  <strong>{providerName(provider)}</strong>
+                  <span className="launchpad-option-text">
+                    <strong>{providerName(provider)}</strong>
+                    <span id={`launchpad-${provider}-hint`}>
+                      {missing
+                        ? "Not found on this host"
+                        : provider === "claude"
+                          ? "Claude Code"
+                          : provider === "codex"
+                            ? "Codex CLI"
+                            : "A terminal in this folder"}
+                    </span>
+                  </span>
                   {chips[provider] && !missing ? (
                     <small className="launchpad-chip">{chips[provider]}</small>
                   ) : null}
-                  <span id={`launchpad-${provider}-hint`}>
-                    {missing
-                      ? "Not found on this host"
-                      : provider === "claude"
-                        ? "Claude Code, ready for your first message"
-                        : provider === "codex"
-                          ? "Codex CLI, ready for your first message"
-                          : "A terminal in this folder"}
-                  </span>
+                  <ChevronRight size={14} className="launchpad-chevron" />
                 </button>
               );
             })}
           </div>
-          <p className="hint">
-            Nothing is sent until you type. Sessions keep running when you
-            switch folders or views, and after you close the window.
-          </p>
         </div>
       )}
       {recent.length ? (
         <div className="recent-sessions">
-          <h3 className="section-label">Recently ended here</h3>
+          <h3 className="launchpad-section">Recently ended</h3>
           {recent.map((s) => (
             <div key={s.id} className="recent-session">
               <ProviderGlyph provider={s.provider} />
@@ -2431,100 +2414,120 @@ function SettingsRows({
     next();
   };
   return (
-    <div className="settings-rows">
-      {power && !isRemoteBrowser ? (
-        <label
-          className="settings-row keep-awake"
-          title={
-            "Prevents this computer from sleeping while a local Claude or Codex session reports it is working. " +
-            "The display can still sleep. Needs input, done, exit or a quiet turn longer than 20 minutes releases it. " +
-            "Codex needs trusted lifecycle hooks; shell sessions never keep it awake."
-          }
-        >
-          <span className="settings-row-icon" aria-hidden="true">
-            <Moon size={14} />
-          </span>
-          <span className="settings-row-label">
-            Keep awake during agent work
-          </span>
-          <span
-            className="settings-row-state keep-awake-status"
-            data-active={power.active}
+    <div className="settings-groups">
+      <SettingsGroup title="General">
+        <AppearanceSettings />
+        {power && !isRemoteBrowser ? (
+          <label
+            className="settings-row keep-awake"
+            title={
+              "Prevents this computer from sleeping while a local Claude or Codex session reports it is working. " +
+              "The display can still sleep. Needs input, done, exit or a quiet turn longer than 20 minutes releases it. " +
+              "Codex needs trusted lifecycle hooks; shell sessions never keep it awake."
+            }
           >
-            {!power.enabled
-              ? "Off"
-              : power.active
-                ? `Keeping awake · ${power.sessions.length} ${power.sessions.length === 1 ? "session" : "sessions"} working`
-                : "On · idle"}
-          </span>
-          <input
-            type="checkbox"
-            role="switch"
-            checked={power.enabled}
-            disabled={powerBusy}
-            aria-label="Keep awake during agent work"
-            onChange={(e) => togglePower(e.target.checked)}
+            <span className="settings-row-icon tile-indigo" aria-hidden="true">
+              <Moon size={13} />
+            </span>
+            <span className="settings-row-text">
+              <span className="settings-row-label">
+                Keep awake during agent work
+              </span>
+              <span
+                className="settings-row-detail keep-awake-status"
+                data-active={power.active}
+              >
+                {!power.enabled
+                  ? "Off"
+                  : power.active
+                    ? `Keeping awake · ${power.sessions.length} ${power.sessions.length === 1 ? "session" : "sessions"} working`
+                    : "On · idle"}
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              role="switch"
+              checked={power.enabled}
+              disabled={powerBusy}
+              aria-label="Keep awake during agent work"
+              onChange={(e) => togglePower(e.target.checked)}
+            />
+          </label>
+        ) : null}
+      </SettingsGroup>
+      <SettingsGroup title="Input">
+        {dictationAvailable() && !isRemoteBrowser ? (
+          <SettingsRow
+            icon={<Mic size={13} />}
+            tone="red"
+            label="Voice dictation"
+            name="Voice dictation settings"
+            state={states.dictation}
+            onOpen={go(openDictationSettings)}
           />
-        </label>
-      ) : null}
-      {dictationAvailable() && !isRemoteBrowser ? (
-        <SettingsRow
-          icon={<Mic size={14} />}
-          label="Voice dictation"
-          name="Voice dictation settings"
-          state={states.dictation}
-          onOpen={go(openDictationSettings)}
-        />
-      ) : null}
-      {assistAvailable() && !isRemoteBrowser ? (
-        <SettingsRow
-          icon={<Sparkles size={14} />}
-          label="AI suggestions"
-          name="AI suggestions settings"
-          state={states.assist}
-          onOpen={go(openAssistSettings)}
-        />
-      ) : null}
-      {profilesAvailable() && !isRemoteBrowser ? (
-        <SettingsRow
-          icon={<KeyRound size={14} />}
-          label="Claude profiles"
-          state={profilesState}
-          onOpen={go(openProfiles)}
-        />
-      ) : null}
-      {window.workspace.ssh && !isRemoteBrowser ? (
-        <SettingsRow
-          icon={<Server size={14} />}
-          label="SSH hosts"
-          state={hostsState(hosts)}
-          onOpen={go(openSSH)}
-        />
-      ) : null}
-      {window.workspace.team && !isRemoteBrowser ? (
-        <SettingsRow
-          icon={<Users size={14} />}
-          label="Team"
-          state={states.team}
-          onOpen={go(openTeam)}
-        />
-      ) : null}
-      {window.workspace.remote ? (
-        <SettingsRow
-          icon={<Smartphone size={14} />}
-          label="Remote access"
-          name="Remote access settings"
-          state={states.remote}
-          onOpen={go(openRemote)}
-        />
-      ) : null}
+        ) : null}
+        {assistAvailable() && !isRemoteBrowser ? (
+          <SettingsRow
+            icon={<Sparkles size={13} />}
+            tone="purple"
+            label="AI suggestions"
+            name="AI suggestions settings"
+            state={states.assist}
+            onOpen={go(openAssistSettings)}
+          />
+        ) : null}
+      </SettingsGroup>
+      <SettingsGroup title="Accounts">
+        {profilesAvailable() && !isRemoteBrowser ? (
+          <SettingsRow
+            icon={<KeyRound size={13} />}
+            tone="orange"
+            label="Claude profiles"
+            state={profilesState}
+            onOpen={go(openProfiles)}
+          />
+        ) : null}
+        {window.workspace.team && !isRemoteBrowser ? (
+          <SettingsRow
+            icon={<Users size={13} />}
+            tone="green"
+            label="Team"
+            state={states.team}
+            onOpen={go(openTeam)}
+          />
+        ) : null}
+      </SettingsGroup>
+      <SettingsGroup title="Connections">
+        {window.workspace.ssh && !isRemoteBrowser ? (
+          <SettingsRow
+            icon={<Server size={13} />}
+            tone="grey"
+            label="SSH hosts"
+            state={hostsState(hosts)}
+            onOpen={go(openSSH)}
+          />
+        ) : null}
+        {window.workspace.remote ? (
+          <SettingsRow
+            icon={<Smartphone size={13} />}
+            tone="blue"
+            label="Remote access"
+            name="Remote access settings"
+            state={states.remote}
+            onOpen={go(openRemote)}
+          />
+        ) : null}
+      </SettingsGroup>
       {!isRemoteBrowser ? (
-        <SettingsRow
-          icon={<Database size={14} />}
-          label="Workspace data"
-          state="Backups, export and history"
-          onOpen={go(openData)}
-        />
+        <SettingsGroup title="Data">
+          <SettingsRow
+            icon={<Database size={13} />}
+            tone="grey"
+            label="Workspace data"
+            state="Backups, export and history"
+            onOpen={go(openData)}
+          />
+        </SettingsGroup>
       ) : null}
     </div>
   );
@@ -2585,7 +2588,7 @@ function Palette({
               }
             }}
           />
-          <kbd>ESC</kbd>
+          <kbd>esc</kbd>
         </div>
         <div className="palette-options">
           {matches.map((item, index) => (

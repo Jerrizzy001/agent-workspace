@@ -21,11 +21,12 @@ let state = { mode: initialMode, resolved: resolve(initialMode) };
 const listeners = new Set<() => void>();
 function apply() {
   document.documentElement.dataset.theme = state.resolved;
+  window.workspace?.setWindowAppearance?.(state.mode);
   document
     .querySelector('meta[name="theme-color"]')
     ?.setAttribute(
       "content",
-      state.resolved === "light" ? "#ffffff" : "#0f1218",
+      state.resolved === "light" ? "#ffffff" : "#1e1e1e",
     );
 }
 function update(mode: AppearanceMode) {
@@ -60,11 +61,11 @@ apply();
 
 export const terminalThemes: Record<ResolvedAppearance, ITheme> = {
   dark: {
-    background: "#0d1015",
-    foreground: "#d8dee9",
-    cursor: "#8fb4ff",
-    cursorAccent: "#0d1015",
-    selectionBackground: "#2c3a55",
+    background: "#1e1e1e",
+    foreground: "#e6e6e6",
+    cursor: "#e6e6e6",
+    cursorAccent: "#1e1e1e",
+    selectionBackground: "#3f638b",
     black: "#232832",
     red: "#f07f86",
     green: "#8fd19e",
@@ -84,10 +85,10 @@ export const terminalThemes: Record<ResolvedAppearance, ITheme> = {
   },
   light: {
     background: "#ffffff",
-    foreground: "#1d2737",
-    cursor: "#4054bd",
+    foreground: "#1d1d1f",
+    cursor: "#1d1d1f",
     cursorAccent: "#ffffff",
-    selectionBackground: "#d7e1ff",
+    selectionBackground: "#b3d7ff",
     black: "#242933",
     red: "#b42335",
     green: "#147344",

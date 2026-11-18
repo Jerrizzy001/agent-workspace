@@ -265,7 +265,7 @@ export function ReviewPanel({
           setDraftStale(true);
           if (
             !confirm(
-              "Staged changes changed after the AI draft was generated. Commit with this message anyway?",
+              "The staged changes are different from when the AI draft was made. Commit with this message anyway?",
             )
           )
             return;
@@ -419,7 +419,7 @@ export function ReviewPanel({
                 role="status"
               >
                 {draftStale
-                  ? "Staged changes changed after this draft was generated. Review it, or suggest again."
+                  ? "The staged changes are different from when this draft was made. Review it, or suggest again."
                   : "AI draft from the staged changes. Edit it before committing."}
               </p>
             ) : null}
@@ -465,7 +465,7 @@ export function ReviewPanel({
               {directory ? "/" + directory : ""}
             </span>
           </div>
-          {controlled && !worktreePath ? (
+          {controlled && !worktreePath && directory ? (
             <p className="files-hint">
               New sessions open in the folder shown here.
             </p>

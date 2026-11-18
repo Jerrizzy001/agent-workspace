@@ -9,7 +9,6 @@ import type {
 } from "../shared/contracts";
 import { errorText, sessionState } from "./sessions";
 import { profileLabel, useProfiles } from "./ProfilesPanel";
-import "./profiles.css";
 
 const time = (iso: string) =>
   new Date(iso).toLocaleString([], {
@@ -195,18 +194,18 @@ export function TranscriptLinksPanel({
           <div>
             <div className="eyebrow">{titleOf(session)}</div>
             <h2 id="links-title">
-              <Link2 size={17} /> Connect agents
+              Connect agents
             </h2>
           </div>
           <button className="icon-button" onClick={onClose} aria-label="Close">
-            <X size={18} />
+            <X size={16} />
           </button>
         </header>
         <p>
-          Share a reviewed conversation snapshot with another agent in this
-          folder. This does not send a message or start work. You choose the
-          recipient, preview the text, and approve access here. Disconnecting
-          stops future reads; it cannot take back text already read.
+          Share a reviewed snapshot of a conversation with another agent in this
+          folder. Nothing is sent and no work starts: you pick the recipient,
+          preview the text and approve access. Disconnecting stops future reads
+          but can't take back text already read.
         </p>
         <ol className="connection-steps" aria-label="Connection steps">
           <li aria-current={!source ? "step" : undefined}>Choose source</li>

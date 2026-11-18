@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
-import { X, Shield, Eye, EyeOff, QrCode, Copy } from "lucide-react";
+import { X, Eye, EyeOff, QrCode, Copy } from "lucide-react";
 import { toDataURL } from "qrcode";
 import type { RemoteStatus, Snapshot } from "../shared/contracts";
-import "./remote-access.css";
 
 export function RemoteAccessPanel({ onClose }: { onClose(): void }) {
   const api = window.workspace.remote!;
@@ -148,12 +147,16 @@ export function RemoteAccessPanel({ onClose }: { onClose(): void }) {
         <header>
           <div>
             <h2 id="remote-title">
-              <Shield size={18} /> Remote access
+              Remote access
             </h2>
             <p>Connect your phone or another browser to this computer.</p>
           </div>
-          <button aria-label="Close remote access" onClick={onClose}>
-            <X size={18} />
+          <button
+            className="icon-button"
+            aria-label="Close remote access"
+            onClick={onClose}
+          >
+            <X size={16} />
           </button>
         </header>
         <div className="remote-status" role="status">
@@ -165,10 +168,9 @@ export function RemoteAccessPanel({ onClose }: { onClose(): void }) {
             : "Off · complete the setup below"}
         </div>
         <p>
-          Select the folders to show on your device. Paired devices act as you:
-          terminal commands use your host account's permissions, so folder
-          selection is not an operating-system sandbox. Closing the desktop app
-          turns access off.
+          Choose the folders your device can see. A paired device acts as you,
+          with your account's permissions, so this choice is not a sandbox.
+          Quitting the desktop app turns access off.
         </p>
         <fieldset disabled={busy || status?.enabled}>
           <legend>1. Choose folders</legend>
